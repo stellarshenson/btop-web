@@ -1,0 +1,1995 @@
+/* The 05.06-network-paired layout in the shipped theme tokens. Every colour
+   resolves through the custom properties `render_css` writes into the page;
+   this file adds no colour of its own.
+
+   Layout: a fixed top bar, then four bands stacked in a column. Band heights
+   are flex shares (116 : 214 : 190 : 314, exactly 05's rows at 1440x900) times
+   the band's size factor; panels share their band's width by weight times
+   their own size factor. Plots are the flexible part of every panel, so a
+   shorter band shrinks the plots first.
+
+   Adaptive priority (ACC-LAYOUT-46-ADAPTIVE-PRIORITY, the concept
+   05.06-adaptive-1-priority): as the viewport shrinks, (1) bands and plots
+   shrink by their flex shares down to content minimums, (2) type and padding
+   step down along clamp() on E = min(100vw, 160vh), base values at E >= 1440,
+   (3) fields drop by priority at named tiers (media queries at the end):
+     full     width >= 1101 and height >= 641   nothing dropped
+     drop-p4  width <= 1100 or height <= 640     P4: host, clock, storage
+     drop-p3  width <= 899 or height <= 640      P4, P3: details, proc-stat,
+                                                 cores, process columns
+                                                 Command, Threads and User
+     drop-p2  width <= 599 or height <= 540      P4, P3, P2 (the gauges): one
+                                                 column when width <= 599, two
+                                                 columns when height <= 540
+                                                 (P1 left, processes right)
+   An element that appears once in its panel carries data-p and data-field;
+   elements repeated per core, process, GPU or direction drop by class, so the
+   SSE fragments carry no repeated markers. The tier chip in the top bar
+   names the tiers on screen. The GPU legend also steps by its own height
+   (container queries): type and gaps, then temperature · power, then one
+   line per entry. */
+@property --row-h {
+  /* app.js fitProc() reads --row-h as a px number; registered, the clamp() computes to px */
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 22px;
+}
+
+:root {
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --e: min(100vw, 160vh);
+  --bar-h: clamp(22px, calc(19.327px + var(--e) * 0.004808), 26px);
+  --head-h: clamp(22px, calc(12.404px + var(--e) * 0.009615), 26px);
+  --tile-h: clamp(30px, calc(21.481px + var(--e) * 0.014423), 42px);
+  --stat-size: clamp(22px, calc(11.481px + var(--e) * 0.014423), 32px);
+  --foot-h: clamp(15px, calc(11.327px + var(--e) * 0.004808), 18px);
+  --row-h: clamp(19px, calc(15.327px + var(--e) * 0.004808), 22px);
+  --gap: clamp(5px, calc(1.327px + var(--e) * 0.004808), 8px);
+  --pad: var(--gap);
+  --fs-12: clamp(11px, calc(8.788px + var(--e) * 0.002404), 12px);
+  --fs-11: clamp(10px, calc(7.788px + var(--e) * 0.002404), 11px);
+  --fs-10: clamp(9px, calc(6.788px + var(--e) * 0.002404), 10px);
+  --fs-9: clamp(8px, calc(7.519px + var(--e) * 0.001202), 9px);
+  --lg-v: clamp(12px, calc(10.788px + var(--e) * 0.002404), 14px);
+  --legend-w: clamp(112px, calc(43.635px + var(--e) * 0.086538), 168px);
+  --gpu-legend-w: clamp(188px, calc(2.712px + var(--e) * 0.153846), 224px);
+  --filter-w: clamp(92px, calc(63.019px + var(--e) * 0.048077), 132px);
+  --lh-name: calc(var(--fs-10) * 1.25);
+  --lh-val: calc(var(--lg-v) * 1.1);
+  --lh-meta: calc(var(--fs-9) * 1.25);
+  --share-1: 116;
+  --share-2: 214;
+  --share-3: 190;
+  --share-4: 314;
+  /* band minimums: below them a band stops shrinking and the process table
+     gives up rows. Band 2 holds the network legend (2 x name, value, 3 meta
+     lines) and the CPU facts (4 x label and value, the load caption);
+     band 3 holds 11 core rows (64 cores) whose 8 px text needs a 9.3 px line
+     box, and the GPU legend, which steps down by its own container queries */
+  --band-min-1: calc(var(--head-h) + var(--tile-h) + var(--foot-h) + 22px);
+  --band-min-2: max(calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 3 * var(--lh-meta) + 4px) + 12px),
+                    calc(var(--head-h) + 41px + 4 * (var(--lh-name) + var(--fs-12) * 1.25 + 1px) + var(--lh-meta)));
+  --band-min-3: calc(var(--head-h) + 112px);
+  --band-min-4: 120px;
+  --surface-raised: color-mix(in srgb, var(--text) 2%, var(--surface));
+  --surface-sunken: var(--surface-raised);
+  --border-subtle: var(--div-line);
+  --unavailable: var(--muted);
+  --meter-track: var(--border);
+  --grid-line: var(--grid);
+  --chart-cpu-warn: var(--cpu-mid);
+  --chart-cpu-crit: var(--cpu-end);
+  --chart-mem-available: var(--available-end);
+  --chart-mem-cached: var(--cached-end);
+  --status-ok: var(--ok);
+  --status-warn: var(--warn);
+  --status-crit: var(--crit);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* reserved width (ACC-LAYOUT-74-RESERVED-WIDTH): a live value is as wide as
+   its widest form, data-w, set by a hidden zero-height copy, so nothing
+   beside it moves; tabular figures make every digit as wide as 0 */
+[data-w] {
+  display: inline-block;
+  text-align: right;
+}
+
+[data-w]::before {
+  content: attr(data-w);
+  display: block;
+  height: 0;
+  visibility: hidden;
+}
+
+button,
+select,
+input {
+  font-family: var(--ui);
+  color: inherit;
+}
+
+/* native controls (the open theme list) follow the page mode, not the OS
+   scheme, and the options paint the theme's text on its surface
+   (DEF-THEME-38-SELECT-POPUP) */
+:root[data-mode="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-mode="light"] {
+  color-scheme: light;
+}
+
+select.opt option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.up {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.unavailable {
+  margin: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* top bar: app status, CONFIG at its right end (ACC-VIEW-41-TOP-BAR) */
+.utility {
+  flex: 0 0 var(--bar-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.brand {
+  font-size: var(--fs-12);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.brand span {
+  color: var(--muted);
+}
+
+.u-meta {
+  font-size: var(--fs-10);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.u-host {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.u-int {
+  color: var(--text);
+}
+
+.utility-right {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* house chip: 1 px border, 2 px radius, uppercase, 12% tint */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--border));
+}
+
+.chip-live {
+  --chip-hue: var(--ok);
+  border-color: var(--ok);
+  color: var(--chip-fg);
+}
+
+.chip-live.paused,
+.chip-live.stale {
+  --chip-hue: var(--warn);
+  border-color: var(--warn);
+}
+
+.lamp {
+  width: 4px;
+  height: 4px;
+  background: var(--ok);
+}
+
+.chip-live.paused .lamp,
+.chip-live.stale .lamp {
+  background: var(--warn);
+}
+
+.live-word {
+  text-align: left;
+}
+
+.live-age {
+  font-weight: 400;
+  color: var(--chip-fg);
+}
+
+.live-age:empty {
+  display: none;
+}
+
+.chip-readonly {
+  --chip-hue: var(--warn);
+  border-color: var(--warn);
+  color: var(--chip-fg);
+}
+
+.chip-readonly .lamp {
+  background: var(--warn);
+}
+
+/* ACC-SCOPE-64: the panels show only this container */
+.chip-container {
+  --chip-hue: var(--warn);
+  border-color: var(--warn);
+  color: var(--chip-fg);
+}
+
+.chip-config {
+  --chip-hue: var(--accent);
+  border-color: var(--accent);
+  color: var(--chip-fg);
+  cursor: pointer;
+}
+
+/* bands and panels */
+.page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  padding: var(--pad);
+}
+
+.band {
+  flex-grow: calc(var(--share) * var(--bf));
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-height: var(--band-min);
+  display: flex;
+  gap: var(--gap);
+}
+
+.band[hidden] {
+  display: none;
+}
+
+.band[data-band="1"] {
+  --share: var(--share-1);
+  --bf: var(--bf-1, 1);
+  --band-min: var(--band-min-1);
+}
+
+.band[data-band="2"] {
+  --share: var(--share-2);
+  --bf: var(--bf-2, 1);
+  --band-min: var(--band-min-2);
+}
+
+.band[data-band="3"] {
+  --share: var(--share-3);
+  --bf: var(--bf-3, 1);
+  --band-min: var(--band-min-3);
+}
+
+.band[data-band="4"] {
+  --share: var(--share-4);
+  --bf: var(--bf-4, 1);
+  --band-min: var(--band-min-4);
+}
+
+.panel {
+  flex-grow: calc(var(--w, 1) * var(--pf, 1));
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+[data-panel="cpu-stat"] {
+  --w: 4;
+  border-color: var(--border-cpu);
+}
+
+[data-panel="mem-stat"] {
+  --w: 4;
+  border-color: var(--border-mem);
+}
+
+[data-panel="proc-stat"] {
+  --w: 4;
+  border-color: var(--border-proc);
+}
+
+[data-panel="net"] {
+  --w: 5;
+  border-color: var(--border-net);
+}
+
+[data-panel="cpu-gauge"] {
+  --w: 3;
+  border-color: var(--border-cpu);
+}
+
+[data-panel="mem-gauge"] {
+  --w: 4;
+  border-color: var(--border-mem);
+}
+
+/* Default gives cores, gpu and storage their own border; the other themes
+   fall back to the family token (ACC-THEME-66-BOX-BORDERS) */
+[data-panel="cores"] {
+  --w: 4;
+  border-color: var(--border-cores, var(--border-cpu));
+}
+
+[data-panel="gpu"] {
+  --w: 5;
+  border-color: var(--border-gpu, var(--border-proc));
+}
+
+[data-panel="storage"] {
+  --w: 3;
+  border-color: var(--border-storage, var(--border-mem));
+}
+
+[data-panel="proc"] {
+  --w: 12;
+  border-color: var(--border-proc);
+}
+
+/* gadgets: the config popover's layout, set on <html> by theme.js */
+html[data-size~="cpu-stat:s"] [data-panel="cpu-stat"],
+html[data-size~="mem-stat:s"] [data-panel="mem-stat"],
+html[data-size~="proc-stat:s"] [data-panel="proc-stat"],
+html[data-size~="net:s"] [data-panel="net"],
+html[data-size~="cpu-gauge:s"] [data-panel="cpu-gauge"],
+html[data-size~="mem-gauge:s"] [data-panel="mem-gauge"],
+html[data-size~="cores:s"] [data-panel="cores"],
+html[data-size~="gpu:s"] [data-panel="gpu"],
+html[data-size~="storage:s"] [data-panel="storage"],
+html[data-size~="proc:s"] [data-panel="proc"] {
+  --pf: 0.75;
+}
+
+html[data-size~="cpu-stat:l"] [data-panel="cpu-stat"],
+html[data-size~="mem-stat:l"] [data-panel="mem-stat"],
+html[data-size~="proc-stat:l"] [data-panel="proc-stat"],
+html[data-size~="net:l"] [data-panel="net"],
+html[data-size~="cpu-gauge:l"] [data-panel="cpu-gauge"],
+html[data-size~="mem-gauge:l"] [data-panel="mem-gauge"],
+html[data-size~="cores:l"] [data-panel="cores"],
+html[data-size~="gpu:l"] [data-panel="gpu"],
+html[data-size~="storage:l"] [data-panel="storage"],
+html[data-size~="proc:l"] [data-panel="proc"] {
+  --pf: 1.5;
+}
+
+html[data-off~="cpu-stat"] [data-panel="cpu-stat"],
+html[data-off~="mem-stat"] [data-panel="mem-stat"],
+html[data-off~="proc-stat"] [data-panel="proc-stat"],
+html[data-off~="net"] [data-panel="net"],
+html[data-off~="cpu-gauge"] [data-panel="cpu-gauge"],
+html[data-off~="mem-gauge"] [data-panel="mem-gauge"],
+html[data-off~="cores"] [data-panel="cores"],
+html[data-off~="gpu"] [data-panel="gpu"],
+html[data-off~="storage"] [data-panel="storage"],
+html[data-off~="proc"] [data-panel="proc"],
+/* a panel with nothing to show gives its width to its band (ACC-VIEW-23) */
+[data-panel="gpu"]:has(.gpu-body > .unavailable),
+[data-panel="storage"]:not(:has(.mount)) {
+  display: none;
+}
+
+/* ACC-SCOPE-64: a panel withheld in a container narrows to its header and
+   gives its width to its band; a band of withheld headers is one header high */
+[data-panel]:has(> .ph [data-withheld]) {
+  flex: 0 0 auto;
+}
+
+.band[data-band="3"]:has([data-panel="cores"] [data-withheld]):has(.gpu-body > .unavailable):not(:has(.mount)) {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.ph {
+  flex: 0 0 var(--head-h);
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ph h2 {
+  margin: 0;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.head-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.meta {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-10);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cpu-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-10);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* charts: server-built PCHIP paths; no text inside a plot box */
+.chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chart .area {
+  opacity: 0.15;
+}
+
+.chart .line {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ACC-GRAPH-68-PLOT-GRID: a very faint quarter grid under every plot, painted
+   by the box under its svg, so a scale change never moves it; the vertical
+   lines are the 60 s marks of the 240 s window; the small process-row graphs
+   stay bare (owner 2026-10-28: noisy there) */
+[data-chart]:not([data-chart="proc"]) {
+  background:
+    linear-gradient(var(--grid-line), var(--grid-line)) 25% 0 / 1px 100% no-repeat,
+    linear-gradient(var(--grid-line), var(--grid-line)) 50% 0 / 1px 100% no-repeat,
+    linear-gradient(var(--grid-line), var(--grid-line)) 75% 0 / 1px 100% no-repeat,
+    linear-gradient(var(--grid-line), var(--grid-line)) 0 25% / 100% 1px no-repeat,
+    linear-gradient(var(--grid-line), var(--grid-line)) 0 50% / 100% 1px no-repeat,
+    linear-gradient(var(--grid-line), var(--grid-line)) 0 75% / 100% 1px no-repeat;
+}
+
+/* ACC-GRAPH-67-SMOOTH-SCALE: a scale change scales the series group about the
+   plot floor by k0 * q^p, p animated 0 to 1, which shows the ceiling
+   from * (to / from)^p; app.js clocks the animation across swaps */
+@property --p {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
+.chart .rescale {
+  transform-box: view-box;
+  transform: scaleY(calc(var(--k0) * pow(var(--q), var(--p))));
+}
+
+@keyframes rescale {
+  from {
+    --p: 0;
+  }
+
+  to {
+    --p: 1;
+  }
+}
+
+[data-chart="cpu"] .area {
+  fill: var(--chart-cpu);
+}
+
+[data-chart="cpu"] .line {
+  stroke: var(--chart-cpu);
+}
+
+[data-chart="mem"] .area {
+  fill: var(--chart-mem-used);
+}
+
+[data-chart="mem"] .line {
+  stroke: var(--chart-mem-used);
+}
+
+[data-chart="proc-count"] .area {
+  fill: var(--chart-proc);
+}
+
+[data-chart="proc-count"] .line {
+  stroke: var(--chart-proc);
+}
+
+.net-down .area {
+  fill: var(--chart-net-down);
+}
+
+.net-down .line {
+  stroke: var(--chart-net-down);
+}
+
+.net-up .area {
+  fill: var(--chart-net-up);
+}
+
+.net-up .line {
+  stroke: var(--chart-net-up);
+}
+
+/* stat panels: readout tile, plot strip, foot */
+.stat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-tile {
+  flex: 0 0 var(--tile-h);
+  min-height: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0 10px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.stat-tile.centred {
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-value {
+  font-size: var(--stat-size);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--text-strong);
+}
+
+.stat-value.ok {
+  color: var(--ok);
+}
+
+.stat-value.warn {
+  color: var(--warn);
+}
+
+.stat-value.crit {
+  color: var(--crit);
+}
+
+/* the process total keeps the tile's left edge; its reserved digits fall
+   after it. CPU and memory end at a fixed x, so their unit stays */
+#p-proc-stat .stat-value {
+  text-align: left;
+}
+
+.stat-unit {
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.stat-na {
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stat-chart {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.stat-foot {
+  flex: 0 0 var(--foot-h);
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-10);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* the first item takes the free width, so no item's place depends on another's
+   text (DEF-VIEW-45-STAT-FOOT); a long top process name ends in an ellipsis */
+.stat-foot > :first-child {
+  flex: 1 1 0;
+}
+
+.stat-foot span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-foot b {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* Processes tile facts beside the total, two rows filled column by column
+   (ACC-VIEW-53-PROC-TILE) */
+.proc-facts {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: center;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
+  /* equal columns: no fact's place depends on a count's width
+     (ACC-LAYOUT-74-RESERVED-WIDTH) */
+  grid-auto-columns: 1fr;
+  column-gap: 8px;
+  padding-left: 2em;
+  font-size: var(--fs-10);
+  line-height: 1.25;
+  color: var(--muted);
+}
+
+.proc-facts b {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* network: paired plots on one shared time axis, legend beside them */
+.net-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--legend-w);
+  gap: 10px;
+  padding: 5px 8px 4px;
+}
+
+.net-plots {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.net-plot {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.net-plot .chart .line {
+  stroke-width: 2;
+}
+
+.xaxis {
+  position: relative;
+  flex: 0 0 14px;
+  font-size: var(--fs-9);
+  line-height: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.xaxis span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.xaxis span:nth-child(1) {
+  left: 0;
+  transform: none;
+}
+
+.xaxis span:nth-child(2) {
+  left: 25%;
+}
+
+.xaxis span:nth-child(3) {
+  left: 50%;
+}
+
+.xaxis span:nth-child(4) {
+  left: 75%;
+}
+
+.xaxis span:last-child {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.net-legend {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 2px 0 2px 10px;
+  overflow: hidden;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.legend-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 6px;
+  row-gap: 1px;
+  align-items: center;
+  min-width: 0;
+}
+
+.sw {
+  flex: none;
+  grid-row: 1 / span 5;
+  align-self: start;
+  width: 8px;
+  height: 8px;
+  margin-top: 3px;
+}
+
+.sw-down {
+  background: var(--chart-net-down);
+}
+
+.sw-up {
+  background: var(--chart-net-up);
+}
+
+.legend-name {
+  grid-column: 2;
+  font-size: var(--fs-10);
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.legend-value {
+  grid-column: 2;
+  font-size: var(--lg-v);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.legend-meta {
+  grid-column: 2;
+  overflow: hidden;
+  font-size: var(--fs-9);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* gpu load: the network panel's plot and legend, one series per device */
+#p-gpu .net-body {
+  grid-template-columns: minmax(0, 1fr) var(--gpu-legend-w);
+  container: gpu-body / size;
+}
+
+#p-gpu .net-legend {
+  gap: 8px;
+}
+
+#p-gpu .legend-name {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* a VRAM text wider than the entry ends in an ellipsis; the swatch, name and
+   load keep their place (DEF-VIEW-46-LEGEND-SHIFT) */
+#p-gpu .legend-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lg-model {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.lg-vram {
+  margin-left: 6px;
+  font-size: var(--fs-10);
+  font-weight: 400;
+  color: var(--text);
+}
+
+.gpu-series.g0 .area {
+  fill: var(--chart-gpu-0);
+}
+
+.gpu-series.g0 .line {
+  stroke: var(--chart-gpu-0);
+}
+
+.gpu-series.g1 .area {
+  fill: var(--chart-gpu-1);
+}
+
+.gpu-series.g1 .line {
+  stroke: var(--chart-gpu-1);
+}
+
+.gpu-series.g2 .area {
+  fill: var(--chart-gpu-2);
+}
+
+.gpu-series.g2 .line {
+  stroke: var(--chart-gpu-2);
+}
+
+.sw-gpu-0 {
+  background: var(--chart-gpu-0);
+}
+
+.sw-gpu-1 {
+  background: var(--chart-gpu-1);
+}
+
+.sw-gpu-2 {
+  background: var(--chart-gpu-2);
+}
+
+/* [data-gpu] lifts specificity to (1,2,0) so the later one-line legend-item display:flex rules cannot show a hidden GPU */
+#p-gpu [data-gpu][data-selected="false"] {
+  display: none;
+}
+
+.down {
+  color: var(--net-down-text);
+}
+
+.up-arrow {
+  color: var(--net-up-text);
+}
+
+/* gauges: 270-degree arc with ticks; the readout sits in its hollow
+   (ACC-GRAPH-42-GAUGE-TICKS), the details beside it */
+.gauge-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px 8px;
+  overflow: hidden;
+}
+
+.gauge {
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+  aspect-ratio: 108 / 114;
+}
+
+.gauge svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.g-track,
+.g-fill {
+  fill: none;
+  stroke-width: 8;
+}
+
+.g-track {
+  stroke: var(--meter-track);
+}
+
+.g-fill {
+  stroke: var(--ok);
+}
+
+.g-fill.warn {
+  stroke: var(--warn);
+}
+
+.g-fill.crit {
+  stroke: var(--crit);
+}
+
+.g-tick {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.g-tick.major {
+  stroke-width: 1.5;
+}
+
+.g-scale,
+.g-value,
+.g-label {
+  fill: currentColor;
+  text-anchor: middle;
+}
+
+.g-scale {
+  color: var(--muted);
+  font-size: 8px;
+  dominant-baseline: central;
+}
+
+/* the value ends and its unit starts at a fixed x, which centres the widest
+   form (100.0 %, 1023 GiB), so the unit stays when the value's width changes
+   (ACC-LAYOUT-74-RESERVED-WIDTH) */
+.g-value {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-anchor: end;
+}
+
+.g-unit {
+  text-anchor: start;
+  fill: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.g-label {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gauge[data-state="unavailable"] .g-label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* the facts and memory rows keep their text width; the arc gives up width */
+.gauge-side {
+  flex: 1 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* the CPU name (titled, ellipsised) shrinks before the core count */
+#p-cpu-gauge .head-right {
+  flex-shrink: 0;
+}
+
+.facts {
+  gap: 8px;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  font-size: var(--fs-10);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fact b {
+  overflow: hidden;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+
+.fact small {
+  font-size: var(--fs-9);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.mem-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-10);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mem-row:first-child {
+  border-top: 0;
+}
+
+.mem-row span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mem-row b {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* cores: btop's column-major list, one row per core - label, a meter
+   filling left to right, the number; both show the core's 1 s average
+   (ACC-VIEW-48-CORE-BARS). Label and value keep their width at every tier
+   (DEF-VIEW-37-CORE-LABEL); the meter is the part that shrinks. Colour as
+   btop's Cpu::draw (ACC-VIEW-56-CORE-COLOUR): the meter shows the cpu
+   gradient (--ok, --warn, --crit, from cpu_start, cpu_mid, cpu_end) up to the
+   value, the number takes the gradient colour at the value, % the text colour.
+   The mix runs in linear light, not btop's gamma sRGB: luminance then stays
+   between the stops, so the stops' 4.5:1 floor holds at every value */
+.cores-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--rows, 8), minmax(0, 1fr));
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0 6px;
+  padding: 4px 8px;
+  overflow: hidden;
+}
+
+.core-row {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  /* the 8 px glyph box is 9 px tall and can pass a 9.3 px row by a fraction
+     of a pixel: only the horizontal axis clips, so no label is cut */
+  overflow-x: clip;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.core-row .cl {
+  flex: none;
+}
+
+.core-row .meter {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 3px;
+}
+
+.core-row .meter::after {
+  inset: 0;
+  width: auto;
+  background: linear-gradient(in srgb-linear to right, var(--ok), var(--warn), var(--crit));
+  clip-path: inset(0 calc(100% - var(--value, 0) * 1%) 0 0);
+}
+
+/* start -> mid over 0-50, mid -> end over 50-100, as btop's generateGradients */
+.core-row .cv {
+  flex: none;
+  min-width: 4.6ch;
+  color: color-mix(in srgb-linear,
+    var(--crit) clamp(0%, (var(--value) - 50) * 2%, 100%),
+    color-mix(in srgb-linear, var(--warn) clamp(0%, var(--value) * 2%, 100%), var(--ok)));
+  text-align: right;
+}
+
+.core-row .cv i {
+  font-style: normal;
+  color: var(--text);
+}
+
+/* storage: btop's disk block, a used and a free meter per mount */
+.storage-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  padding: 2px 9px;
+  overflow: hidden;
+}
+
+.mount {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* btop drops the free row when the disks do not fit three rows each */
+.storage-body:has(> .mount:nth-of-type(3)) .mount-row.free {
+  display: none;
+}
+
+.mount-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--fs-11);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.mount-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mount-io {
+  font-size: var(--fs-10);
+  color: var(--muted);
+}
+
+.mount-head b {
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.mount-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 30px auto;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  font-size: var(--fs-10);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mount-row .meter {
+  height: 6px;
+}
+
+.mount-pct {
+  color: var(--text);
+  text-align: right;
+}
+
+.mount-size {
+  min-width: 52px;
+  text-align: right;
+}
+
+.meter {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--meter-track);
+}
+
+.meter::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--value, 0) * 1%);
+  background: var(--meter-color, var(--ok));
+}
+
+.meter[data-state="unavailable"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--meter-track) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+.meter[data-state="unavailable"]::after {
+  display: none;
+}
+
+.meter-used {
+  --meter-color: var(--chart-mem-used);
+}
+
+.meter-free {
+  --meter-color: var(--chart-mem-free);
+}
+
+/* processes */
+.proc-count {
+  flex: 0 0 auto;
+}
+
+.filter {
+  width: var(--filter-w);
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-10);
+  font-variant-numeric: tabular-nums;
+}
+
+.filter::placeholder {
+  color: var(--muted);
+}
+
+.proc-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--surface);
+}
+
+.ptable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--fs-11);
+}
+
+.ptable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: var(--row-h);
+  padding: 1px 8px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-10);
+  font-weight: 500;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ptable td {
+  height: var(--proc-row-h, var(--row-h));
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptable tbody tr:nth-child(even) {
+  background: var(--zebra);
+}
+
+.ptable tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.ptable .num {
+  text-align: right;
+}
+
+.ptable .mono {
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+}
+
+.cpu-ok {
+  color: var(--ok);
+}
+
+.cpu-warn {
+  color: var(--warn);
+}
+
+.cpu-crit {
+  color: var(--crit);
+}
+
+.cpu-zero {
+  color: var(--muted);
+}
+
+/* ACC-VIEW-52-PROC-GRAPH: btop's row graph left of Cpu%, in the Cpu% colour
+   (btop draws both in c_color); no text inside it. Centred on the text line,
+   it stays inside the line box, so a row with a graph centres its Cpu% at
+   the same height as a row without one (DEF-VIEW-47-CELL-SHIFT) */
+[data-chart="proc"] {
+  float: left;
+  width: 36px;
+  height: 12px;
+  margin-top: calc((1lh - 12px) / 2);
+}
+
+[data-chart="proc"] path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ACC-VIEW-58-PROC-VIEW: a collapsed row graphs its subtree, as its number
+   counts it; without a summed graph its own one stays. Below the top level
+   the server keeps no summed graph, so a deeper collapsed row shows none */
+.ptable tr:not([data-collapsed]) svg.sum,
+.ptable tr[data-collapsed] svg:has(+ svg.sum),
+.ptable tr[data-collapsed="deep"] svg {
+  display: none;
+}
+
+/* ACC-VIEW-59-PROC-SORT: each header sorts; the active one shows its direction */
+.ptable th > button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ptable th[aria-sort] {
+  color: var(--text);
+}
+
+.ptable th[aria-sort="descending"] > button::after,
+.ptable th[aria-sort="ascending"] > button::after {
+  content: "\25bc";
+  margin-left: 2px;
+}
+
+.ptable th[aria-sort="ascending"] > button::after {
+  content: "\25b2";
+}
+
+/* btop's tree prefix, one mono cell per level, and the triangle toggle */
+.ptable .tree {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.ptable .twisty {
+  padding: 0 2px 0 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+/* config popover: the only theme, mode, GPU, pause and layout controls, and
+   the server options (ACC-CONF-61-CONFIG-PAGES), on seven tabbed pages. It
+   scrolls inside itself when a page is taller than the viewport, so it never
+   adds page scroll; the tabs stay at its top. */
+.config {
+  position: fixed;
+  z-index: 40;
+  top: calc(var(--bar-h) + 6px);
+  right: 8px;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - var(--bar-h) - 14px);
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.config[hidden] {
+  display: none;
+}
+
+.cfg-tabs {
+  position: sticky;
+  z-index: 1;
+  /* the sticky edge is inset by the popover's 8 px padding */
+  top: -8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: -8px;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+/* seven labels fit one row of the 320 px popover */
+.opt.cfg-tab {
+  padding: 0 4px;
+}
+
+.cfg-page {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.cfg-page[hidden] {
+  display: none;
+}
+
+.cfg-note {
+  margin: 0;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* one server option: key left, control or value right, the answer below */
+.cfg-key {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 8px;
+  min-height: 18px;
+}
+
+.cfg-k,
+.cfg-val,
+.cfg-in {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.cfg-val,
+.cfg-key > .cfg-in,
+.cfg-key > .cfg-opts {
+  justify-self: end;
+  max-width: 100%;
+}
+
+.cfg-val {
+  text-align: right;
+}
+
+.opt.cfg-in {
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: text;
+}
+
+input.cfg-in {
+  width: 128px;
+  padding: 0 4px;
+}
+
+select.cfg-in {
+  cursor: pointer;
+}
+
+.cfg-msg {
+  grid-column: 1 / -1;
+  color: var(--text);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.cfg-msg:empty {
+  display: none;
+}
+
+.cfg-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.cfg-label {
+  font-size: 10px;
+  line-height: 18px;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cfg-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.opt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  background: var(--accent);
+}
+
+.opt.on {
+  border-color: var(--accent);
+  color: var(--chip-fg);
+}
+
+.opt.on::before {
+  opacity: 0.12;
+}
+
+select.opt {
+  height: 18px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
+.cfg-panels {
+  display: grid;
+  gap: 4px;
+}
+
+.cfg-panel-list {
+  display: grid;
+  gap: 3px;
+}
+
+.cfg-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 62px auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.cfg-panel-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cfg-sizes {
+  display: flex;
+  gap: 2px;
+}
+
+.cfg-sizes .opt {
+  width: 20px;
+  padding: 0;
+}
+
+#layout-reset {
+  justify-self: start;
+  margin-top: 2px;
+}
+
+/* right-click panel menu (ACC-VIEW-75-PANEL-MENU): the popover's layer and chips */
+.panel-menu {
+  position: fixed;
+  z-index: 41;
+  display: grid;
+  gap: 3px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.panel-menu[hidden] {
+  display: none;
+}
+
+/* the last shown panel: struck through, not dimmed, so the text keeps 4.5:1 */
+.panel-menu .opt[aria-disabled="true"] {
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+/* the GPU legend steps down by its own height, so a short band 3 (a stored
+   layout with proc, net or cpu-stat L) never clips it: type and gaps first,
+   then temperature · power, then one line per entry (the phone form).
+   shortcut: thresholds are sized for 3 entries; a 1-2 GPU host drops earlier */
+@container gpu-body (height < 149px) {
+  #p-gpu .net-legend {
+    gap: 3px;
+  }
+
+  #p-gpu .legend-item {
+    row-gap: 0;
+  }
+
+  #p-gpu .legend-value {
+    font-size: 13px;
+  }
+}
+
+@container gpu-body (height < 124px) {
+  #p-gpu .legend-meta {
+    display: none;
+  }
+}
+
+@container gpu-body (height < 94px) {
+  #p-gpu .legend-item {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  #p-gpu .legend-name {
+    flex: none;
+  }
+
+  #p-gpu .legend-value {
+    font-size: 12px;
+  }
+
+  .lg-vram {
+    font-size: 9px;
+  }
+
+  .lg-model {
+    display: none;
+  }
+}
+
+/* the wrapper of bands 1-3 is transparent except in the two-column form */
+.tele {
+  display: contents;
+}
+
+/* tier chip: names the tiers on screen once something is dropped; each
+   span's title lists the drops */
+.chip-tier {
+  --chip-hue: var(--muted);
+  border-color: var(--muted);
+  color: var(--chip-fg);
+}
+
+.chip-tier,
+.chip-tier > span {
+  display: none;
+}
+
+/* the GPU legend's container step (height < 124px) can drop temperature and
+   power at full and drop-p4; app.js then marks the chip .gpu-drop to name it */
+.chip-tier.gpu-drop {
+  display: inline-flex;
+}
+
+.chip-tier.gpu-drop > .tier-full-gpu {
+  display: inline;
+}
+
+/* drop-p4: host, clock and storage go */
+@media (max-width: 1100px), (max-height: 640px) {
+  :root [data-p="4"][data-field] {
+    display: none;
+  }
+
+  .chip-tier {
+    display: inline-flex;
+  }
+
+  .chip-tier > .tier-4 {
+    display: inline;
+  }
+
+  .chip-tier.gpu-drop > .tier-full-gpu,
+  .chip-tier.gpu-drop > .tier-4 {
+    display: none;
+  }
+
+  .chip-tier.gpu-drop > .tier-4-gpu {
+    display: inline;
+  }
+
+  /* storage is gone: in a container with no GPU band 3 holds only withheld headers */
+  .band[data-band="3"]:has([data-panel="cores"] [data-withheld]):has(.gpu-body > .unavailable) {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+}
+
+/* drop-p3: details go; values, plots, gauges and the P1 process columns stay */
+@media (max-width: 899px), (max-height: 640px) {
+  :root [data-p="3"][data-field],
+  .legend-meta,
+  .lg-model,
+  .ptable td:nth-child(3),
+  .ptable td:nth-child(4),
+  .ptable td:nth-child(5) {
+    display: none;
+  }
+
+  .chip-tier > .tier-4,
+  .chip-tier.gpu-drop > .tier-4-gpu {
+    display: none;
+  }
+
+  .chip-tier > .tier-3 {
+    display: inline;
+  }
+
+  :root {
+    --band-min-1: calc(var(--head-h) + var(--tile-h) + 16px);
+    --band-min-2: max(calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 1px) + 12px), calc(var(--head-h) + 112px));
+    --band-min-3: calc(var(--head-h) + 17px + 3 * (var(--lh-name) + var(--lh-val) + 1px) + 16px);
+    --band-min-4: 120px;
+  }
+
+  [data-panel="net"] {
+    --w: 6;
+  }
+
+  [data-panel="cpu-gauge"],
+  [data-panel="mem-gauge"] {
+    --w: 3;
+  }
+
+  .gauge-body {
+    justify-content: center;
+  }
+
+  .ptable {
+    table-layout: auto;
+  }
+
+  /* the auto-width Pid column reserves a 7-digit pid (pid_max 4194304), so a
+     new pid's width moves no column (ACC-LAYOUT-74-RESERVED-WIDTH) */
+  .ptable td:first-child {
+    min-width: calc(7ch + 16px);
+  }
+
+  /* the tree prefix would widen Program past the panel: the name ellipsizes instead */
+  .ptable td:has(> .tree) {
+    max-width: 0;
+  }
+}
+
+/* drop-p3 reached by height on a wide screen: the gauges are short, so they take less width */
+@media (min-width: 1101px) and (max-height: 640px) {
+  [data-panel="net"] {
+    --w: 8;
+  }
+
+  [data-panel="cpu-gauge"],
+  [data-panel="mem-gauge"] {
+    --w: 2;
+  }
+}
+
+/* drop-p2: the gauges go; GPU legend entries become one line (name, utilisation, VRAM) */
+@media (max-width: 599px), (max-height: 540px) {
+  :root [data-p="2"][data-field] {
+    display: none;
+  }
+
+  .chip-tier > .tier-3 {
+    display: none;
+  }
+
+  .chip-tier > .tier-2 {
+    display: inline;
+  }
+
+  /* the live chip drops its sample age in every state: with it the top bar overflows 360 and 390 px */
+  .chip-live .live-age {
+    display: none;
+  }
+
+  :root {
+    --gpu-legend-w: 192px;
+    --band-min-2: calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 1px) + 12px);
+    --band-min-3: calc(var(--head-h) + 60px);
+  }
+
+  /* the version stays (ACC-LAYOUT-62-VERSION): tighter bar spacing keeps 360 px PAUSED inside the bar */
+  .utility {
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  .utility-right {
+    gap: 3px;
+  }
+
+  .chip {
+    padding: 0 4px;
+  }
+
+  #p-gpu .legend-item {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  #p-gpu .legend-name {
+    flex: none;
+  }
+
+  #p-gpu .legend-value {
+    font-size: 12px;
+  }
+
+  .lg-vram {
+    font-size: 9px;
+  }
+}
+
+/* drop-p2, narrow: one column; cpu-stat above mem-stat */
+@media (max-width: 599px) and (min-height: 541px) {
+  :root {
+    --share-1: 152;
+    --share-2: 150;
+    --share-3: 150;
+    --share-4: 300;
+    --band-min-1: calc(2 * (var(--head-h) + var(--tile-h) + 16px) + var(--gap));
+  }
+
+  .band[data-band="1"] {
+    flex-direction: column;
+  }
+}
+
+/* drop-p2, short (landscape phones, short windows): P1 panels in the left
+   column, processes in the right */
+@media (max-height: 540px) {
+  :root {
+    --share-1: 76;
+    --share-2: 150;
+    --share-3: 150;
+  }
+
+  .page {
+    flex-direction: row;
+  }
+
+  .tele {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: var(--gap);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .tele:not(:has(> .band:not([hidden]))) {
+    display: none;
+  }
+
+  .band[data-band="4"] {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}

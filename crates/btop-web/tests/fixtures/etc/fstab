@@ -1,0 +1,6 @@
+# Fixture /etc/fstab, selected by use_fstab. btop reads only the mountpoint
+# field and skips it when it is "none" or "swap"; fstype comes from the mount
+# table, not from this file.
+/dev/sdd /       ext4 defaults 0 1
+/dev/sdd /home   ext4 defaults 0 2
+/dev/sdd none    swap sw       0 0

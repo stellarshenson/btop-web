@@ -1,0 +1,5 @@
+4246 3037 0:251 / / rw,relatime - overlay overlay rw,lowerdir=564508/fs:564399/fs,upperdir=/var/lib/desktop-containerd/daemon/io.containerd.snapshotter.v1.overlayfs/snapshots/564509/fs,workdir=/var/lib/desktop-containerd/daemon/io.containerd.snapshotter.v1.overlayfs/snapshots/564509/work
+4248 4246 0:397 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+4251 4246 0:400 / /sys rw,nosuid,nodev,noexec,relatime - sysfs sysfs rw
+4252 4251 0:25 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw,nsdelegate
+4266 4256 8:48 /data/docker/volumes/workspace/_data /home/lab/workspace rw,relatime master:31 - ext4 /dev/sdd rw

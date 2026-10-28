@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web small multiples</title>
+<style>
+html[data-theme="default"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #000000;
+  --surface-raised: #040404;
+  --surface-sunken: #040404;
+  --text: #cccccc;
+  --text-strong: #eeeeee;
+  --muted: #757575;
+  --accent: #b54040;
+  --selection-bg: #6a2f2f;
+  --selection-fg: #eeeeee;
+  --border: #5a5a5a;
+  --border-subtle: #2d2d2d;
+  --border-cpu: #556d59;
+  --border-mem: #6c6c4b;
+  --border-net: #5c588d;
+  --border-proc: #805252;
+  --ok: #77ca9b;
+  --warn: #cbc06c;
+  --crit: #dc4c4c;
+  --unavailable: #757575;
+  --meter-track: #5a5a5a;
+  --grid-line: #5a5a5a;
+  --chart-cpu: #77ca9b;
+  --chart-cpu-warn: #cbc06c;
+  --chart-cpu-crit: #dc4c4c;
+  --chart-mem-used: #ff4769;
+  --chart-mem-available: #ffb814;
+  --chart-mem-cached: #26c5ff;
+  --chart-mem-free: #dcff85;
+  --chart-net-down: #b0a9de;
+  --chart-net-up: #dcafde;
+  --chart-proc: #dcd179;
+  --status-ok: #77ca9b;
+  --status-warn: #cbc06c;
+  --status-crit: #dc4c4c;
+}
+
+html[data-theme="default"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-raised: #fbfbfb;
+  --surface-sunken: #fbfbfb;
+  --text: #333333;
+  --text-strong: #111111;
+  --muted: #767676;
+  --accent: #bf4a4a;
+  --selection-bg: #d09595;
+  --selection-fg: #111111;
+  --border: #949494;
+  --border-subtle: #cacaca;
+  --border-cpu: #849a88;
+  --border-mem: #96967b;
+  --border-net: #7672a7;
+  --border-proc: #ad7f7f;
+  --ok: #358859;
+  --warn: #938834;
+  --crit: #b32323;
+  --unavailable: #767676;
+  --meter-track: #949494;
+  --grid-line: #949494;
+  --chart-cpu: #358859;
+  --chart-cpu-warn: #938834;
+  --chart-cpu-crit: #b32323;
+  --chart-mem-used: #b80022;
+  --chart-mem-available: #c48900;
+  --chart-mem-cached: #009fd9;
+  --chart-mem-free: #577a00;
+  --chart-net-down: #282156;
+  --chart-net-up: #4e2150;
+  --chart-proc: #867b23;
+  --status-ok: #358859;
+  --status-warn: #938834;
+  --status-crit: #b32323;
+}
+
+html[data-theme="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #1d2021;
+  --surface-raised: #202223;
+  --surface-sunken: #202223;
+  --text: #a89984;
+  --text-strong: #ebdbb2;
+  --muted: #918573;
+  --accent: #d79921;
+  --selection-bg: #282828;
+  --selection-fg: #fabd2f;
+  --border: #a89984;
+  --border-subtle: #625c52;
+  --border-cpu: #a89984;
+  --border-mem: #a89984;
+  --border-net: #a89984;
+  --border-proc: #a89984;
+  --ok: #b8bb26;
+  --warn: #d79921;
+  --crit: #fb4934;
+  --unavailable: #918573;
+  --meter-track: #6a6a6a;
+  --grid-line: #a89984;
+  --chart-cpu: #b8bb26;
+  --chart-cpu-warn: #d79921;
+  --chart-cpu-crit: #fb4934;
+  --chart-mem-used: #fb4934;
+  --chart-mem-available: #fabd2f;
+  --chart-mem-cached: #83a598;
+  --chart-mem-free: #98971a;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #d3869b;
+  --chart-proc: #d79921;
+  --status-ok: #b8bb26;
+  --status-warn: #d79921;
+  --status-crit: #fb4934;
+}
+
+html[data-theme="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fbf1c7;
+  --surface-raised: #f7edc4;
+  --surface-sunken: #f7edc4;
+  --text: #3c3836;
+  --text-strong: #3c3836;
+  --muted: #736d60;
+  --accent: #cc241d;
+  --selection-bg: #f2e5bc;
+  --selection-fg: #8f3f71;
+  --border: #968976;
+  --border-subtle: #c8bd9e;
+  --border-cpu: #968976;
+  --border-mem: #968976;
+  --border-net: #968976;
+  --border-proc: #968976;
+  --ok: #427b58;
+  --warn: #b5811c;
+  --crit: #cc241d;
+  --unavailable: #736d60;
+  --meter-track: #948a70;
+  --grid-line: #968976;
+  --chart-cpu: #427b58;
+  --chart-cpu-warn: #b5811c;
+  --chart-cpu-crit: #cc241d;
+  --chart-mem-used: #cc241d;
+  --chart-mem-available: #b57614;
+  --chart-mem-cached: #427b58;
+  --chart-mem-free: #427b58;
+  --chart-net-down: #79740e;
+  --chart-net-up: #b57614;
+  --chart-proc: #af3a03;
+  --status-ok: #427b58;
+  --status-warn: #b5811c;
+  --status-crit: #cc241d;
+}
+
+html[data-theme="solarized"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #002b36;
+  --surface-raised: #052f39;
+  --surface-sunken: #052f39;
+  --text: #eee8d5;
+  --text-strong: #fdf6e3;
+  --muted: #80918b;
+  --accent: #b58900;
+  --selection-bg: #073642;
+  --selection-fg: #d6a200;
+  --border: #5e737a;
+  --border-subtle: #2f4f58;
+  --border-cpu: #5e737a;
+  --border-mem: #5e737a;
+  --border-net: #5e737a;
+  --border-proc: #5e737a;
+  --ok: #adc700;
+  --warn: #d6a200;
+  --crit: #e65317;
+  --unavailable: #80918b;
+  --meter-track: #55757d;
+  --grid-line: #5f747a;
+  --chart-cpu: #adc700;
+  --chart-cpu-warn: #d6a200;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #edb400;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #bad600;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #f56caf;
+  --chart-proc: #d6a200;
+  --status-ok: #adc700;
+  --status-warn: #d6a200;
+  --status-crit: #e65317;
+}
+
+html[data-theme="solarized"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #586e75;
+  --text-strong: #002b36;
+  --muted: #60747a;
+  --accent: #b48800;
+  --selection-bg: #eee8d5;
+  --selection-fg: #846400;
+  --border: #859191;
+  --border-subtle: #c1c4ba;
+  --border-cpu: #859191;
+  --border-mem: #859191;
+  --border-net: #859191;
+  --border-proc: #859191;
+  --ok: #849800;
+  --warn: #b48800;
+  --crit: #e65317;
+  --unavailable: #60747a;
+  --meter-track: #928e82;
+  --grid-line: #859191;
+  --chart-cpu: #849700;
+  --chart-cpu-warn: #b48800;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #b38800;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #839700;
+  --chart-net-down: #8589c9;
+  --chart-net-up: #e063a0;
+  --chart-proc: #b48800;
+  --status-ok: #849700;
+  --status-warn: #b48800;
+  --status-crit: #e65317;
+}
+
+html[data-theme="everforest"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #2d353b;
+  --surface-raised: #30383d;
+  --surface-sunken: #30383d;
+  --text: #d3c6aa;
+  --text-strong: #d3c6aa;
+  --muted: #a39c8a;
+  --accent: #e67e80;
+  --selection-bg: #3d484d;
+  --selection-fg: #dbbc7f;
+  --border: #767e81;
+  --border-subtle: #525a5e;
+  --border-cpu: #767e81;
+  --border-mem: #767e81;
+  --border-net: #767e81;
+  --border-proc: #767e81;
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --crit: #f85552;
+  --unavailable: #a39c8a;
+  --meter-track: #797e82;
+  --grid-line: #767e81;
+  --chart-cpu: #a7c080;
+  --chart-cpu-warn: #dbbc7f;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #a7c080;
+  --chart-mem-cached: #a7c080;
+  --chart-mem-free: #a7c080;
+  --chart-net-down: #7fbbb3;
+  --chart-net-up: #e67e80;
+  --chart-proc: #e67e80;
+  --status-ok: #a7c080;
+  --status-warn: #dbbc7f;
+  --status-crit: #f85552;
+}
+
+html[data-theme="everforest"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #5c6a72;
+  --text-strong: #5c6a72;
+  --muted: #67737a;
+  --accent: #d765b3;
+  --selection-bg: #4f585e;
+  --selection-fg: #ecc86b;
+  --border: #4f585e;
+  --border-subtle: #a6a7a0;
+  --border-cpu: #4f585e;
+  --border-mem: #4f585e;
+  --border-net: #4f585e;
+  --border-proc: #4f585e;
+  --ok: #849701;
+  --warn: #b98500;
+  --crit: #f85552;
+  --unavailable: #67737a;
+  --meter-track: #879189;
+  --grid-line: #4f585e;
+  --chart-cpu: #849701;
+  --chart-cpu-warn: #b98500;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #849701;
+  --chart-mem-cached: #849701;
+  --chart-mem-free: #849701;
+  --chart-net-down: #3994c5;
+  --chart-net-up: #d765b3;
+  --chart-proc: #d765b3;
+  --status-ok: #849701;
+  --status-warn: #b98500;
+  --status-crit: #f85552;
+}
+
+html[data-theme="flexoki"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #100f0f;
+  --surface-raised: #141313;
+  --surface-sunken: #141313;
+  --text: #cecdc3;
+  --text-strong: #fffcf0;
+  --muted: #7c7b75;
+  --accent: #da702c;
+  --selection-bg: #403e3c;
+  --selection-fg: #fffcf0;
+  --border: #615f5e;
+  --border-subtle: #383736;
+  --border-cpu: #4385be;
+  --border-mem: #879a39;
+  --border-net: #ce5d97;
+  --border-proc: #3aa99f;
+  --ok: #3aa99f;
+  --warn: #d0a215;
+  --crit: #d14d41;
+  --unavailable: #7c7b75;
+  --meter-track: #61605e;
+  --grid-line: #615f5e;
+  --chart-cpu: #3aa99f;
+  --chart-cpu-warn: #d0a215;
+  --chart-cpu-crit: #d14d41;
+  --chart-mem-used: #d14d41;
+  --chart-mem-available: #da702c;
+  --chart-mem-cached: #3aa99f;
+  --chart-mem-free: #879a39;
+  --chart-net-down: #3aa99f;
+  --chart-net-up: #8b7ec8;
+  --chart-proc: #d0a215;
+  --status-ok: #3aa99f;
+  --status-warn: #d0a215;
+  --status-crit: #d14d41;
+}
+
+html[data-theme="flexoki"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fffcf0;
+  --surface-raised: #fbf8ec;
+  --surface-sunken: #fbf8ec;
+  --text: #343331;
+  --text-strong: #100f0f;
+  --muted: #76746f;
+  --accent: #bc5215;
+  --selection-bg: #e6e4d9;
+  --selection-fg: #100f0f;
+  --border: #93928b;
+  --border-subtle: #c9c7be;
+  --border-cpu: #205ea6;
+  --border-mem: #66800b;
+  --border-net: #a02f6f;
+  --border-proc: #24837b;
+  --ok: #24837b;
+  --warn: #ad8301;
+  --crit: #af3029;
+  --unavailable: #76746f;
+  --meter-track: #93928b;
+  --grid-line: #93928b;
+  --chart-cpu: #24837b;
+  --chart-cpu-warn: #ad8301;
+  --chart-cpu-crit: #af3029;
+  --chart-mem-used: #af3029;
+  --chart-mem-available: #bc5215;
+  --chart-mem-cached: #24837b;
+  --chart-mem-free: #66800b;
+  --chart-net-down: #24837b;
+  --chart-net-up: #5e409d;
+  --chart-proc: #ad8301;
+  --status-ok: #24837b;
+  --status-warn: #ad8301;
+  --status-crit: #af3029;
+}
+
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+.page {
+  height: 100%;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-rows: 30px minmax(0, 1fr);
+  column-gap: 18px;
+  row-gap: 8px;
+}
+
+.top {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.brand {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.brand span { color: var(--muted); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.clock, .interval { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--border));
+}
+.up { text-transform: uppercase; letter-spacing: 0.03em; }
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); color: var(--text-strong); }
+.chip-live b { font-family: var(--mono); font-weight: 400; color: var(--text); }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.lamp { width: 4px; height: 4px; background: var(--ok); }
+.chip-live.paused .lamp { background: var(--warn); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); color: var(--text-strong); cursor: pointer; }
+
+/* nine strips, hairline rules only */
+.strips {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(9, minmax(0, 1fr));
+}
+.strip {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 136px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.strip:last-child { border-bottom: 0; }
+.name { min-width: 0; align-self: center; padding: 0 12px 0 2px; }
+.lbl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+}
+.dot { flex: 0 0 auto; width: 5px; height: 5px; background: transparent; }
+.strip[data-selected="true"] .dot { background: var(--accent); }
+.strip[data-selected="true"] .lbl { color: var(--text-strong); }
+.meta { display: block; margin-top: 3px; font-size: 10px; line-height: 1.35; color: var(--muted); }
+.meta span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.plot { position: relative; align-self: stretch; min-width: 0; min-height: 0; }
+.canvas { position: absolute; inset: 10px 0; }
+.canvas svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.line {
+  fill: none;
+  stroke: var(--hue, var(--chart-cpu));
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.end { fill: var(--hue, var(--chart-cpu)); }
+.read {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 136px;
+  padding-left: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.read b { font-size: 15px; font-weight: 600; line-height: 1; color: var(--text-strong); }
+.read .unit { font-size: 10px; color: var(--muted); }
+.read .unit.pct { margin-left: -3px; }
+
+/* compact process panel */
+.procs {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-left: 16px;
+  border-left: 1px solid var(--border-subtle);
+}
+.proc-head {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.proc-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.proc-count { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.filter {
+  margin-left: auto;
+  width: 96px;
+  height: 18px;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.filter::placeholder { color: var(--muted); }
+.proc-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--surface);
+}
+.proc-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.proc-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 20px;
+  padding: 0 4px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.proc-table td {
+  height: 36px;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proc-table .num { text-align: right; }
+.c-pid { width: 66px; }
+.c-thr { width: 52px; }
+.c-mem { width: 62px; }
+.c-cpu { width: 52px; }
+.proc-table tbody tr:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--muted); }
+
+/* config popover */
+.config {
+  position: fixed;
+  z-index: 40;
+  width: 248px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 11px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label {
+  font-family: var(--sans);
+  font-size: 10px;
+  line-height: 18px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  background: var(--accent);
+}
+.opt.on { border-color: var(--accent); color: var(--text-strong); }
+.opt.on::before { opacity: 0.12; }
+
+@media (max-width: 899px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 30px 396px minmax(0, 1fr);
+    column-gap: 0;
+    row-gap: 6px;
+  }
+  .top { grid-column: 1; grid-row: 1; gap: 10px; }
+  .brand span { display: none; }
+  .clock, .interval { display: none; }
+  .strips { grid-column: 1; grid-row: 2; grid-template-rows: repeat(9, 44px); }
+  .strip { grid-template-columns: 88px minmax(0, 1fr) 84px; }
+  .name { padding-right: 8px; }
+  .meta { display: none; }
+  .lbl { font-size: 9px; letter-spacing: 0.06em; }
+  .canvas { inset: 6px 0; }
+  .read { width: 84px; padding-left: 8px; }
+  .read b { font-size: 12px; }
+  .read .unit { font-size: 9px; }
+  .procs {
+    grid-column: 1;
+    grid-row: 3;
+    padding-left: 0;
+    padding-top: 6px;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .proc-head { flex-basis: 24px; }
+  .proc-table { table-layout: auto; }
+  .proc-table td { height: 24px; }
+  .proc-table th:nth-child(3), .proc-table td:nth-child(3) { display: none; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="top">
+    <span class="brand">btop-web <span>/ small multiples</span></span>
+    <span class="top-right">
+      <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word up">live</span><b id="sample-age">0.4 s</b></span>
+      <span class="clock">06:12</span>
+      <span class="interval">2000 ms</span>
+      <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config"><span class="up">config</span></button>
+    </span>
+  </header>
+
+  <section class="strips" aria-label="Host metrics as sparkline strips">
+    <article class="strip" id="strip-cpu" style="--hue: var(--chart-cpu)">
+      <div class="name">
+        <span class="lbl">cpu</span>
+        <span class="meta"><span>3.99 GHz &middot; load 96 95 94</span><span>64 cores</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-cpu" data-strip="cpu" role="img" aria-label="CPU utilisation history, 4.8 percent now"></div></div>
+      <div class="read"><b>4.8</b><span class="unit pct">%</span></div>
+    </article>
+
+    <article class="strip" id="strip-mem" style="--hue: var(--chart-mem-used)">
+      <div class="name">
+        <span class="lbl">memory</span>
+        <span class="meta"><span>of 503 GiB &middot; 8% used</span><span>cached 253 &middot; free 184 GiB</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-mem" data-strip="mem" role="img" aria-label="Memory used history, 39.7 of 503 GiB"></div></div>
+      <div class="read"><b>39.7</b><span class="unit">GiB</span></div>
+    </article>
+
+    <article class="strip" id="strip-swap" style="--hue: var(--chart-mem-cached)">
+      <div class="name">
+        <span class="lbl">swap</span>
+        <span class="meta"><span>of 128 GiB &middot; 2% used</span><span>free 98%</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-swap" data-strip="swap" role="img" aria-label="Swap used history, 2.9 of 128 GiB"></div></div>
+      <div class="read"><b>2.9</b><span class="unit">GiB</span></div>
+    </article>
+
+    <article class="strip" id="strip-down" style="--hue: var(--chart-net-down)">
+      <div class="name">
+        <span class="lbl">net down</span>
+        <span class="meta"><span>eth0 &middot; 8.56 Mibps</span><span>peak 62.1 Mibps &middot; 391 GiB</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-down" data-strip="down" role="img" aria-label="Network download history, 1.07 MiB/s"></div></div>
+      <div class="read"><b>1.07</b><span class="unit">MiB/s</span></div>
+    </article>
+
+    <article class="strip" id="strip-up" style="--hue: var(--chart-net-up)">
+      <div class="name">
+        <span class="lbl">net up</span>
+        <span class="meta"><span>eth0 &middot; 7.34 Mibps</span><span>peak 10.0 Mibps &middot; 391 GiB</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-up" data-strip="up" role="img" aria-label="Network upload history, 940 KiB/s"></div></div>
+      <div class="read"><b>940</b><span class="unit">KiB/s</span></div>
+    </article>
+
+    <article class="strip gpu" id="strip-gpu0" data-gpu="0" data-selected="false" style="--hue: var(--chart-cpu)">
+      <div class="name">
+        <span class="lbl"><i class="dot"></i>gpu 0</span>
+        <span class="meta"><span>RTX PRO 4000 Blackwell</span><span>452M / 24G &middot; 36 C &middot; 3.9 W</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-gpu0" data-strip="gpu0" role="img" aria-label="GPU 0 utilisation history, 0 percent"></div></div>
+      <div class="read"><b>0</b><span class="unit pct">%</span></div>
+    </article>
+
+    <article class="strip gpu" id="strip-gpu1" data-gpu="1" data-selected="true" style="--hue: var(--chart-cpu)">
+      <div class="name">
+        <span class="lbl"><i class="dot"></i>gpu 1</span>
+        <span class="meta"><span>RTX PRO 6000 Blackwell Max-Q</span><span>64M / 98G &middot; 37 C &middot; 14.1 W</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-gpu1" data-strip="gpu1" role="img" aria-label="GPU 1 utilisation history, 0 percent"></div></div>
+      <div class="read"><b>0</b><span class="unit pct">%</span></div>
+    </article>
+
+    <article class="strip gpu" id="strip-gpu2" data-gpu="2" data-selected="false" style="--hue: var(--chart-cpu)">
+      <div class="name">
+        <span class="lbl"><i class="dot"></i>gpu 2</span>
+        <span class="meta"><span>RTX PRO 5000 72GB</span><span>853M / 73G &middot; 37 C &middot; 21.9 W</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-gpu2" data-strip="gpu2" role="img" aria-label="GPU 2 utilisation history, 1 percent"></div></div>
+      <div class="read"><b>1</b><span class="unit pct">%</span></div>
+    </article>
+
+    <article class="strip" id="strip-disk" style="--hue: var(--chart-proc)">
+      <div class="name">
+        <span class="lbl">disk</span>
+        <span class="meta"><span>root /</span><span>/home 66% &middot; nas-shared 31%</span></span>
+      </div>
+      <div class="plot"><div class="canvas" id="c-disk" data-strip="disk" role="img" aria-label="Root filesystem usage history, 66 percent"></div></div>
+      <div class="read"><b>66</b><span class="unit pct">%</span></div>
+    </article>
+  </section>
+
+  <section class="procs" aria-labelledby="proc-title">
+    <header class="proc-head">
+      <h2 class="proc-title" id="proc-title">processes</h2>
+      <span class="proc-count" id="proc-count">22/249</span>
+      <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+    </header>
+    <div class="proc-scroll">
+      <table class="proc-table">
+        <caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">Processes sorted by CPU descending</caption>
+        <thead>
+          <tr>
+            <th class="num c-pid" scope="col">Pid</th>
+            <th scope="col">Program</th>
+            <th class="num c-thr" scope="col">Threads</th>
+            <th class="num c-mem" scope="col">MemB</th>
+            <th class="num c-cpu" scope="col">Cpu%</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">theme</span>
+    <div class="cfg-opts" data-group="theme">
+      <button class="opt on" type="button" data-value="default">default</button>
+      <button class="opt" type="button" data-value="gruvbox">gruvbox</button>
+      <button class="opt" type="button" data-value="solarized">solarized</button>
+      <button class="opt" type="button" data-value="everforest">everforest</button>
+      <button class="opt" type="button" data-value="flexoki">flexoki</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">mode</span>
+    <div class="cfg-opts" data-group="mode">
+      <button class="opt on" type="button" data-value="dark">dark</button>
+      <button class="opt" type="button" data-value="light">light</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">gpu</span>
+    <div class="cfg-opts" data-group="gpu">
+      <button class="opt" type="button" data-value="0">0</button>
+      <button class="opt on" type="button" data-value="1">1</button>
+      <button class="opt" type="button" data-value="2">2</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">pause</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  /* ---------- sample arrays (same mock data as the base) ---------- */
+  function series(n, fn) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(fn(i));
+    return out;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var memUsed = series(24, function (i) { return 8 + 0.5 * Math.sin(i * 0.55 + 0.4); });
+  memUsed[23] = 8;
+
+  var swapData = series(24, function (i) {
+    return 2.3 + 0.18 * Math.sin(i * 0.5 + 0.7) + 0.05 * Math.sin(i * 1.7);
+  });
+  swapData[23] = 2.3;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+
+  var netUp = series(64, function (i) {
+    var v = 0.08 + 0.16 * Math.abs(Math.sin(i * 0.41 + 1)) + 0.08 * Math.abs(Math.sin(i * 1.9));
+    [10, 26, 40, 55].forEach(function (b) { v += 0.9 * Math.exp(-Math.pow((i - b) / 1.6, 2)); });
+    return clamp(v, 0, 1.5);
+  });
+  netUp[63] = 0.918;
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[31] = 0;
+  gpu1[31] = 0;
+  gpu2[31] = 1;
+
+  var diskData = series(24, function (i) { return 66 + 0.35 * Math.sin(i * 0.33 + 0.4); });
+  diskData[23] = 66;
+
+  /* ---------- PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes ---------- */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return { line: line };
+  }
+
+  var STRIPS = {
+    cpu: { data: cpuData, min: 0, max: 25 },
+    mem: { data: memUsed, min: 6, max: 10 },
+    swap: { data: swapData, min: 2, max: 2.6 },
+    down: { data: netDown, min: 0, max: 2.2 },
+    up: { data: netUp, min: 0, max: 1.6 },
+    gpu0: { data: gpu0, min: 0, max: 4 },
+    gpu1: { data: gpu1, min: 0, max: 4 },
+    gpu2: { data: gpu2, min: 0, max: 4 },
+    disk: { data: diskData, min: 64, max: 68 }
+  };
+
+  function drawStrip(key) {
+    var cfg = STRIPS[key];
+    var strip = document.getElementById("strip-" + key);
+    var canvas = document.getElementById("c-" + key);
+    if (!cfg || !strip || !canvas) return;
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    if (!w || !h) return;
+    var d = pchipPath(cfg.data, w, h, cfg.min, cfg.max);
+    var last = cfg.data[cfg.data.length - 1];
+    var yl = h - 1 - clamp((last - cfg.min) / (cfg.max - cfg.min), 0, 1) * (h - 2);
+    canvas.innerHTML =
+      '<svg viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="line" d="' + d.line + '"/>' +
+      '<circle class="end" cx="' + round2(w) + '" cy="' + round2(yl) + '" r="2.2"/>' +
+      "</svg>";
+    var read = strip.querySelector(".read");
+    var sr = strip.getBoundingClientRect();
+    var cr = canvas.getBoundingClientRect();
+    var top = cr.top - sr.top + yl;
+    top = Math.max(14, Math.min(sr.height - 12, top));
+    read.style.top = top + "px";
+  }
+
+  function drawAll() { Object.keys(STRIPS).forEach(drawStrip); }
+
+  /* ---------- process table (same rows as the base) ---------- */
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  var procBody = document.getElementById("proc-body");
+  procBody.innerHTML = PROCS.map(function (p) {
+    var cpu = p[6];
+    var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+    return "<tr><td class=\"num\">" + p[0] + "</td><td title=\"" + p[2] + "\">" + p[1] +
+      "</td><td class=\"num\">" + p[3] + "</td><td class=\"num\">" + p[5] +
+      "</td><td class=\"num " + cls + "\">" + cpu.toFixed(1) + "</td></tr>";
+  }).join("");
+
+  var filter = document.getElementById("filter");
+  var procCount = document.getElementById("proc-count");
+
+  function applyFilter() {
+    var q = filter.value.trim().toLowerCase();
+    var visible = 0;
+    Array.prototype.forEach.call(procBody.rows, function (tr) {
+      var hit = q.length === 0 || tr.textContent.toLowerCase().indexOf(q) !== -1;
+      tr.hidden = !hit;
+      if (hit) visible++;
+    });
+    procCount.textContent = visible + "/249";
+  }
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      filter.value = "";
+      applyFilter();
+    }
+  });
+
+  /* ---------- config popover ---------- */
+  var config = document.getElementById("config");
+  var toggles = Array.prototype.slice.call(document.querySelectorAll(".config-toggle"));
+
+  function setExpanded(open) {
+    toggles.forEach(function (btn) { btn.setAttribute("aria-expanded", String(open)); });
+  }
+  function positionConfig(btn) {
+    var r = btn.getBoundingClientRect();
+    config.style.visibility = "hidden";
+    config.hidden = false;
+    var left = Math.max(6, Math.min(window.innerWidth - config.offsetWidth - 6, r.right - config.offsetWidth));
+    config.style.left = left + "px";
+    config.style.top = (r.bottom + 4) + "px";
+    config.style.visibility = "";
+  }
+  toggles.forEach(function (btn) {
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (config.hidden) positionConfig(btn);
+      else config.hidden = true;
+      setExpanded(!config.hidden);
+    });
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+
+  var state = { theme: "default", mode: "dark", gpu: "1", paused: false };
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      var value = btn.getAttribute("data-value");
+      if (name === "gpu") {
+        state.gpu = value;
+        Array.prototype.forEach.call(document.querySelectorAll("[data-gpu]"), function (g) {
+          g.setAttribute("data-selected", String(g.getAttribute("data-gpu") === value));
+        });
+      } else {
+        state[name] = value;
+        root.setAttribute("data-" + name, value);
+      }
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  pauseBtn.addEventListener("click", function () {
+    state.paused = !state.paused;
+    pauseBtn.classList.toggle("on", state.paused);
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "resume" : "pause";
+    Array.prototype.forEach.call(document.querySelectorAll(".chip-live"), function (chip) {
+      chip.classList.toggle("paused", state.paused);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".live-word"), function (word) {
+      word.textContent = state.paused ? "paused" : "live";
+    });
+  });
+
+  /* ---------- first paint and resize ---------- */
+  drawAll();
+  applyFilter();
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function () { drawAll(); });
+    Array.prototype.forEach.call(document.querySelectorAll(".canvas"), function (el) { ro.observe(el); });
+  }
+  window.addEventListener("resize", drawAll);
+})();
+</script>
+</body>
+</html>

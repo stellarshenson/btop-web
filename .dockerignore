@@ -1,0 +1,6 @@
+target/
+.git/
+screenshots/
+tmp/
+**/.playwright-mcp
+**/.ipynb_checkpoints

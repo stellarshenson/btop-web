@@ -1,0 +1,1573 @@
+<!doctype html>
+<html lang="en" data-theme="grafana" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web - 05.06 adaptive 2 - panels adapt to their own size</title>
+<style>
+html[data-theme="grafana"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #111217;
+  --panel: #181b1f;
+  --panel-2: #1f2326;
+  --border: #2f353a;
+  --border-weak: #24282c;
+  --text: #d8d9da;
+  --strong: #f4f5f5;
+  --dim: #9fa2a7;
+  --ok: #73bf69;
+  --warn: #f2cc0c;
+  --crit: #f2495c;
+  --accent: #ff9830;
+  --c-cpu: #73bf69;
+  --c-mem: #5794f2;
+  --c-down: #5794f2;
+  --c-up: #ff9830;
+  --c-gpu-0: #73bf69;
+  --c-gpu-1: #b877d9;
+  --c-gpu-2: #fade2a;
+  --track: #2f353a;
+  --chip-fg: #d8d9da;
+  --border-control: #2f353a;
+  --stripe: rgba(255, 255, 255, 0.02);
+  --hover: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="grafana"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #f4f5f5;
+  --panel: #ffffff;
+  --panel-2: #f4f5f5;
+  --border: #cdd2d7;
+  --border-weak: #e2e5e8;
+  --text: #464c54;
+  --strong: #1f2328;
+  --dim: #57606a;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --crit: #cf222e;
+  --accent: #bc4c00;
+  --c-cpu: #1a7f37;
+  --c-mem: #0b5cad;
+  --c-down: #0b5cad;
+  --c-up: #bc4c00;
+  --c-gpu-0: #1a7f37;
+  --c-gpu-1: #8250df;
+  --c-gpu-2: #9a6700;
+  --track: #d8dde2;
+  --chip-fg: #464c54;
+  --border-control: #cdd2d7;
+  --stripe: rgba(0, 0, 0, 0.025);
+  --hover: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #1b1d1e;
+  --panel: #1d2021;
+  --panel-2: #202223;
+  --border: #a89984;
+  --border-weak: #625c52;
+  --text: #a89984;
+  --strong: #ebdbb2;
+  --dim: #918573;
+  --ok: #b8bb26;
+  --warn: #d79921;
+  --crit: #fb4934;
+  --accent: #d79921;
+  --c-cpu: #b8bb26;
+  --c-mem: #fb4934;
+  --c-down: #a3a8f7;
+  --c-up: #d3869b;
+  --c-gpu-0: #b8bb26;
+  --c-gpu-1: #83a598;
+  --c-gpu-2: #fe8019;
+  --track: #6a6a6a;
+  --chip-fg: #a89984;
+  --border-control: #a89984;
+  --stripe: rgba(0, 0, 0, 0.02);
+  --hover: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #e7deb7;
+  --panel: #fbf1c7;
+  --panel-2: #f7edc4;
+  --border: #968976;
+  --border-weak: #c8bd9e;
+  --text: #3c3836;
+  --strong: #3c3836;
+  --dim: #736d60;
+  --ok: #417957;
+  --warn: #8f6616;
+  --crit: #cc241d;
+  --accent: #cc241d;
+  --c-cpu: #427b58;
+  --c-mem: #cc241d;
+  --c-down: #79740e;
+  --c-up: #b57614;
+  --c-gpu-0: #79740e;
+  --c-gpu-1: #076678;
+  --c-gpu-2: #af3a03;
+  --track: #948a70;
+  --chip-fg: #3c3836;
+  --border-control: #968976;
+  --stripe: rgba(255, 255, 255, 0.03);
+  --hover: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="solarized"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #002832;
+  --panel: #002b36;
+  --panel-2: #052f39;
+  --border: #5e737a;
+  --border-weak: #2f4f58;
+  --text: #eee8d5;
+  --strong: #fdf6e3;
+  --dim: #80918b;
+  --ok: #adc700;
+  --warn: #d6a200;
+  --crit: #e9652f;
+  --accent: #b58900;
+  --c-cpu: #adc700;
+  --c-mem: #e02f30;
+  --c-down: #a3a8f7;
+  --c-up: #f56caf;
+  --c-gpu-0: #adc700;
+  --c-gpu-1: #2aa198;
+  --c-gpu-2: #f56caf;
+  --track: #55757d;
+  --chip-fg: #eee8d5;
+  --border-control: #5e737a;
+  --stripe: rgba(0, 0, 0, 0.02);
+  --hover: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="solarized"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #e9e2d1;
+  --panel: #fdf6e3;
+  --panel-2: #faf3e1;
+  --border: #859191;
+  --border-weak: #c1c4ba;
+  --text: #586e75;
+  --strong: #002b36;
+  --dim: #60747a;
+  --ok: #687800;
+  --warn: #8f6c00;
+  --crit: #c64714;
+  --accent: #b48800;
+  --c-cpu: #849700;
+  --c-mem: #e02f30;
+  --c-down: #8589c9;
+  --c-up: #e063a0;
+  --c-gpu-0: #687800;
+  --c-gpu-1: #268bd2;
+  --c-gpu-2: #d33682;
+  --track: #928e82;
+  --chip-fg: #556a71;
+  --border-control: #859191;
+  --stripe: rgba(255, 255, 255, 0.03);
+  --hover: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="everforest"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #293136;
+  --panel: #2d353b;
+  --panel-2: #30383d;
+  --border: #767e81;
+  --border-weak: #525a5e;
+  --text: #d3c6aa;
+  --strong: #d3c6aa;
+  --dim: #a39c8a;
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --crit: #f9716e;
+  --accent: #e67e80;
+  --c-cpu: #a7c080;
+  --c-mem: #f85552;
+  --c-down: #7fbbb3;
+  --c-up: #e67e80;
+  --c-gpu-0: #a7c080;
+  --c-gpu-1: #d699b6;
+  --c-gpu-2: #e69875;
+  --track: #797e82;
+  --chip-fg: #d3c6aa;
+  --border-control: #767e81;
+  --stripe: rgba(0, 0, 0, 0.02);
+  --hover: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="everforest"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #e9e2d1;
+  --panel: #fdf6e3;
+  --panel-2: #faf3e1;
+  --border: #4f585e;
+  --border-weak: #a6a7a0;
+  --text: #5c6a72;
+  --strong: #5c6a72;
+  --dim: #67737a;
+  --ok: #697801;
+  --warn: #936900;
+  --crit: #c64442;
+  --accent: #d765b3;
+  --c-cpu: #849701;
+  --c-mem: #f85552;
+  --c-down: #3994c5;
+  --c-up: #d765b3;
+  --c-gpu-0: #697801;
+  --c-gpu-1: #3a94c5;
+  --c-gpu-2: #d765b3;
+  --track: #879189;
+  --chip-fg: #5b6971;
+  --border-control: #4f585e;
+  --stripe: rgba(255, 255, 255, 0.03);
+  --hover: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="flexoki"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #0f0e0e;
+  --panel: #100f0f;
+  --panel-2: #141313;
+  --border: #615f5e;
+  --border-weak: #383736;
+  --text: #cecdc3;
+  --strong: #fffcf0;
+  --dim: #7c7b75;
+  --ok: #3aa99f;
+  --warn: #d0a215;
+  --crit: #d25044;
+  --accent: #da702c;
+  --c-cpu: #3aa99f;
+  --c-mem: #d14d41;
+  --c-down: #3aa99f;
+  --c-up: #8b7ec8;
+  --c-gpu-0: #3aa99f;
+  --c-gpu-1: #8b7ec8;
+  --c-gpu-2: #d0a215;
+  --track: #61605e;
+  --chip-fg: #cecdc3;
+  --border-control: #615f5e;
+  --stripe: rgba(0, 0, 0, 0.02);
+  --hover: rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="flexoki"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #ebe8dd;
+  --panel: #fffcf0;
+  --panel-2: #fbf8ec;
+  --border: #93928b;
+  --border-weak: #c9c7be;
+  --text: #343331;
+  --strong: #100f0f;
+  --dim: #76746f;
+  --ok: #24817a;
+  --warn: #936f01;
+  --crit: #af3029;
+  --accent: #bc5215;
+  --c-cpu: #24837b;
+  --c-mem: #af3029;
+  --c-down: #24837b;
+  --c-up: #5e409d;
+  --c-gpu-0: #24837b;
+  --c-gpu-1: #5e409d;
+  --c-gpu-2: #bc5215;
+  --track: #93928b;
+  --chip-fg: #343331;
+  --border-control: #93928b;
+  --stripe: rgba(255, 255, 255, 0.03);
+  --hover: rgba(255, 255, 255, 0.05);
+}
+
+:root {
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+button, input { font-family: var(--ui); color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+/* slim utility bar: page chrome, CONFIG at its right end */
+.utility {
+  flex: 0 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 1px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border-weak);
+}
+.brand { font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: 0.01em; color: var(--strong); white-space: nowrap; }
+.brand span { color: var(--dim); }
+.utility-meta { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.utility-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.utility-clock { font-size: 10px; color: var(--dim); white-space: nowrap; }
+
+/* 12-column Grafana grid, 8 px gutters */
+.page {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: 116px 214px 190px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.ph {
+  flex: 0 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-weak);
+}
+.ph h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1; letter-spacing: 0.01em; color: var(--text); white-space: nowrap; }
+.ph .head-right { margin-left: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ph .meta { font-size: 10px; color: var(--dim); white-space: nowrap; }
+
+/* house chip: 1 px border, 2 px radius, uppercase, 12% tint */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border-control, var(--border));
+  border-radius: 2px;
+  background: none;
+  color: var(--chip-fg);
+  font-family: var(--ui);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.chip::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0.12; background: var(--chip-hue, var(--border-control, var(--border))); }
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); }
+.chip-live b { font-weight: 400; color: var(--chip-fg); text-transform: none; letter-spacing: 0; }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.lamp { width: 4px; height: 4px; background: var(--ok); }
+.chip-live.paused .lamp { background: var(--warn); }
+.chip-readonly { --chip-hue: var(--warn); border-color: var(--warn); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); cursor: pointer; }
+
+/* stat panels: readout tile, sparkline strip, foot - no text over the plot */
+.stat { grid-column: span 3; }
+.stat-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.stat-tile { flex: 0 0 42px; display: flex; align-items: baseline; gap: 4px; padding: 0 10px; white-space: nowrap; overflow: hidden; }
+.stat-value { font-size: 32px; font-weight: 600; line-height: 1.2; letter-spacing: -0.015em; color: var(--strong); }
+.stat-value.ok { color: var(--ok); }
+.stat-unit { font-size: 12px; font-weight: 500; line-height: 1.2; color: var(--dim); }
+.stat-chart { flex: 1 1 auto; min-height: 0; pointer-events: none; }
+#proc-stat .stat-tile { flex: 1 1 auto; align-items: center; }
+.stat-foot {
+  flex: 0 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  border-top: 1px solid var(--border-weak);
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.stat-foot span { overflow: hidden; text-overflow: ellipsis; }
+.stat-foot b { font-weight: 500; color: var(--text); }
+
+.chart { display: block; width: 100%; height: 100%; }
+.chart .area { opacity: 0.12; }
+.chart .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart .grid { fill: none; stroke: var(--track); stroke-width: 1; opacity: 0.5; vector-effect: non-scaling-stroke; }
+.stat-chart[data-chart="cpu"] .area, [data-series="cpu"] .area { fill: var(--c-cpu); }
+.stat-chart[data-chart="cpu"] .line, [data-series="cpu"] .line { stroke: var(--c-cpu); }
+.stat-chart[data-chart="mem"] .area, [data-series="mem"] .area { fill: var(--c-mem); }
+.stat-chart[data-chart="mem"] .line, [data-series="mem"] .line { stroke: var(--c-mem); }
+.stat-chart[data-chart="down"] .area, [data-series="down"] .area { fill: var(--c-down); }
+.stat-chart[data-chart="down"] .line, [data-series="down"] .line { stroke: var(--c-down); }
+.stat-chart[data-chart="up"] .area, [data-series="up"] .area { fill: var(--c-up); }
+.stat-chart[data-chart="up"] .line, [data-series="up"] .line { stroke: var(--c-up); }
+
+/* gauge panels: the arc takes the body height, its readout sits in the hollow, facts beside */
+#cpu-gauge-panel, #mem-gauge-panel { grid-column: span 3; }
+#cores { grid-column: span 6; }
+.gauge-body { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 12px; padding: 6px 10px 8px; overflow: hidden; }
+.gauge { position: relative; flex: 0 0 auto; height: 100%; aspect-ratio: 108 / 114; }
+.gauge svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.gauge-track { fill: none; stroke: var(--track); stroke-width: 8; }
+.gauge-fill { fill: none; stroke: var(--c-cpu); stroke-width: 8; }
+.gauge-fill.mem { stroke: var(--c-mem); }
+.gauge-tick { fill: none; stroke: var(--dim); stroke-width: 1; }
+.gauge-tick.major { stroke-width: 1.5; }
+.gauge-label { fill: var(--dim); font-family: var(--ui); font-size: 8px; text-anchor: middle; dominant-baseline: central; }
+/* readout centred on the arc centre (66 of 114 units), bounded by the inner radius */
+.gauge-read { position: absolute; left: 50%; top: 57.89%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 3px; white-space: nowrap; }
+.read-value { font-size: 22px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; color: var(--strong); }
+.read-value .read-unit { margin-left: 2px; }
+.read-unit { font-size: 11px; font-weight: 500; color: var(--dim); }
+.read-cap { font-size: 11px; line-height: 1; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.gauge-side { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.mem-rows { flex: 0 0 auto; display: flex; flex-direction: column; }
+.mem-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; height: 16px; font-size: 10px; color: var(--dim); border-top: 1px solid var(--border-weak); }
+.mem-row:first-child { border-top: 0; }
+.mem-row b { font-weight: 500; color: var(--text); }
+.mem-row .pct { color: var(--dim); min-width: 26px; text-align: right; }
+
+/* core status-history grid */
+.cores-body { flex: 1 1 auto; min-height: 0; padding: 6px 8px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 3px 4px; overflow: hidden; }
+.core-cell {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--c-cpu) 30%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--c-cpu) min(calc(2% + var(--v, 0) * 1%), 10%), transparent);
+  font-size: 9px;
+  line-height: 1;
+  overflow: hidden;
+}
+.core-cell .cl { color: var(--text); }
+.core-cell .cv { color: var(--text); font-size: 10px; }
+.core-cell.warn { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) min(calc(2% + var(--v, 0) * 1%), 10%), transparent); }
+.core-cell.crit { border-color: color-mix(in srgb, var(--crit) 45%, transparent); background: color-mix(in srgb, var(--crit) min(calc(2% + var(--v, 0) * 1%), 10%), transparent); }
+
+/* row 3: gpu load, cores, storage; each page overrides the grid */
+#net-panel { grid-column: span 5; }
+#gpu-load { grid-column: span 5; }
+#storage { grid-column: span 3; }
+
+.net-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 6px 8px 6px; gap: 4px; }
+.legend { flex: 0 0 auto; display: flex; flex-direction: column; }
+.legend-row { display: flex; align-items: center; gap: 6px; height: 22px; font-size: 10px; color: var(--dim); border-top: 1px solid var(--border-weak); }
+.legend-row:first-child { border-top: 0; }
+.sw { width: 8px; height: 8px; flex: 0 0 auto; }
+.sw-down { background: var(--c-down); }
+.sw-up { background: var(--c-up); }
+.lg-name { color: var(--text); width: 62px; flex: 0 0 auto; }
+.legend-row b { color: var(--strong); font-weight: 500; font-size: 11px; white-space: nowrap; }
+.lg-meta { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+
+.storage-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; padding: 7px 9px; overflow: hidden; }
+.stor { display: flex; flex-direction: column; gap: 3px; }
+.stor-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text); }
+.stor-head b { font-weight: 500; color: var(--strong); white-space: nowrap; }
+.stor-head .dim { color: var(--dim); font-weight: 400; font-size: 10px; }
+.stor-bar { position: relative; height: 5px; background: var(--track); border-radius: 2px; overflow: hidden; }
+.stor-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--c-mem); }
+.stor-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; color: var(--dim); }
+
+/* process table panel */
+#proc-panel { grid-column: 1 / -1; }
+.proc-count { font-size: 10px; color: var(--dim); }
+.filter {
+  width: 132px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border-control, var(--border));
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 10px;
+}
+.filter::placeholder { color: var(--dim); }
+.proc-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) var(--panel); }
+.ptable { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+.ptable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 22px;
+  padding: 1px 8px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border-weak);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--dim);
+  text-align: left;
+  white-space: nowrap;
+}
+.ptable td { height: 22px; padding: 0 8px; border-bottom: 1px solid var(--border-weak); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptable tbody tr:nth-child(even) { background: var(--stripe); }
+.ptable tbody tr:hover { background: var(--hover); }
+.ptable .num { text-align: right; }
+.ptable .mono { font-family: var(--mono); font-size: 11px; }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--dim); }
+
+/* config popover: closed at load, the only theme and mode control */
+.config {
+  position: fixed;
+  z-index: 40;
+  top: 32px;
+  right: 8px;
+  width: 240px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-control, var(--border));
+  border-radius: 2px;
+  font-size: 11px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label { font-size: 9px; line-height: 18px; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; }
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border-control, var(--border));
+  border-radius: 2px;
+  background: none;
+  color: var(--chip-fg);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--accent); }
+.opt.on { border-color: var(--accent); color: var(--chip-fg); }
+.opt.on::before { opacity: 0.12; }
+
+
+/* 05.06 network paired: one panel, two stacked plots, one shared time axis */
+.page { grid-template-rows: 116px 214px 190px minmax(0, 1fr); }
+.stat { grid-column: span 4; }
+#net-panel { grid-column: span 5; }
+#cpu-gauge-panel { grid-column: span 3; }
+#mem-gauge-panel { grid-column: span 4; }
+#gpu-load { grid-column: span 5; }
+#cores { grid-column: span 4; }
+#storage { grid-column: span 3; }
+
+.net-body.paired { display: grid; grid-template-columns: minmax(0, 1fr) 168px; gap: 10px; padding: 5px 8px 4px; }
+.net-plots { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.net-plot { flex: 1 1 0; min-height: 0; }
+.net-plot .chart .line { stroke-width: 2; }
+.xaxis {
+  flex: 0 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.net-legend {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 2px 0 2px 10px;
+  border-left: 1px solid var(--border-weak);
+}
+.legend-item { display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 6px; row-gap: 1px; align-items: center; min-width: 0; }
+.legend-item .sw { grid-row: 1 / span 3; align-self: start; margin-top: 3px; }
+.legend-name { grid-column: 2; font-size: 10px; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+.legend-value { grid-column: 2; font-size: 14px; font-weight: 600; line-height: 1.1; color: var(--strong); white-space: nowrap; }
+.legend-meta { grid-column: 2; font-size: 9px; color: var(--dim); white-space: nowrap; }
+
+/* GPU load: one plot, one line per GPU on the shared time axis; legend entry per GPU */
+.chart .area.g0 { fill: var(--c-gpu-0); }
+.chart .line.g0 { stroke: var(--c-gpu-0); }
+.chart .area.g1 { fill: var(--c-gpu-1); }
+.chart .line.g1 { stroke: var(--c-gpu-1); }
+.chart .area.g2 { fill: var(--c-gpu-2); }
+.chart .line.g2 { stroke: var(--c-gpu-2); }
+.sw-gpu-0 { background: var(--c-gpu-0); }
+.sw-gpu-1 { background: var(--c-gpu-1); }
+.sw-gpu-2 { background: var(--c-gpu-2); }
+/* wide enough for the longest model name at 1440 px */
+#gpu-load .net-body.paired { grid-template-columns: minmax(0, 1fr) 224px; }
+#gpu-load .net-legend { gap: 8px; }
+#gpu-load .legend-name { display: flex; gap: 5px; min-width: 0; }
+.lg-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0; }
+.lg-vram { margin-left: 6px; font-size: 10px; font-weight: 400; color: var(--text); }
+.legend-item[data-selected="true"] { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+/* ===== 05.06 adaptive 2: panels adapt to their own size =====
+   Every panel is a size container with forms A, B and C picked by its own width and height.
+   Page breakpoints change only the grid columns (12 → 6 → 1); the CONFIG size S, M or L moves
+   height between the telemetry rows and the process table, and each panel follows on its own. */
+
+/* page grid: 12 columns; row shares give exactly 116/214/190/314 px at 1440x900 */
+.page {
+  padding: clamp(4px, 0.56vw, 8px);
+  gap: clamp(4px, 0.56vw, 8px);
+  --proc: 314fr;
+  grid-template-rows: minmax(0, 116fr) minmax(0, 214fr) minmax(0, 190fr) minmax(0, var(--proc));
+}
+.page[data-size="s"] { --proc: 600fr; }
+.page[data-size="l"] { --proc: 200fr; }
+
+@media (max-width: 959.98px) {
+  .page {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    --proc: 400fr;
+    grid-template-rows: minmax(0, 90fr) minmax(0, 170fr) minmax(0, 170fr) minmax(0, 110fr) minmax(0, var(--proc));
+  }
+  .page[data-size="s"] { --proc: 650fr; }
+  .page[data-size="l"] { --proc: 250fr; }
+  #cpu-stat, #mem-stat, #proc-stat { grid-column: span 2; }
+  #net-panel { grid-column: span 4; }
+  #cpu-gauge-panel { grid-column: span 2; }
+  #gpu-load { grid-column: 1 / span 4; grid-row: 3; }
+  #mem-gauge-panel { grid-column: 5 / span 2; grid-row: 3; }
+  #cores { grid-column: span 4; }
+  #storage { grid-column: span 2; }
+}
+
+@media (max-width: 599.98px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    --proc: 294fr;
+    grid-template-rows: minmax(36px, 56fr) minmax(36px, 56fr) minmax(28px, 30fr) minmax(64px, 104fr) minmax(28px, 36fr) minmax(28px, 36fr) minmax(64px, 92fr) minmax(30px, 40fr) minmax(28px, 30fr) minmax(120px, var(--proc));
+  }
+  .page[data-size="s"] { --proc: 500fr; }
+  .page[data-size="l"] { --proc: 170fr; }
+  #cpu-stat, #mem-stat, #proc-stat, #net-panel, #cpu-gauge-panel, #mem-gauge-panel, #gpu-load, #cores, #storage, #proc-panel { grid-column: 1 / -1; grid-row: auto; }
+}
+
+/* top bar: drops host chrome (P4) by its own width, in the order version, host, clock */
+.utility { container: bar / inline-size; }
+@container bar (width < 600px) { .u-version { display: none; } }
+@container bar (width < 520px) { .u-host { display: none; } }
+@container bar (width < 440px) { .utility-clock { display: none; } }
+
+/* panel shell: head over body; in a strip (under 84 px tall, 300 px or wider) the head sits beside the body */
+.panel {
+  container: panel / size;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.panel > * { grid-column: 1 / -1; min-width: 0; min-height: 0; }
+.ph { height: 26px; --form: A; }
+@container panel (height < 84px) and (width >= 300px) {
+  .panel > .ph { grid-column: 1; grid-row: 1 / -1; height: auto; min-width: 88px; border-bottom: 0; border-right: 1px solid var(--border-weak); }
+  .panel > .ph .head-right { display: none; }
+  .panel > :not(.ph) { grid-column: 2; grid-row: 1 / -1; }
+}
+
+/* stat panels: A tile + plot + foot; B tile + plot; C value beside its plot */
+@container panel (height < 100px) {
+  .stat > .ph { --form: B; }
+  .stat .stat-foot { display: none; }
+  .stat .stat-tile { flex-basis: 32px; }
+  .stat .stat-value { font-size: 24px; }
+}
+@container panel (height < 84px) {
+  .stat > .ph { --form: C; }
+  .stat .stat-body { flex-direction: row; }
+  .stat .stat-tile { flex: 0 0 auto; align-items: center; padding: 0 8px; }
+  .stat .stat-value { font-size: 20px; }
+  .stat .stat-chart { flex: 1 1 auto; min-width: 0; }
+}
+
+/* network: A paired plots, legend beside; B legend below; C one combined plot, rates beside */
+.net-both { display: none; }
+.lv-arrow { display: none; }
+.chart .area.n-down { fill: var(--c-down); }
+.chart .line.n-down { stroke: var(--c-down); }
+.chart .area.n-up { fill: var(--c-up); }
+.chart .line.n-up { stroke: var(--c-up); }
+@container panel (width < 440px) or (height < 170px) {
+  #net-panel > .ph { --form: B; }
+  #net-panel .net-body.paired { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 4px; }
+  #net-panel .net-legend { flex-direction: row; justify-content: flex-start; gap: 18px; padding: 4px 0 0; border-left: 0; border-top: 1px solid var(--border-weak); }
+  #net-panel .legend-item { grid-template-columns: 8px auto auto; column-gap: 6px; align-items: baseline; }
+  #net-panel .legend-item .sw { grid-row: 1; align-self: center; margin-top: 0; }
+  #net-panel .legend-name { grid-column: 2; grid-row: 1; }
+  #net-panel .legend-value { grid-column: 3; grid-row: 1; font-size: 13px; }
+  #net-panel .lm-now, #net-panel .lm-total { display: none; }
+  #net-panel .lm-top { grid-column: 2 / -1; grid-row: 2; }
+}
+@container panel (width < 360px) or (height < 120px) {
+  #net-panel > .ph { --form: C; }
+  #net-panel .net-body.paired { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr); gap: 10px; }
+  #net-panel .net-plot[data-chart="net-down"], #net-panel .net-plot[data-chart="net-up"], #net-panel .xaxis { display: none; }
+  #net-panel .net-both { display: block; }
+  #net-panel .net-legend { flex-direction: column; justify-content: center; gap: 4px; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid var(--border-weak); }
+  #net-panel .legend-item { grid-template-columns: 8px auto; }
+  #net-panel .legend-name, #net-panel .lm-top { display: none; }
+  #net-panel .legend-value { grid-column: 2; }
+  #net-panel .lv-arrow { display: inline; }
+}
+
+/* gauges: A arc with facts beside; B thin arc, facts beside when wide and below when narrow; C bar.
+   The arc never grows past the width the facts leave it; its readout scales with the arc. */
+#mem-gauge-panel { --facts: 150px; }
+.gauge { container: gauge / size; height: min(100%, calc((100cqw - var(--facts, 112px) - 32px) * 1.0556)); }
+.read-value { font-size: min(22px, 12.8cqh); }
+.read-unit, .read-cap { font-size: clamp(9px, 6.4cqh, 11px); }
+.gauge-read { gap: min(3px, 1.75cqh); }
+.gbar { display: none; position: relative; height: 6px; min-width: 40px; background: var(--track); border-radius: 2px; overflow: hidden; }
+.gbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--c-cpu); }
+.gbar.mem i { background: var(--c-mem); }
+@container panel (width < 305px) or (height < 170px) {
+  .gauge-panel > .ph { --form: B; }
+  .gauge-panel .gauge-track, .gauge-panel .gauge-fill { stroke-width: 5; }
+  .gauge-panel .gauge-label, .gauge-panel .read-cap { display: none; }
+  .gauge-panel .read-value { font-size: clamp(12px, 14.5cqh, 16px); }
+  .gauge-panel .read-unit { font-size: clamp(9px, 9cqh, 10px); }
+}
+@container panel (width < 305px) {
+  .gauge-panel .gauge-body { display: grid; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 4px; padding: 4px 8px 6px; }
+  .gauge-panel .gauge { height: min(100%, calc((100cqw - 16px) * 1.0556)); }
+  .gauge-panel .gauge-side { justify-self: stretch; flex-direction: row; flex-wrap: wrap; justify-content: center; column-gap: 12px; }
+  .gauge-panel .mem-row { height: 14px; gap: 4px; border-top: 0; }
+  .gauge-panel .mem-row .pct { display: none; }
+}
+@container panel (height < 130px) or (width < 150px) or ((width < 305px) and (height < 170px)) {
+  .gauge-panel > .ph { --form: C; }
+  .gauge-panel .gauge-body { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto; align-content: center; align-items: center; justify-items: stretch; column-gap: 10px; row-gap: 6px; padding: 4px 10px; }
+  .gauge-panel .gauge { container-type: normal; width: auto; height: auto; aspect-ratio: auto; }
+  .gauge-panel .gauge svg { display: none; }
+  .gauge-panel .gauge-read { position: static; transform: none; flex-direction: row; align-items: baseline; gap: 6px; }
+  .gauge-panel .read-cap { display: inline; }
+  .gauge-panel .read-value { font-size: 20px; }
+  .gauge-panel .read-unit, .gauge-panel .read-cap { font-size: 10px; }
+  .gauge-panel .gbar { display: block; }
+  .gauge-panel .gauge-side { grid-column: 1 / -1; justify-self: start; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; column-gap: 14px; }
+  .gauge-panel .mem-row { height: 14px; gap: 4px; border-top: 0; }
+}
+@container panel (height < 100px) {
+  .gauge-panel .gauge-side { display: none; }
+}
+@container panel (height < 84px) {
+  .gauge-panel .read-cap { display: none; }
+  .gauge-panel .read-value { font-size: 16px; }
+}
+
+@container panel (width < 245px) {
+  #mem-gauge-panel > .ph .head-right { display: none; }
+}
+
+/* GPU: A legend beside; B legend below in three columns; C one line per GPU beside the plot */
+@container panel (height < 172px) {
+  #gpu-load .net-legend { gap: 2px; }
+}
+@container panel (width < 520px) or (height < 160px) {
+  #gpu-load > .ph { --form: B; }
+  #gpu-load .net-body.paired { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 4px; }
+  #gpu-load .net-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 5px 0 0; border-left: 0; border-top: 1px solid var(--border-weak); }
+  #gpu-load .lg-model { display: none; }
+  #gpu-load .legend-value { font-size: 13px; }
+}
+@container panel (width < 330px) or (height < 150px) {
+  #gpu-load > .ph { --form: C; }
+  #gpu-load .net-body.paired { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr); gap: 10px; }
+  #gpu-load .xaxis, #gpu-load .legend-meta { display: none; }
+  #gpu-load .net-legend { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid var(--border-weak); }
+  #gpu-load .legend-item { grid-template-columns: 8px auto auto; column-gap: 6px; align-items: baseline; }
+  #gpu-load .legend-item .sw { grid-row: 1; align-self: center; margin-top: 0; }
+  #gpu-load .legend-name { grid-column: 2; grid-row: 1; }
+  #gpu-load .legend-value { grid-column: 3; grid-row: 1; font-size: 12px; }
+}
+
+/* cores: A 8x8 label + value; B 16x4 value only; C one heat strip of 64 cells, tint and fill by load */
+.cores-body { grid-template-columns: none; grid-template-rows: repeat(8, minmax(0, 1fr)); grid-auto-columns: minmax(0, 1fr); grid-auto-rows: auto; grid-auto-flow: column; }
+@container panel (width < 360px) or (height < 165px) {
+  #cores > .ph { --form: B; }
+  #cores .cores-body { grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 3px 2px; padding: 4px 8px; }
+  #cores .core-cell { justify-content: center; padding: 0; }
+  #cores .cl { display: none; }
+}
+@container panel (width < 220px) or (height < 100px) {
+  #cores > .ph { --form: C; }
+  #cores .cores-body { grid-template-rows: minmax(0, 1fr); gap: 1px; padding: 6px 8px; }
+  /* heat tint plus a full-colour fill from the bottom (2 px minimum), so every cell keeps a 3:1 mark */
+  #cores .core-cell { --hue: var(--c-cpu); border: 0; border-radius: 0; background: linear-gradient(to top, var(--hue) max(2px, calc(var(--v, 0) * 1%)), color-mix(in srgb, var(--hue) calc(16% + var(--v, 0) * 0.6%), transparent) 0); }
+  #cores .core-cell.warn { --hue: var(--warn); }
+  #cores .core-cell.crit { --hue: var(--crit); }
+  #cores .cv { display: none; }
+}
+
+/* storage: A bars with swap detail; B one line per mount; C one summary line */
+.stor-sum { display: none; }
+@container panel (height < 150px) {
+  #storage > .ph { --form: B; }
+  #storage .storage-body { justify-content: space-evenly; gap: 2px; padding: 4px 9px; }
+  #storage .stor { display: grid; grid-template-columns: auto minmax(30px, 1fr) auto; column-gap: 8px; align-items: center; }
+  #storage .stor-head { display: contents; }
+  #storage .stor-head > span { grid-column: 1; grid-row: 1; }
+  #storage .stor-head > b { grid-column: 3; grid-row: 1; }
+  #storage .stor-bar { grid-column: 2; grid-row: 1; }
+  #storage .stor-meta { display: none; }
+}
+@container panel (height < 96px) or (width < 220px) {
+  #storage > .ph { --form: C; }
+  #storage .storage-body { justify-content: center; }
+  #storage .stor { display: none; }
+  #storage .stor-sum { display: block; font-size: 10px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* process table: A all seven columns; B drops Threads and User; C keeps Pid, Program, MemB, Cpu% */
+.c-pid { width: 76px; }
+.c-prog { width: 150px; }
+.c-thr { width: 62px; }
+.c-user { width: 58px; }
+.c-memb { width: 72px; }
+.c-cpu { width: 64px; }
+@container panel (width < 700px) {
+  #proc-panel > .ph { --form: B; }
+  #proc-panel .c-thr, #proc-panel .c-user,
+  #proc-panel .ptable :is(th, td):nth-child(4), #proc-panel .ptable :is(th, td):nth-child(5) { display: none; }
+}
+@container panel (width < 440px) {
+  #proc-panel > .ph { --form: C; }
+  #proc-panel .c-cmd, #proc-panel .ptable :is(th, td):nth-child(3) { display: none; }
+  #proc-panel .c-pid { width: 64px; }
+  #proc-panel .c-prog { width: auto; }
+  #proc-panel .c-memb { width: 56px; }
+  #proc-panel .c-cpu { width: 52px; }
+  #proc-panel .filter { width: 96px; }
+}
+
+/* whole process rows: set by fitRows below */
+.ptable.fit td { height: var(--row-fit); }
+</style>
+</head>
+<body>
+<header class="utility">
+  <span class="brand">btop<span>-web</span></span>
+  <span class="utility-meta u-version" data-field="version">0.1.0</span>
+  <span class="utility-meta u-host" data-field="host">lab-workstation</span>
+  <span class="utility-meta" title="sampling interval">250 ms</span>
+  <span class="utility-right">
+    <span class="utility-clock" data-field="clock">06:12</span>
+    <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word">live</span><b id="sample-age">0.4 s</b></span>
+    <span class="chip chip-readonly"><i class="lamp"></i>read-only</span>
+    <button class="chip chip-config config-toggle" id="config-toggle" type="button" aria-expanded="false" aria-controls="config">config</button>
+  </span>
+</header>
+<main class="page" data-size="m">
+
+  <section class="panel stat" id="cpu-stat" aria-labelledby="cpu-stat-title">
+    <header class="ph">
+      <h2 id="cpu-stat-title">CPU</h2>
+    </header>
+    <div class="stat-body">
+      <div class="stat-tile"><span class="stat-value ok">4.8</span><span class="stat-unit">%</span></div>
+      <div class="stat-chart" data-chart="cpu-stat-chart" data-series="cpu" aria-hidden="true"></div>
+      <div class="stat-foot"><span data-field="frequency">3.99 GHz</span><span data-field="load average">load 96 95 94</span></div>
+    </div>
+  </section>
+
+  <section class="panel stat" id="mem-stat" aria-labelledby="mem-stat-title">
+    <header class="ph">
+      <h2 id="mem-stat-title">Memory</h2>
+      <span class="head-right"><span class="meta" data-field="total">of 503 GiB</span></span>
+    </header>
+    <div class="stat-body">
+      <div class="stat-tile"><span class="stat-value">39.7</span><span class="stat-unit">GiB</span></div>
+      <div class="stat-chart" data-chart="mem-stat-chart" data-series="mem" aria-hidden="true"></div>
+      <div class="stat-foot"><span data-field="used percent">8% used</span><span data-field="available percent">92% available</span></div>
+    </div>
+  </section>
+
+  <section class="panel stat" id="proc-stat" aria-labelledby="proc-stat-title">
+    <header class="ph"><h2 id="proc-stat-title">Processes</h2></header>
+    <div class="stat-body">
+      <div class="stat-tile"><span class="stat-value">249</span></div>
+      <div class="stat-foot"><span data-field="shown count">0 / 249 shown</span></div>
+    </div>
+  </section>
+
+  <section class="panel" id="net-panel" aria-labelledby="net-title">
+    <header class="ph"><h2 id="net-title">Network</h2><span class="head-right"><span class="meta" data-field="interface">eth0</span><span class="meta" data-field="time span">shared time axis &middot; 240 s</span></span></header>
+    <div class="net-body paired">
+      <div class="net-plots">
+        <div class="net-plot" data-chart="net-down" data-series="down" data-grid="x" role="img" aria-label="Download history on the shared time axis, 1.07 mebibytes per second now"></div>
+        <div class="net-plot" data-chart="net-up" data-series="up" data-grid="x" role="img" aria-label="Upload history on the shared time axis, 940 kibibytes per second now"></div>
+        <div class="net-plot net-both" data-chart="net-both" data-series="net" data-grid="x" role="img" aria-label="Download and upload history in one plot, 1.07 mebibytes and 940 kibibytes per second now"></div>
+        <div class="xaxis" aria-hidden="true" data-field="x-axis labels"><span>240 s</span><span>180 s</span><span>120 s</span><span>60 s</span><span>now</span></div>
+      </div>
+      <aside class="net-legend" aria-label="Network legend">
+        <div class="legend-item">
+          <i class="sw sw-down"></i>
+          <span class="legend-name" data-field="legend names">download &darr;</span>
+          <b class="legend-value"><span class="lv-arrow">&darr; </span>1.07 MiB/s</b>
+          <span class="legend-meta lm-now" data-field="now Mibps">now 8.56 Mibps</span>
+          <span class="legend-meta lm-top" data-field="top rate">top 62.1 Mibps</span>
+          <span class="legend-meta lm-total" data-field="total">total 391 GiB</span>
+        </div>
+        <div class="legend-item">
+          <i class="sw sw-up"></i>
+          <span class="legend-name" data-field="legend names">upload &uarr;</span>
+          <b class="legend-value"><span class="lv-arrow">&uarr; </span>940 KiB/s</b>
+          <span class="legend-meta lm-now" data-field="now Mibps">now 7.34 Mibps</span>
+          <span class="legend-meta lm-top" data-field="top rate">top 10.0 Mibps</span>
+          <span class="legend-meta lm-total" data-field="total">total 391 GiB</span>
+        </div>
+      </aside>
+    </div>
+  </section>
+  <section class="panel gauge-panel" id="cpu-gauge-panel" aria-labelledby="cpu-gauge-title">
+    <header class="ph"><h2 id="cpu-gauge-title">CPU</h2><span class="head-right meta" data-field="core count">64 cores</span></header>
+    <div class="gauge-body">
+      <div class="gauge" id="cpu-gauge" role="img" aria-label="CPU 4.8 percent on a zero to one hundred percent scale">
+          <svg viewBox="0 0 108 114" data-gauge="cpu" aria-hidden="true" data-field="arc">
+            <path class="gauge-track" d="M25.72 94.28 A40 40 0 1 1 82.28 94.28"/>
+            <path class="gauge-fill" id="cpu-gauge-fill" d=""/>
+            <path class="gauge-tick" data-ticks="minor" d=""/>
+            <path class="gauge-tick major" data-ticks="major" d=""/>
+            <text class="gauge-label" x="10.16" y="109.84" data-field="tick labels">0</text>
+            <text class="gauge-label" x="54" y="4" data-field="tick labels">50</text>
+            <text class="gauge-label" x="97.84" y="109.84" data-field="tick labels">100</text>
+          </svg>
+        <div class="gauge-read"><span class="read-value">4.8<span class="read-unit">%</span></span><span class="read-cap" data-field="caption">busy</span></div>
+      </div>
+      <div class="gbar" aria-hidden="true"><i style="width:4.8%"></i></div>
+      <div class="gauge-side mem-rows">
+        <div class="mem-row" data-field="frequency"><span>frequency</span><b>3.99 GHz</b></div>
+        <div class="mem-row" data-field="load average"><span>load</span><b>96 95 94</b></div>
+      </div>
+    </div>
+  </section>
+  <section class="panel gauge-panel" id="mem-gauge-panel" aria-labelledby="mem-gauge-title">
+    <header class="ph"><h2 id="mem-gauge-title">Memory</h2><span class="head-right meta" data-field="total and swap">of 503 GiB &middot; swap 2.9 / 128 GiB</span></header>
+    <div class="gauge-body">
+      <div class="gauge" id="mem-gauge" role="img" aria-label="Memory 39.7 of 503 GiB, 8 percent on a zero to one hundred percent scale">
+          <svg viewBox="0 0 108 114" data-gauge="mem" aria-hidden="true" data-field="arc">
+            <path class="gauge-track" d="M25.72 94.28 A40 40 0 1 1 82.28 94.28"/>
+            <path class="gauge-fill mem" id="mem-gauge-fill" d=""/>
+            <path class="gauge-tick" data-ticks="minor" d=""/>
+            <path class="gauge-tick major" data-ticks="major" d=""/>
+            <text class="gauge-label" x="10.16" y="109.84" data-field="tick labels">0</text>
+            <text class="gauge-label" x="54" y="4" data-field="tick labels">50</text>
+            <text class="gauge-label" x="97.84" y="109.84" data-field="tick labels">100</text>
+          </svg>
+        <div class="gauge-read"><span class="read-value">39.7<span class="read-unit">GiB</span></span><span class="read-cap" data-field="caption">used</span></div>
+      </div>
+      <div class="gbar mem" aria-hidden="true"><i style="width:8%"></i></div>
+      <div class="gauge-side mem-rows">
+        <div class="mem-row" data-field="available"><span>available</span><b>463 GiB</b><span class="pct" data-field="percent of total">92%</span></div>
+        <div class="mem-row" data-field="cached"><span>cached</span><b>253 GiB</b><span class="pct" data-field="percent of total">50%</span></div>
+        <div class="mem-row" data-field="free"><span>free</span><b>184 GiB</b><span class="pct" data-field="percent of total">37%</span></div>
+      </div>
+    </div>
+  </section>
+  <section class="panel" id="gpu-load" aria-labelledby="gpu-title">
+    <header class="ph"><h2 id="gpu-title">GPU</h2><span class="head-right"><span class="meta" data-field="device count">3 devices</span><span class="meta" data-field="scale and span">utilisation 0-100% &middot; 240 s</span></span></header>
+    <div class="net-body paired">
+      <div class="net-plots">
+        <div class="net-plot" data-chart="gpu-load" data-series="gpu" data-grid="x" role="img" aria-label="Utilisation history of three GPUs on the shared time axis: GPU 0 at 0 percent, GPU 1 at 0 percent, GPU 2 at 1 percent now"></div>
+        <div class="xaxis" aria-hidden="true" data-field="x-axis labels"><span>240 s</span><span>180 s</span><span>120 s</span><span>60 s</span><span>now</span></div>
+      </div>
+      <aside class="net-legend" aria-label="GPU legend">
+        <div class="legend-item" data-gpu="0" data-selected="false">
+          <i class="sw sw-gpu-0"></i>
+          <span class="legend-name"><span>gpu 0</span><span class="lg-model" title="RTX PRO 4000 Blackwell" data-field="model">RTX PRO 4000 Blackwell</span></span>
+          <b class="legend-value">0%<span class="lg-vram" data-field="VRAM">452M / 24G</span></b>
+          <span class="legend-meta" data-field="temperature and power">36 C &middot; 3.9 W</span>
+        </div>
+        <div class="legend-item" data-gpu="1" data-selected="true">
+          <i class="sw sw-gpu-1"></i>
+          <span class="legend-name"><span>gpu 1</span><span class="lg-model" title="RTX PRO 6000 Blackwell Max-Q" data-field="model">RTX PRO 6000 Blackwell Max-Q</span></span>
+          <b class="legend-value">0%<span class="lg-vram" data-field="VRAM">64M / 98G</span></b>
+          <span class="legend-meta" data-field="temperature and power">37 C &middot; 14.1 W</span>
+        </div>
+        <div class="legend-item" data-gpu="2" data-selected="false">
+          <i class="sw sw-gpu-2"></i>
+          <span class="legend-name"><span>gpu 2</span><span class="lg-model" title="RTX PRO 5000 72GB Blackwell" data-field="model">RTX PRO 5000 72GB Blackwell</span></span>
+          <b class="legend-value">1%<span class="lg-vram" data-field="VRAM">853M / 73G</span></b>
+          <span class="legend-meta" data-field="temperature and power">37 C &middot; 21.9 W</span>
+        </div>
+      </aside>
+    </div>
+  </section>
+  <section class="panel" id="cores" aria-labelledby="cores-title">
+    <header class="ph"><h2 id="cores-title">Cores</h2><span class="head-right meta" data-field="count and scale">64 &middot; 0&ndash;100%</span></header>
+    <div class="cores-body" id="cores-body"></div>
+  </section>
+  <section class="panel" id="storage" aria-labelledby="storage-title">
+    <header class="ph"><h2 id="storage-title">Storage</h2></header>
+    <div class="storage-body">
+      <div class="stor">
+        <div class="stor-head"><span>swap</span><b data-field="swap size">2.9 <span class="dim">/ 128 GiB</span></b></div>
+        <div class="stor-bar" data-field="usage bars"><i style="width:2.3%"></i></div>
+        <div class="stor-meta" data-field="swap used and free"><span>used 2.3%</span><span>free 98%</span></div>
+      </div>
+      <div class="stor">
+        <div class="stor-head"><span>/</span><b>66%</b></div>
+        <div class="stor-bar" data-field="usage bars"><i style="width:66%"></i></div>
+      </div>
+      <div class="stor">
+        <div class="stor-head"><span>/home</span><b>66%</b></div>
+        <div class="stor-bar" data-field="usage bars"><i style="width:66%"></i></div>
+      </div>
+      <div class="stor">
+        <div class="stor-head"><span>nas-shared</span><b>31%</b></div>
+        <div class="stor-bar" data-field="usage bars"><i style="width:31%"></i></div>
+      </div>
+      <span class="stor-sum" title="swap 2.3% &middot; / 66% &middot; /home 66% &middot; nas-shared 31%">swap 2.3% &middot; / 66% &middot; /home 66% &middot; nas-shared 31%</span>
+    </div>
+  </section>
+  <section class="panel" id="proc-panel" aria-labelledby="proc-title">
+    <header class="ph">
+      <h2 id="proc-title">Processes</h2>
+      <span class="meta proc-count">0 / 249</span>
+      <span class="head-right">
+        <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+      </span>
+    </header>
+    <div class="proc-wrap">
+      <table class="ptable">
+        <caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">Processes sorted by CPU descending</caption>
+        <colgroup>
+          <col class="c-pid"><col class="c-prog"><col class="c-cmd"><col class="c-thr"><col class="c-user"><col class="c-memb"><col class="c-cpu">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num" scope="col">Pid</th>
+            <th scope="col">Program</th>
+            <th scope="col" data-field="Command column">Command</th>
+            <th class="num" scope="col" data-field="Threads column">Threads</th>
+            <th scope="col" data-field="User column">User</th>
+            <th class="num" scope="col">MemB</th>
+            <th class="num" scope="col">Cpu%</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">theme</span>
+    <div class="cfg-opts" data-group="theme">
+      <button class="opt on" type="button" data-value="grafana">grafana</button>
+      <button class="opt" type="button" data-value="gruvbox">gruvbox</button>
+      <button class="opt" type="button" data-value="solarized">solarized</button>
+      <button class="opt" type="button" data-value="everforest">everforest</button>
+      <button class="opt" type="button" data-value="flexoki">flexoki</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">mode</span>
+    <div class="cfg-opts" data-group="mode">
+      <button class="opt on" type="button" data-value="dark">dark</button>
+      <button class="opt" type="button" data-value="light">light</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">size</span>
+    <div class="cfg-opts" data-group="size">
+      <button class="opt" type="button" data-value="s">s</button>
+      <button class="opt on" type="button" data-value="m">m</button>
+      <button class="opt" type="button" data-value="l">l</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">gpu</span>
+    <div class="cfg-opts" data-group="gpu">
+      <button class="opt" type="button" data-value="0">0</button>
+      <button class="opt on" type="button" data-value="1">1</button>
+      <button class="opt" type="button" data-value="2">2</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">pause</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="adaptive-spec">
+{
+  "page": "05.06-adaptive-2-container",
+  "strategy": "Panels adapt to their own size",
+  "summary": "Every panel is a CSS size container and picks form A, B or C from its own width and height. Page breakpoints change only the grid columns. The CONFIG size S, M or L moves height between the telemetry rows and the process table; the viewport rows below are for M.",
+  "pageBreakpoints": [
+    { "media": "960 px and wider", "columns": 12 },
+    { "media": "600 to 959 px", "columns": 6 },
+    { "media": "under 600 px", "columns": 1 }
+  ],
+  "forms": {
+    "topbar": "a width container: version dropped under 600 px, host under 520 px, clock under 440 px",
+    "strip": "any panel under 84 px tall and 300 px or wider puts its head beside its body and drops the head detail",
+    "head": "the memory gauge drops its head detail (total and swap) under 245 px wide",
+    "cpu-stat": { "A": "value tile, plot and foot (height 100 px or more)", "B": "value tile and plot; foot dropped (84 to 99 px)", "C": "value beside its plot (under 84 px)" },
+    "mem-stat": { "A": "value tile, plot and foot (height 100 px or more)", "B": "value tile and plot; foot dropped (84 to 99 px)", "C": "value beside its plot (under 84 px)" },
+    "proc-stat": { "A": "count and shown line (height 100 px or more)", "B": "count (84 to 99 px)", "C": "count beside the head (under 84 px)" },
+    "net-panel": { "A": "paired plots, legend beside (440 px wide and 170 px tall or more)", "B": "paired plots, legend below: name, rate and top (360 px wide and 120 px tall or more)", "C": "one combined plot, rates beside (under 360 px wide or 120 px tall)" },
+    "cpu-gauge-panel": { "A": "arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)", "B": "thin arc, value in the hollow; facts beside when 305 px or wider, below when narrower (130 to 169 px tall, or under 305 px wide and 170 px tall or more)", "C": "bar with value; facts on a line below from 100 px tall (under 130 px tall, or under 305 px wide and under 170 px tall)" },
+    "mem-gauge-panel": { "A": "arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)", "B": "thin arc, value in the hollow; facts beside when 305 px or wider, below when narrower (130 to 169 px tall, or under 305 px wide and 170 px tall or more)", "C": "bar with value; facts on a line below from 100 px tall (under 130 px tall, or under 305 px wide and under 170 px tall)" },
+    "gpu-load": { "A": "plot, legend beside: model, utilisation, VRAM, temperature and power (520 px wide and 160 px tall or more)", "B": "plot, legend below in three columns; model dropped (330 px wide and 150 px tall or more)", "C": "plot with one line per GPU beside it: utilisation and VRAM (under 330 px wide or 150 px tall)" },
+    "cores": { "A": "8x8 grid, label and value (360 px wide and 165 px tall or more)", "B": "16x4 grid, value only (220 px wide and 100 px tall or more)", "C": "one heat strip of 64 cells, tint and fill height by load (under 220 px wide or 100 px tall)" },
+    "storage": { "A": "bars with swap detail (150 px tall or more)", "B": "one line per mount: name, bar, value (96 to 149 px tall, 220 px wide or more)", "C": "one summary line, ellipsised with a title (under 96 px tall or 220 px wide)" },
+    "proc-panel": { "A": "all seven columns (700 px wide or more)", "B": "Threads and User dropped (440 to 699 px)", "C": "Pid, Program, MemB and Cpu% (under 440 px)" }
+  },
+  "viewports": [
+    {
+      "viewport": "1440x900", "columns": 12,
+      "visible": ["cpu-stat", "mem-stat", "proc-stat", "net-panel", "cpu-gauge-panel", "mem-gauge-panel", "gpu-load", "cores", "storage", "proc-panel"],
+      "topbar": { "dropped": [] },
+      "panels": {
+        "cpu-stat": { "form": "A", "dropped": [] },
+        "mem-stat": { "form": "A", "dropped": [] },
+        "proc-stat": { "form": "A", "dropped": [] },
+        "net-panel": { "form": "A", "dropped": [] },
+        "cpu-gauge-panel": { "form": "A", "dropped": [] },
+        "mem-gauge-panel": { "form": "A", "dropped": [] },
+        "gpu-load": { "form": "A", "dropped": [] },
+        "cores": { "form": "A", "dropped": [] },
+        "storage": { "form": "A", "dropped": [] },
+        "proc-panel": { "form": "A", "dropped": [] }
+      }
+    },
+    {
+      "viewport": "1280x800", "columns": 12,
+      "visible": ["cpu-stat", "mem-stat", "proc-stat", "net-panel", "cpu-gauge-panel", "mem-gauge-panel", "gpu-load", "cores", "storage", "proc-panel"],
+      "topbar": { "dropped": [] },
+      "panels": {
+        "cpu-stat": { "form": "A", "dropped": [] },
+        "mem-stat": { "form": "A", "dropped": [] },
+        "proc-stat": { "form": "A", "dropped": [] },
+        "net-panel": { "form": "A", "dropped": [] },
+        "cpu-gauge-panel": { "form": "A", "dropped": [] },
+        "mem-gauge-panel": { "form": "A", "dropped": [] },
+        "gpu-load": { "form": "A", "dropped": [] },
+        "cores": { "form": "A", "dropped": [] },
+        "storage": { "form": "A", "dropped": [] },
+        "proc-panel": { "form": "A", "dropped": [] }
+      }
+    },
+    {
+      "viewport": "1024x768", "columns": 12,
+      "visible": ["cpu-stat", "mem-stat", "proc-stat", "net-panel", "cpu-gauge-panel", "mem-gauge-panel", "gpu-load", "cores", "storage", "proc-panel"],
+      "topbar": { "dropped": [] },
+      "panels": {
+        "cpu-stat": { "form": "B", "dropped": ["frequency", "load average"] },
+        "mem-stat": { "form": "B", "dropped": ["available percent", "used percent"] },
+        "proc-stat": { "form": "B", "dropped": ["shown count"] },
+        "net-panel": { "form": "B", "dropped": ["now Mibps", "total"] },
+        "cpu-gauge-panel": { "form": "B", "dropped": ["caption", "tick labels"] },
+        "mem-gauge-panel": { "form": "A", "dropped": [] },
+        "gpu-load": { "form": "B", "dropped": ["model"] },
+        "cores": { "form": "B", "dropped": ["core labels"] },
+        "storage": { "form": "A", "dropped": [] },
+        "proc-panel": { "form": "A", "dropped": [] }
+      }
+    },
+    {
+      "viewport": "768x1024", "columns": 6,
+      "visible": ["cpu-stat", "mem-stat", "proc-stat", "net-panel", "cpu-gauge-panel", "mem-gauge-panel", "gpu-load", "cores", "storage", "proc-panel"],
+      "topbar": { "dropped": [] },
+      "panels": {
+        "cpu-stat": { "form": "B", "dropped": ["frequency", "load average"] },
+        "mem-stat": { "form": "B", "dropped": ["available percent", "used percent"] },
+        "proc-stat": { "form": "B", "dropped": ["shown count"] },
+        "net-panel": { "form": "A", "dropped": [] },
+        "cpu-gauge-panel": { "form": "B", "dropped": ["caption", "tick labels"] },
+        "mem-gauge-panel": { "form": "B", "dropped": ["caption", "percent of total", "tick labels"] },
+        "gpu-load": { "form": "B", "dropped": ["model"] },
+        "cores": { "form": "B", "dropped": ["core labels"] },
+        "storage": { "form": "B", "dropped": ["swap used and free"] },
+        "proc-panel": { "form": "A", "dropped": [] }
+      }
+    },
+    {
+      "viewport": "390x844", "columns": 1,
+      "visible": ["cpu-stat", "mem-stat", "proc-stat", "net-panel", "cpu-gauge-panel", "mem-gauge-panel", "gpu-load", "cores", "storage", "proc-panel"],
+      "topbar": { "dropped": ["version", "host", "clock"] },
+      "panels": {
+        "cpu-stat": { "form": "C", "dropped": ["frequency", "load average"] },
+        "mem-stat": { "form": "C", "dropped": ["available percent", "total", "used percent"] },
+        "proc-stat": { "form": "C", "dropped": ["shown count"] },
+        "net-panel": { "form": "C", "dropped": ["legend names", "now Mibps", "top rate", "total", "x-axis labels"] },
+        "cpu-gauge-panel": { "form": "C", "dropped": ["arc", "caption", "core count", "frequency", "load average", "tick labels"] },
+        "mem-gauge-panel": { "form": "C", "dropped": ["arc", "available", "cached", "caption", "free", "percent of total", "tick labels", "total and swap"] },
+        "gpu-load": { "form": "C", "dropped": ["model", "temperature and power", "x-axis labels"] },
+        "cores": { "form": "C", "dropped": ["core labels", "core values", "count and scale"] },
+        "storage": { "form": "C", "dropped": ["swap size", "swap used and free", "usage bars"] },
+        "proc-panel": { "form": "C", "dropped": ["Command column", "Threads column", "User column"] }
+      }
+    }
+  ]
+}
+</script>
+
+<script>
+
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  function series(n, fn) { var out = []; for (var i = 0; i < n; i++) out.push(fn(i)); return out; }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  var cores = (function () {
+    var base = [5, 4, 6, 3, 7, 5, 4, 6, 3, 5, 8, 4, 6, 2, 7, 5];
+    var tail = [4, 5, 3, 6, 4, 5, 7, 3, 4, 4, 6, 2, 4, 5, 3, 3];
+    return base.concat(base, base, tail);
+  })();
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var memUsed = series(24, function (i) { return 8 + 0.5 * Math.sin(i * 0.55 + 0.4); });
+  memUsed[memUsed.length - 1] = 8;
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[gpu0.length - 1] = 0;
+  gpu1[gpu1.length - 1] = 0;
+  gpu2[gpu2.length - 1] = 1;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+  var netUp = series(64, function (i) {
+    var v = 0.08 + 0.16 * Math.abs(Math.sin(i * 0.41 + 1)) + 0.08 * Math.abs(Math.sin(i * 1.9));
+    [10, 26, 40, 55].forEach(function (b) { v += 0.9 * Math.exp(-Math.pow((i - b) / 1.6, 2)); });
+    return clamp(v, 0, 1.5);
+  });
+  netUp[63] = 0.918;
+
+  /* PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return { line: line, area: line + "L" + round2(w) + " " + round2(h) + "L0 " + round2(h) + "Z" };
+  }
+
+  var SERIES = {
+    cpu: { data: cpuData, min: 0, max: 25 },
+    mem: { data: memUsed, min: 7.4, max: 8.6 },
+    down: { data: netDown, min: 0, max: 2.2 },
+    up: { data: netUp, min: 0, max: 2.2 }
+  };
+
+  function gridSvg(host, w, h) {
+    if (host.getAttribute("data-grid") !== "x") return "";
+    var out = "";
+    [0.25, 0.5, 0.75].forEach(function (f) {
+      out += '<path class="grid" d="M' + round2(w * f) + ' 0V' + round2(h) + '"/>';
+    });
+    return out;
+  }
+
+  /* multi-line plots: GPU load (one line per GPU, 0-100 %) and the combined network form (down and up) */
+  var MULTI = {
+    gpu: { data: [gpu0, gpu1, gpu2], min: 0, max: 100, cls: ["g0", "g1", "g2"] },
+    net: { data: [netDown, netUp], min: 0, max: 2.2, cls: ["n-down", "n-up"] }
+  };
+
+  function drawOne(host) {
+    var name = host.getAttribute("data-series");
+    var cfg = SERIES[name];
+    var multi = MULTI[name];
+    if (!cfg && !multi) return;
+    var w = host.clientWidth;
+    var h = host.clientHeight;
+    if (!w || !h) return;
+    var paths = "";
+    (multi ? multi.data : [cfg.data]).forEach(function (data, k) {
+      var d = multi ? pchipPath(data, w, h, multi.min, multi.max) : pchipPath(data, w, h, cfg.min, cfg.max);
+      var cls = multi ? " " + multi.cls[k] : "";
+      paths += '<path class="area' + cls + '" d="' + d.area + '"/><path class="line' + cls + '" d="' + d.line + '"/>';
+    });
+    host.innerHTML = '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      gridSvg(host, w, h) + paths + '</svg>';
+  }
+
+  /* gauges: 270-degree arc, 0 at bottom-left, 100 at bottom-right; viewBox 108 x 114, centre (54, 66),
+     radius 40, stroke 8 (inner 36, outer 44); ticks every 10 % outside the arc, minor 46-50, major 46-53 */
+  var GX = 54, GY = 66;
+  function gpx(rho, a) { return round2(GX + rho * Math.sin(a * Math.PI / 180)); }
+  function gpy(rho, a) { return round2(GY - rho * Math.cos(a * Math.PI / 180)); }
+  function arcPath(v) {
+    var r = 40;
+    var start = -135;
+    var end = start + 270 * clamp(v, 0, 100) / 100;
+    var large = (end - start) > 180 ? 1 : 0;
+    return "M" + gpx(r, start) + " " + gpy(r, start) + " A" + r + " " + r + " 0 " + large + " 1 " + gpx(r, end) + " " + gpy(r, end);
+  }
+  function tickPath(major) {
+    var d = "";
+    for (var p = 0; p <= 100; p += 10) {
+      if ((p % 50 === 0) !== major) continue;
+      var a = -135 + 2.7 * p;
+      d += "M" + gpx(46, a) + " " + gpy(46, a) + "L" + gpx(major ? 53 : 50, a) + " " + gpy(major ? 53 : 50, a);
+    }
+    return d;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-ticks]"), function (el) {
+    el.setAttribute("d", tickPath(el.getAttribute("data-ticks") === "major"));
+  });
+  var cpuFill = document.getElementById("cpu-gauge-fill");
+  if (cpuFill) cpuFill.setAttribute("d", arcPath(4.8));
+  var memFill = document.getElementById("mem-gauge-fill");
+  if (memFill) memFill.setAttribute("d", arcPath(8));
+
+  /* core status-history grid */
+  (function renderCores() {
+    var host = document.getElementById("cores-body");
+    if (!host) return;
+    /* natural order; the grid flows by column, so 8, 4 or 1 rows give the 8x8, 16x4 and strip forms */
+    var cells = [];
+    for (var i = 0; i < 64; i++) {
+      var p = cores[i];
+      var cls = p >= 66 ? "crit" : p >= 33 ? "warn" : "";
+      cells.push('<div class="core-cell ' + cls + '" style="--v:' + p + '" title="C' + i + " " + p + '%"><span class="cl" data-field="core labels">C' + i +
+        '</span><span class="cv" data-field="core values">' + p + "</span></div>");
+    }
+    host.innerHTML = cells.join("");
+  })();
+
+  /* process table */
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  (function renderProcs() {
+    var body = document.getElementById("proc-body");
+    if (!body) return;
+    body.innerHTML = PROCS.map(function (p) {
+      var cpu = p[6];
+      var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+      return "<tr><td class=\"num mono\">" + p[0] + "</td><td title=\"" + p[1] + "\">" + p[1] + "</td><td class=\"mono\" title=\"" + p[2] + "\">" + p[2] +
+        "</td><td class=\"num\">" + p[3] + "</td><td>" + p[4] + "</td><td class=\"num\">" + p[5] +
+        "</td><td class=\"num " + cls + "\">" + cpu.toFixed(1) + "</td></tr>";
+    }).join("");
+  })();
+
+  var filter = document.getElementById("filter");
+  if (filter) {
+    filter.addEventListener("input", function () {
+      var q = filter.value.trim().toLowerCase();
+      Array.prototype.forEach.call(document.getElementById("proc-body").rows, function (tr) {
+        tr.hidden = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+      });
+    });
+    filter.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") {
+        filter.value = "";
+        filter.dispatchEvent(new Event("input"));
+      }
+    });
+  }
+
+  /* config popover */
+  var config = document.getElementById("config");
+  var toggle = document.getElementById("config-toggle");
+  function setExpanded(open) { toggle.setAttribute("aria-expanded", String(open)); }
+  toggle.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    config.hidden = !config.hidden;
+    setExpanded(!config.hidden);
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+
+  var state = { theme: "grafana", mode: "dark", gpu: "1", paused: false };
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      var value = btn.getAttribute("data-value");
+      if (name === "gpu") {
+        state.gpu = value;
+        Array.prototype.forEach.call(document.querySelectorAll("[data-gpu]"), function (g) {
+          g.setAttribute("data-selected", String(g.getAttribute("data-gpu") === value));
+        });
+      } else if (name === "size") {
+        document.querySelector(".page").setAttribute("data-size", value);
+      } else {
+        state[name] = value;
+        root.setAttribute(name === "theme" ? "data-theme" : "data-mode", value);
+      }
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  pauseBtn.addEventListener("click", function () {
+    state.paused = !state.paused;
+    pauseBtn.classList.toggle("on", state.paused);
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "resume" : "pause";
+    var live = document.getElementById("live-chip");
+    if (live) live.classList.toggle("paused", state.paused);
+    Array.prototype.forEach.call(document.querySelectorAll(".live-word"), function (word) {
+      word.textContent = state.paused ? "paused" : "live";
+    });
+  });
+
+  /* first paint and resize */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-series]"), drawOne);
+
+  function redrawAll() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-series]"), drawOne);
+  }
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) { drawOne(entry.target); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-series]"), function (el) { ro.observe(el); });
+  }
+  window.addEventListener("resize", redrawAll);
+
+  /* whole process rows: the row height stretches within half a row so the last visible row is never cut */
+  var wrap = document.querySelector(".proc-wrap");
+  var ptable = document.querySelector(".ptable");
+  function fitRows() {
+    ptable.classList.remove("fit");
+    var avail = wrap.clientHeight - ptable.tHead.getBoundingClientRect().height;
+    var row = ptable.tBodies[0].rows[0].getBoundingClientRect().height;
+    if (!row || avail <= 0) return;
+    ptable.style.setProperty("--row-fit", (avail / Math.max(1, Math.round(avail / row))) + "px");
+    ptable.classList.add("fit");
+  }
+  fitRows();
+  if (window.ResizeObserver) new ResizeObserver(fitRows).observe(wrap);
+})();
+
+</script>
+</body>
+</html>
+<!-- marks:settings trust=e2ba00906e0188d7314dba67877d6b2849156386ca80f9ce3e70315f7af37016 -->

@@ -1,0 +1,96 @@
+name: Bug report
+description: Report a problem with btop-web
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Fill in the fields below so the report can be reproduced.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched the existing issues for the same problem
+          required: true
+        - label: I am running the latest release or the current main branch
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: btop-web version
+      description: Release tag or commit hash
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host and kernel
+      description: Output of `uname -a` and the distribution version
+    validations:
+      required: true
+  - type: input
+    id: btop
+    attributes:
+      label: btop version
+      description: The btop version on the same host, and whether btop shows the same value
+    validations:
+      required: false
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      options:
+        - Default
+        - Gruvbox
+        - Solarized
+        - Everforest
+        - Flexoki
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Light
+        - Dark
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start btop-web with ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      render: shell
+    validations:
+      required: false

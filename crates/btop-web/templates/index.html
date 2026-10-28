@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-theme="{{ initial_theme }}" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"500","swap":true,"error":true},{"code":"[45]..","swap":false,"error":true}]}'>
+<title>{{ title }}</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<style>{{ css|safe }}</style>
+<link rel="stylesheet" href="assets/app.css">
+<script src="assets/htmx.min.js"></script>
+<script src="assets/htmx-sse.min.js"></script>
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="utility">
+  <span class="brand">btop<span>-web</span></span>
+  <span class="u-meta u-ver">{{ version }}</span>
+  {% if let Some(host) = host %}<span class="u-meta u-host" data-p="4" data-field="host" title="{{ host }}">{{ host }}</span>{% endif %}
+  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" title="sampling interval">{{ update_ms }} ms</span>
+  <span class="utility-right">
+    <span class="u-meta u-clock hdr-clock" data-p="4" data-field="clock"></span>
+    <span class="chip chip-tier" id="tier-chip"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total and rows (available, cached, free, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total and rows (available, cached, free, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User, CPU gauge, memory gauge, live chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
+    {% if let Some(title) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" title="{{ title }}"><span class="up">container</span></span>{% endif %}
+    <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word up" aria-live="polite" data-w="paused">live</span><b class="live-age" id="sample-age" aria-hidden="true" data-w="since 00:00:00"></b></span>
+    {% if readonly %}
+    <span class="chip chip-readonly" aria-describedby="readonly-reason"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
+    {% endif %}
+    <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config"><span class="up">config</span></button>
+  </span>
+</header>
+<main class="page" hx-ext="sse" sse-connect="events">
+  <div class="tele">
+    <div class="band" data-band="1">
+      <section class="panel stat" id="p-cpu-stat" data-panel="cpu-stat" data-band="1" aria-labelledby="cpu-stat-title">
+        {% include "partials/cpu_stat.html" %}
+      </section>
+      <section class="panel stat" id="p-mem-stat" data-panel="mem-stat" data-band="1" aria-labelledby="mem-stat-title">
+        {% include "partials/mem_stat.html" %}
+      </section>
+      <section class="panel stat" data-p="3" data-field="proc-stat" id="p-proc-stat" data-panel="proc-stat" data-band="1" aria-labelledby="proc-stat-title">
+        {% include "partials/proc_stat.html" %}
+      </section>
+    </div>
+    <div class="band" data-band="2">
+      <section class="panel" id="p-net" data-panel="net" data-band="2" aria-labelledby="net-title">
+        {% include "partials/net.html" %}
+      </section>
+      <section class="panel" data-p="2" data-field="cpu-gauge" id="p-cpu-gauge" data-panel="cpu-gauge" data-band="2" aria-labelledby="cpu-gauge-title">
+        {% include "partials/cpu_gauge.html" %}
+      </section>
+      <section class="panel" data-p="2" data-field="mem-gauge" id="p-mem-gauge" data-panel="mem-gauge" data-band="2" aria-labelledby="mem-gauge-title">
+        {% include "partials/mem_gauge.html" %}
+      </section>
+    </div>
+    <div class="band" data-band="3">
+      <section class="panel" id="p-gpu" data-panel="gpu" data-band="3" aria-labelledby="gpu-title">
+        {% include "partials/gpu.html" %}
+      </section>
+      <section class="panel" data-p="3" data-field="cores" id="p-cores" data-panel="cores" data-band="3" aria-labelledby="cores-title">
+        {% include "partials/cores.html" %}
+      </section>
+      <section class="panel" data-p="4" data-field="storage" id="p-storage" data-panel="storage" data-band="3" aria-labelledby="storage-title">
+        {% include "partials/storage.html" %}
+      </section>
+    </div>
+  </div>
+  <div class="band" data-band="4">
+    <section class="panel" id="p-proc" data-panel="proc" data-band="4" data-proc-view="{{ initial_proc_view }}" aria-labelledby="proc-title">
+      <header class="ph">
+        <h2 id="proc-title">Processes</h2>
+        <span class="meta proc-count" id="proc-count">{% if let Some(total) = snapshot.proc.total %}{% if let Some(running) = snapshot.proc.running %}{{ running }}/{% endif %}{{ total }}{% endif %}</span>
+        <span class="head-right">
+          <input class="filter" id="filter" type="search" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false" value="{{ initial_filter }}">
+        </span>
+      </header>
+      <div class="proc-wrap" id="proc-table-wrap">
+        {% include "partials/proc.html" %}
+      </div>
+    </section>
+  </div>
+  <div hidden sse-swap="cpu"></div>
+  <div hidden sse-swap="mem"></div>
+  <div hidden sse-swap="net"></div>
+  <div hidden sse-swap="proc"></div>
+  <div hidden sse-swap="gpu"></div>
+</main>
+{% if readonly %}
+<p class="sr-only" id="readonly-reason">The server refuses process signals, priority changes and every mutating request.</p>
+{% endif %}
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-tabs" role="tablist" aria-label="Config pages">
+    {% for (page, _) in pages %}<button class="opt cfg-tab{% if loop.first %} on{% endif %}" type="button" role="tab" id="cfg-tab-{{ page }}" aria-controls="cfg-page-{{ page }}" aria-selected="{{ loop.first }}" tabindex="{% if loop.first %}0{% else %}-1{% endif %}">{{ page }}</button>{% endfor %}
+  </div>
+  {% for (page, rows) in pages %}
+  <div class="cfg-page" role="tabpanel" id="cfg-page-{{ page }}" aria-labelledby="cfg-tab-{{ page }}" tabindex="-1"{% if !loop.first %} hidden{% endif %}>
+    {% if *page == "general" %}
+    <span class="cfg-label">view · this browser</span>
+    <div class="cfg-row">
+      <label class="cfg-label" for="theme-picker">theme</label>
+      <div class="cfg-opts">
+        <select class="opt" id="theme-picker">
+          {% for theme in themes %}<option value="{{ theme.id }}">{{ theme.label }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="cfg-row">
+      <span class="cfg-label">mode</span>
+      <div class="cfg-opts" data-group="mode">
+        <button class="opt" type="button" data-value="dark">dark</button>
+        <button class="opt" type="button" data-value="light">light</button>
+        <button class="opt on" type="button" data-value="auto">auto</button>
+      </div>
+    </div>
+    <div class="cfg-row">
+      <span class="cfg-label">pause</span>
+      <div class="cfg-opts">
+        <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+      </div>
+    </div>
+    {% else if *page == "gpu" %}
+    <span class="cfg-label">view · this browser</span>
+    <div class="cfg-row">
+      <span class="cfg-label">gpu</span>
+      <div class="cfg-opts" data-group="gpu">
+        {% for device in snapshot.gpu.devices %}<button class="opt on" type="button" role="checkbox" aria-checked="true" data-value="{{ loop.index0 }}" title="{{ device.name }}">{{ loop.index0 }}</button>{% endfor %}
+      </div>
+    </div>
+    {% else if *page == "proc" %}
+    <span class="cfg-label">view · this browser</span>
+    <div class="cfg-row">
+      <span class="cfg-label" id="proc-view-label" title="process list">procs</span>
+      <div class="cfg-opts" data-group="proc-view" role="radiogroup" aria-labelledby="proc-view-label">
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="top" title="top-level processes, each with its children's sums">top</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="all" title="every process, flat">all</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="tree" title="every process under its parent">tree</button>
+      </div>
+    </div>
+    <div class="cfg-row">
+      <span class="cfg-label" id="proc-nodes-label" title="tree nodes">tree</span>
+      <div class="cfg-opts" data-group="proc-nodes" role="radiogroup" aria-labelledby="proc-nodes-label">
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="collapsed">collapsed</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="expanded">expanded</button>
+      </div>
+    </div>
+    <div class="cfg-row">
+      <label class="cfg-label" for="proc-sort" title="sort column">sort</label>
+      <div class="cfg-opts">
+        <select class="opt" id="proc-sort">
+          <option value="pid">Pid</option>
+          <option value="name">Program</option>
+          <option value="command">Command</option>
+          <option value="threads">Threads</option>
+          <option value="user">User</option>
+          <option value="mem" selected>MemB</option>
+          <option value="cpu">Cpu%</option>
+        </select>
+      </div>
+    </div>
+    <div class="cfg-row">
+      <span class="cfg-label" id="proc-dir-label" title="sort direction">dir</span>
+      <div class="cfg-opts" data-group="proc-dir" role="radiogroup" aria-labelledby="proc-dir-label">
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="desc">desc</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="asc">asc</button>
+      </div>
+    </div>
+    {% else if *page == "layout" %}
+    <span class="cfg-label">view · this browser</span>
+    <div class="cfg-panels">
+      <span class="cfg-label" id="panels-label">panels</span>
+      <div class="cfg-panel-list" data-group="panels" role="group" aria-labelledby="panels-label">
+        {% for (id, name) in panels %}
+        <div class="cfg-panel" data-panel-id="{{ id }}">
+          <span class="cfg-panel-name">{{ name }}</span>
+          <button class="opt on" type="button" role="checkbox" aria-checked="true" data-act="show" aria-label="Show {{ name }}">shown</button>
+          <span class="cfg-sizes" role="radiogroup" aria-label="{{ name }} size">
+            <button class="opt" type="button" role="radio" aria-checked="false" data-size="s" aria-label="{{ name }} small">s</button>
+            <button class="opt on" type="button" role="radio" aria-checked="true" data-size="m" aria-label="{{ name }} medium">m</button>
+            <button class="opt" type="button" role="radio" aria-checked="false" data-size="l" aria-label="{{ name }} large">l</button>
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+      <button class="opt" type="button" id="layout-reset">reset layout</button>
+    </div>
+    {% endif %}
+    {% if !rows.is_empty() %}
+    <span class="cfg-label">server · all viewers</span>
+    <p class="cfg-note">{{ note }}</p>
+    {% for row in rows %}{% include "partials/cfg_key.html" %}{% endfor %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="panel-menu" id="panel-menu" role="menu" aria-label="panel size" hidden>
+  <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="off">off</button>
+  <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="s" aria-label="small">s</button>
+  <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="m" aria-label="medium">m</button>
+  <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="l" aria-label="large">l</button>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

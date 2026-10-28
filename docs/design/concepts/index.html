@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>btop-web concepts</title>
+<style>
+  :root {
+    --bg: #0b0d0f;
+    --surface: #111417;
+    --text: #e6e8ea;
+    --muted: #9aa2a9;
+    --faint: #69727a;
+    --hairline: #262c32;
+    --accent: #7cb3f0;
+    --pass: #3fb37f;
+    --fail: #d05c5c;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 32px 56px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  :focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+  .wrap { max-width: 1208px; margin: 0 auto; }
+  header {
+    margin: 0 0 28px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  h1 {
+    margin: 0 0 12px;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .lede {
+    max-width: 78ch;
+    margin: 0 0 8px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .lede b { font-weight: 600; }
+  .fitline {
+    margin: 0;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+  }
+
+  .sheet {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 388px);
+    gap: 22px;
+  }
+  @media (max-width: 460px) {
+    body { padding: 24px 16px 40px; }
+    .sheet { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .concept {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 2px;
+    background: var(--surface);
+  }
+  .concept > div {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  figure { margin: 0; }
+  figure img {
+    display: block;
+    width: 360px;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--hairline);
+    border-radius: 2px;
+    background: var(--bg);
+  }
+
+  .concept h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .num {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--faint);
+    letter-spacing: 0.04em;
+  }
+  .statement {
+    margin: 0 0 10px;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .borrowed, .readout {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .label {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .fit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: auto 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--tone);
+    border-radius: 2px;
+    background: var(--tint);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .chip.pass { --tone: var(--pass); --tint: rgba(63, 179, 127, 0.12); }
+  .chip.fail { --tone: var(--fail); --tint: rgba(208, 92, 92, 0.12); }
+
+  .variations {
+    grid-column: 1 / -1;
+    margin-top: 12px;
+    padding-top: 22px;
+    border-top: 1px solid var(--hairline);
+  }
+  .variations > h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .variations > p {
+    margin: 0 0 18px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .variations .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 388px);
+    gap: 22px;
+  }
+  .variations h3 {
+    margin: 0 0 6px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  @media (max-width: 460px) {
+    .variations .grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  /* adaptive:begin */
+  .adaptive { min-width: 0; }
+  .adaptive .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .adaptive h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0; }
+  .adaptive h3 .name { font-family: var(--sans); font-size: 13px; color: var(--muted); }
+  .adaptive .statement { margin: 0; }
+  .adaptive .shots { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+  .adaptive .shots figure { flex: 1 1 0; min-width: 0; }
+  .adaptive .shots img { width: 100%; }
+  .adaptive figcaption { margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 10px; overflow-wrap: anywhere; }
+  .adaptive .spec-wrap { overflow-x: auto; }
+  .adaptive table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 11.5px; line-height: 1.45; }
+  .adaptive caption { padding: 0 0 6px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: left; }
+  .adaptive th, .adaptive td { padding: 6px 8px; border-top: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+  .adaptive th { color: var(--muted); font-family: var(--mono); font-size: 9.5px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; }
+  .adaptive td:first-child { font-family: var(--mono); white-space: nowrap; }
+  .adaptive th:nth-child(2) { width: 20%; }
+  .adaptive th:nth-child(3) { width: 46%; }
+  .adaptive td ul { margin: 0; padding-left: 14px; }
+  .adaptive code { font-family: var(--mono); font-size: 10.5px; }
+  /* adaptive:end */
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>btop-web concepts</h1>
+  <p class="lede">
+    <b>Base:</b> <a href="../onepage.html">../onepage.html</a>, the 1:1 btop render approved as the
+    starting point. The ten concepts keep the host's mock data, all three GPUs, PCHIP charts, house
+    chips, CONFIG-only settings and the 1440x900 one-viewport rule. They vary the layout, panel
+    language, type scale, chart treatment and chrome.
+  </p>
+  <p class="fitline">all ten pass every checked rule at 1440x900, process table the only internal scroll</p>
+</header>
+
+<main class="sheet">
+
+  <article class="concept">
+    <figure>
+      <img src="shots/01-classic-modern.png" width="360" height="225"
+           alt="Concept 01 classic-modern: the btop box grid at 1:1 with hairline panels, a CPU history and core matrix, memory, disks, network and a process table.">
+    </figure>
+    <div>
+      <h2><span class="num">01</span>classic-modern</h2>
+      <p class="statement">The approved 1:1 btop geometry, refined: same boxes and proportions, system sans labels, mono numbers, hairline borders with a 1 px inner highlight, quiet accents, panel labels on the border line.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>btop's box anatomy, Linear/Vercel panel restraint.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/02-terminal-grid.png" width="360" height="225"
+           alt="Concept 02 terminal-grid: a near-black full-monospace dashboard with inverted label tabs and phosphor-green charts.">
+    </figure>
+    <div>
+      <h2><span class="num">02</span>terminal-grid</h2>
+      <p class="statement">Terminal DNA taken literally: full monospace, ASCII-flavoured panel labels, inverted label tabs, a phosphor accent on near-black, 1:1 btop boxes, zero decoration beyond rules and type.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>btop, htop, btm.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/03-band-rows.png" width="360" height="225"
+           alt="Concept 03 band-rows: full-width CPU, memory, network and GPU bands stacked above a full-width process table.">
+    </figure>
+    <div>
+      <h2><span class="num">03</span>band-rows</h2>
+      <p class="statement">Full-width horizontal bands instead of columns: a CPU band (headline, inline PCHIP, 64-cell heatstrip), a MEM band (stacked bar, figures), a NET band (twin sparklines), a GPU band (three cells), and the process table as the bottom band filling the rest.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>Activity Monitor's bottom strip, Grafana rows, Tufte's small multiples.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/04-device-rail.png" width="360" height="225"
+           alt="Concept 04 device-rail: a left device rail with CPU, memory, network and three GPU rows beside a selected-device detail pane and a process table.">
+    </figure>
+    <div>
+      <h2><span class="num">04</span>device-rail</h2>
+      <p class="statement">Task Manager / Mission Center anatomy: a 220 px left rail lists CPU, memory, network, GPU 0, GPU 1 and GPU 2, each with a 40 px sparkline and one headline number; the right pane is the selected device's detail (graph, stats), with the process table beneath it.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>Windows Task Manager rail, Mission Center, GNOME Resources.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/05-grafana-panels.png" width="360" height="225"
+           alt="Concept 05 grafana-panels: a dark 12-column dashboard of stat panels, CPU and memory gauges, a network chart and a process panel.">
+    </figure>
+    <div>
+      <h2><span class="num">05</span>grafana-panels</h2>
+      <p class="statement">A 12-column panel dashboard: stat panels with a dominant number and a sparkline behind it, two gauge panels (CPU and memory), a time-series panel for network, a GPU table panel, and the process table as a panel.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>Grafana, Datadog host dashboards.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <section class="variations" aria-labelledby="variations-title">
+    <h2 id="variations-title">Variations of 05</h2>
+    <p>Ten small imaginative variations of the accepted 05 page. Each keeps 05's Grafana panel language, palette, data and values, and changes one idea a reader sees at a glance.</p>
+    <div class="grid">
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.01-border-titles.png" width="360" height="225"
+               alt="Variation 05.01 border-titles: 05's panels with every title set on the top border, the line breaking around it.">
+        </figure>
+        <div>
+          <h3>05.01-border-titles</h3>
+          <p class="statement">Every panel title rides the top border with the line breaking around it, and the header row disappears.</p>
+          <p class="readout"><span class="label">Readout</span>border titles - twelve titles on the panel line, zero header rows</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.02-gauge-merged.png" width="360" height="225"
+               alt="Variation 05.02 gauge-merged: 05's CPU and memory rings inside their stat panels, with taller history charts below.">
+        </figure>
+        <div>
+          <h3>05.02-gauge-merged</h3>
+          <p class="statement">Each radial gauge moves inside its stat panel, so twelve panels become ten and the charts take the freed height.</p>
+          <p class="readout"><span class="label">Readout</span>gauge merged - ten panels, two rings in their stat tiles, stat charts 104, 112 and 75 px against 05's 70 px</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.03-one-accent.png" width="360" height="225"
+               alt="Variation 05.03 one-accent: 05's panels drawn in one orange accent hue in five brightness steps, status colour only on values.">
+        </figure>
+        <div>
+          <h3>05.03-one-accent</h3>
+          <p class="statement">Every series uses the theme's one accent hue in five brightness steps, with status colour only on values that carry status.</p>
+          <p class="readout"><span class="label">Readout</span>one accent - one hue stepped five ways, ok, warn and crit only on status values</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.04-boxed-values.png" width="360" height="225"
+               alt="Variation 05.04 boxed-values: 05's panels with every value in a bordered cell beside its unit.">
+        </figure>
+        <div>
+          <h3>05.04-boxed-values</h3>
+          <p class="statement">Every value sits in its own bordered cell with its unit, in four aligned cell heights.</p>
+          <p class="readout"><span class="label">Readout</span>boxed values - every readout in a 1 px bordered cell, four aligned heights</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.05-stat-strip.png" width="360" height="225"
+               alt="Variation 05.05 stat-strip: CPU, memory, network in, network out and process count in one five-tile strip above 05's panels.">
+        </figure>
+        <div>
+          <h3>05.05-stat-strip</h3>
+          <p class="statement">CPU, memory, network in, network out and the process count collect into one five-tile strip across the top.</p>
+          <p class="readout"><span class="label">Readout</span>stat strip - five stat tiles in one strip, seven panels below</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.06-network-paired.png" width="360" height="225"
+               alt="Variation 05.06 network-paired: one Network panel with download above upload on one shared time axis and one legend.">
+        </figure>
+        <div>
+          <h3>05.06-network-paired</h3>
+          <p class="statement">Download and upload share one Network panel as two stacked plots on one time axis, one y scale and one legend.</p>
+          <p class="readout"><span class="label">Readout</span>paired network - two plots, one shared axis, one legend</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.07-process-right.png" width="360" height="225"
+               alt="Variation 05.07 process-right: 05's process table as a full-height column on the right, the other panels rebalanced on the left.">
+        </figure>
+        <div>
+          <h3>05.07-process-right</h3>
+          <p class="statement">The process table becomes a full-height right column and the left grid rebalances around it.</p>
+          <p class="readout"><span class="label">Readout</span>process right - a 556 px full-height process column</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.08-core-strip.png" width="360" height="225"
+               alt="Variation 05.08 core-strip: the 64 cores as one horizontal strip of per-core bars, with taller CPU and network charts.">
+        </figure>
+        <div>
+          <h3>05.08-core-strip</h3>
+          <p class="statement">The 64 cores become one horizontal strip of per-core bars, and the freed height goes to the history charts.</p>
+          <p class="readout"><span class="label">Readout</span>core strip - 64 bars in one 1422 px strip inside the 1424 px panel row</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.09-label-rail.png" width="360" height="225"
+               alt="Variation 05.09 label-rail: every panel's labels in a narrow left rail with values right-aligned against them.">
+        </figure>
+        <div>
+          <h3>05.09-label-rail</h3>
+          <p class="statement">Every panel's labels move to a narrow left rail and the values right-align against it on one shared row rhythm.</p>
+          <p class="readout"><span class="label">Readout</span>label rail - a 74 px label rail in every panel, values right-aligned on one rhythm</p>
+        </div>
+      </article>
+
+      <article class="concept">
+        <figure>
+          <img src="shots/05.10-quiet-frame.png" width="360" height="225"
+               alt="Variation 05.10 quiet-frame: 05's panels as hairline frames with small-caps titles and no fills, on one calm surface.">
+        </figure>
+        <div>
+          <h3>05.10-quiet-frame</h3>
+          <p class="statement">Panel fills and head rules disappear, leaving hairline frames and small-caps titles on one calm surface.</p>
+          <p class="readout"><span class="label">Readout</span>quiet frame - transparent panels, 1 px frames, small-caps titles</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/06-netdata-stream.png" width="360" height="225"
+           alt="Concept 06 netdata-stream: a tight grid of small realtime charts beside one tall process panel.">
+    </figure>
+    <div>
+      <h2><span class="num">06</span>netdata-stream</h2>
+      <p class="statement">Dense realtime stream: 12-16 small charts arranged in a tight grid, each with a title, current value and a rolling PCHIP line; the process table as one tall panel on the right.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>Netdata, Glances.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/07-table-first.png" width="360" height="225"
+           alt="Concept 07 table-first: a tall process table under a summary strip of CPU, memory, network and GPU stat cells.">
+    </figure>
+    <div>
+      <h2><span class="num">07</span>table-first</h2>
+      <p class="statement">Ops console: the process table is the hero at about 60% of the page, with a 64 px summary strip above carrying CPU, memory, network and the three GPUs as compact stat cells with inline sparklines; the CPU matrix collapses into a heatstrip.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>htop's table-first view, Activity Monitor, Datadog's list-first pages.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/08-matrix-hero.png" width="360" height="225"
+           alt="Concept 08 matrix-hero: a large 8x8 coloured core matrix under a CPU history, with memory, network and GPU panels to the right.">
+    </figure>
+    <div>
+      <h2><span class="num">08</span>matrix-hero</h2>
+      <p class="statement">The 64-core matrix is the visual centre: a large 8x8 heat grid with per-core values, sized to dominate the left two thirds; the CPU history runs behind/above it; memory, network and the three GPU cells form a right column; the process table is a bottom-right panel.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>btop's core matrix, heatmap dashboards, Windows Task Manager's logical-processor view.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/09-small-multiples.png" width="360" height="225"
+           alt="Concept 09 small-multiples: nine hairline-separated sparkline strips with end labels beside a compact process table.">
+    </figure>
+    <div>
+      <h2><span class="num">09</span>small-multiples</h2>
+      <p class="statement">Tufte: a vertical stack of labelled sparkline strips - CPU, memory, swap, network down, network up, GPU 0, GPU 1, GPU 2, disk read - each with the value at the line's end and no boxes except hairline rules; the process table is a compact panel on the right.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>Tufte sparklines, Activity Monitor history graphs, FT/Economist chart economy.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <article class="concept">
+    <figure>
+      <img src="shots/10-paper-light.png" width="360" height="225"
+           alt="Concept 10 paper-light: a light paper-toned dashboard with editorial type, thin rules and a rust accent.">
+    </figure>
+    <div>
+      <h2><span class="num">10</span>paper-light</h2>
+      <p class="statement">The light counterpart: paper-white surfaces, thin rules, muted ink, one warm accent, btop's geometry but airier spacing and a serif-free editorial type scale.</p>
+      <p class="borrowed"><span class="label">Borrowed</span>Linear light, Notion/Stripe dashboards, print data tables.</p>
+      <p class="fit"><span class="chip pass">PASS</span>exact 1440x900 fit, no failed rule</p>
+    </div>
+  </article>
+
+  <!-- adaptive:begin -->
+  <section class="variations adaptive" aria-labelledby="adaptive-title">
+    <h2 id="adaptive-title">Adaptive and responsive</h2>
+    <p>The four pages below start from <a href="05.06-adaptive-base.html">05.06-adaptive-base</a>, which changes <a href="05.06-network-paired.html">05.06-network-paired</a> in three ways: a GPU load plot with one line per GPU and a per-GPU legend replaces the GPU cards panel, the cores move to the middle of band 3, and each gauge carries 11 ticks with its readout inside the arc.</p>
+    <div class="stack">
+
+      <article class="concept">
+        <h3><a href="05.06-adaptive-base.html">05.06-adaptive-base</a><span class="name">Starting page, no breakpoints</span></h3>
+        <p class="statement">The desktop grid at every size: it fits 1440x900, and below 1440x900 it cuts text. The four pages below avoid that, each with its own strategy.</p>
+        <div class="shots">
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-base-1440x900.png" width="1440" height="900"
+                 alt="Starting page, no breakpoints (05.06-adaptive-base) rendered at 1440x900.">
+            <figcaption>1440x900</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-base-1280x800.png" width="1280" height="800"
+                 alt="Starting page, no breakpoints (05.06-adaptive-base) rendered at 1280x800.">
+            <figcaption>1280x800</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2321">
+            <img src="shots/05.06-adaptive-base-1024x768.png" width="1024" height="768"
+                 alt="Starting page, no breakpoints (05.06-adaptive-base) rendered at 1024x768.">
+            <figcaption>1024x768</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.1305">
+            <img src="shots/05.06-adaptive-base-768x1024.png" width="768" height="1024"
+                 alt="Starting page, no breakpoints (05.06-adaptive-base) rendered at 768x1024.">
+            <figcaption>768x1024</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.0804">
+            <img src="shots/05.06-adaptive-base-390x844.png" width="390" height="844"
+                 alt="Starting page, no breakpoints (05.06-adaptive-base) rendered at 390x844.">
+            <figcaption>390x844</figcaption>
+          </figure>
+        </div>
+      </article>
+
+      <article class="concept">
+        <h3><a href="05.06-adaptive-1-priority.html">05.06-adaptive-1-priority</a><span class="name">Priority drops</span></h3>
+        <p class="statement">One 12-column grid at every size: band heights and plots shrink first, then type and padding step down, then fields drop by priority P4, P3 and P2 at named breakpoints, and a tier chip in the top bar names the tiers on screen.</p>
+        <div class="shots">
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-1-priority-1440x900.png" width="1440" height="900"
+                 alt="Priority drops (05.06-adaptive-1-priority) rendered at 1440x900.">
+            <figcaption>1440x900</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-1-priority-1280x800.png" width="1280" height="800"
+                 alt="Priority drops (05.06-adaptive-1-priority) rendered at 1280x800.">
+            <figcaption>1280x800</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2321">
+            <img src="shots/05.06-adaptive-1-priority-1024x768.png" width="1024" height="768"
+                 alt="Priority drops (05.06-adaptive-1-priority) rendered at 1024x768.">
+            <figcaption>1024x768</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.1305">
+            <img src="shots/05.06-adaptive-1-priority-768x1024.png" width="768" height="1024"
+                 alt="Priority drops (05.06-adaptive-1-priority) rendered at 768x1024.">
+            <figcaption>768x1024</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.0804">
+            <img src="shots/05.06-adaptive-1-priority-390x844.png" width="390" height="844"
+                 alt="Priority drops (05.06-adaptive-1-priority) rendered at 390x844.">
+            <figcaption>390x844</figcaption>
+          </figure>
+        </div>
+        <div class="spec-wrap">
+          <table>
+            <caption>adaptive-spec of 05.06-adaptive-1-priority</caption>
+            <thead><tr><th>Viewport</th><th>Layout</th><th>Visible panels and forms</th><th>Dropped</th></tr></thead>
+            <tbody>
+            <tr><td>1440x900</td><td>breakpoint full, no tier chip</td><td><ul><li><code>cpu-stat</code>, 4 of 12 columns: value tile, sparkline, foot with frequency and load</li><li><code>mem-stat</code>, 4 of 12 columns: value tile of 503 GiB, sparkline, foot with used and available</li><li><code>proc-stat</code>, 4 of 12 columns: process count tile, shown count foot</li><li><code>net-panel</code>, 5 of 12 columns: download and upload plots on one time axis with x-axis labels; legend beside with name, rate, Mibps now, top, total</li><li><code>cpu-gauge-panel</code>, 3 of 12 columns: arc with scale labels and readout in the hollow; frequency and load beside</li><li><code>mem-gauge-panel</code>, 4 of 12 columns: arc with scale labels and readout in the hollow; available, cached, free beside</li><li><code>gpu-load</code>, 5 of 12 columns: one plot, a line per GPU, x-axis labels; legend beside with name, model (ellipsised with a title where the legend is narrower than the name), utilisation, VRAM, temperature, power</li><li><code>cores</code>, 4 of 12 columns: 8 x 8 cells, label and value</li><li><code>proc-panel</code>, 12 of 12 columns: 7 columns, whole rows: Pid, Program, Command, Threads, User, MemB, Cpu%</li><li><code>storage</code>, 3 of 12 columns: swap and three mounts with bars</li></ul></td><td>nothing</td></tr>
+            <tr><td>1280x800</td><td>breakpoint full, no tier chip</td><td><ul><li><code>cpu-stat</code>, 4 of 12 columns: value tile, sparkline, foot with frequency and load</li><li><code>mem-stat</code>, 4 of 12 columns: value tile of 503 GiB, sparkline, foot with used and available</li><li><code>proc-stat</code>, 4 of 12 columns: process count tile, shown count foot</li><li><code>net-panel</code>, 5 of 12 columns: download and upload plots on one time axis with x-axis labels; legend beside with name, rate, Mibps now, top, total</li><li><code>cpu-gauge-panel</code>, 3 of 12 columns: arc with scale labels and readout in the hollow; frequency and load beside</li><li><code>mem-gauge-panel</code>, 4 of 12 columns: arc with scale labels and readout in the hollow; available, cached, free beside</li><li><code>gpu-load</code>, 5 of 12 columns: one plot, a line per GPU, x-axis labels; legend beside with name, model (ellipsised with a title where the legend is narrower than the name), utilisation, VRAM, temperature, power</li><li><code>cores</code>, 4 of 12 columns: 8 x 8 cells, label and value</li><li><code>proc-panel</code>, 12 of 12 columns: 7 columns, whole rows: Pid, Program, Command, Threads, User, MemB, Cpu%</li><li><code>storage</code>, 3 of 12 columns: swap and three mounts with bars</li></ul></td><td>nothing</td></tr>
+            <tr><td>1024x768</td><td>breakpoint drop-p4, tier chip P1-P3</td><td><ul><li><code>cpu-stat</code>, 4 of 12 columns: value tile, sparkline, foot with frequency and load</li><li><code>mem-stat</code>, 4 of 12 columns: value tile of 503 GiB, sparkline, foot with used and available</li><li><code>proc-stat</code>, 4 of 12 columns: process count tile, shown count foot</li><li><code>net-panel</code>, 5 of 12 columns: download and upload plots on one time axis with x-axis labels; legend beside with name, rate, Mibps now, top, total</li><li><code>cpu-gauge-panel</code>, 3 of 12 columns: arc with scale labels and readout in the hollow; frequency and load beside, label above value</li><li><code>mem-gauge-panel</code>, 4 of 12 columns: arc with scale labels and readout in the hollow; available, cached, free beside, label above value</li><li><code>gpu-load</code>, 7 of 12 columns: one plot, a line per GPU, x-axis labels; legend beside with name, model (ellipsised with a title where the legend is narrower than the name), utilisation, VRAM, temperature, power</li><li><code>cores</code>, 5 of 12 columns: 8 x 8 cells, value only</li><li><code>proc-panel</code>, 12 of 12 columns: 7 columns, whole rows: Pid, Program, Command, Threads, User, MemB, Cpu%</li></ul></td><td><ul><li>P4: clock, core-labels, host, storage, version</li></ul></td></tr>
+            <tr><td>768x1024</td><td>breakpoint drop-p3, tier chip P1-P2</td><td><ul><li><code>cpu-stat</code>, 6 of 12 columns: value tile and sparkline</li><li><code>mem-stat</code>, 6 of 12 columns: value tile of 503 GiB and sparkline</li><li><code>net-panel</code>, 6 of 12 columns: download and upload plots; legend beside with name and rate</li><li><code>cpu-gauge-panel</code>, 3 of 12 columns: arc with ticks and readout in the hollow, centred</li><li><code>mem-gauge-panel</code>, 3 of 12 columns: arc with ticks and readout in the hollow, centred</li><li><code>gpu-load</code>, 12 of 12 columns: one plot, a line per GPU; legend beside with name, utilisation, VRAM</li><li><code>proc-panel</code>, 12 of 12 columns: 4 P1 columns, whole rows: Pid, Program, MemB, Cpu%</li></ul></td><td><ul><li>P4: clock, core-labels, host, storage, version</li><li>P3: cores, cpu-gauge-cores, cpu-gauge-facts, cpu-stat-foot, gauge-scale, gpu-axis-note, gpu-count, gpu-model, gpu-temp-power, gpu-x-axis, mem-gauge-facts, mem-gauge-total-swap, mem-stat-foot, net-axis-note, net-interface, net-legend-detail, net-x-axis, proc-command, proc-stat, proc-threads, proc-user</li></ul></td></tr>
+            <tr><td>390x844</td><td>breakpoint drop-p2, tier chip P1</td><td><ul><li><code>cpu-stat</code>, 12 of 12 columns: value tile and sparkline, one column</li><li><code>mem-stat</code>, 12 of 12 columns: value tile of 503 GiB and sparkline, one column</li><li><code>net-panel</code>, 12 of 12 columns: download and upload plots; legend beside with name and rate</li><li><code>gpu-load</code>, 12 of 12 columns: one plot, a line per GPU; legend beside with name, utilisation, VRAM</li><li><code>proc-panel</code>, 12 of 12 columns: 4 P1 columns, whole rows, fills the rest of the height: Pid, Program, MemB, Cpu%</li></ul></td><td><ul><li>P4: clock, core-labels, host, storage, version</li><li>P3: cores, cpu-gauge-cores, cpu-gauge-facts, cpu-stat-foot, gauge-scale, gpu-axis-note, gpu-count, gpu-model, gpu-temp-power, gpu-x-axis, mem-gauge-facts, mem-gauge-total-swap, mem-stat-foot, net-axis-note, net-interface, net-legend-detail, net-x-axis, proc-command, proc-stat, proc-threads, proc-user</li><li>P2: cpu-gauge, mem-gauge</li></ul></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="concept">
+        <h3><a href="05.06-adaptive-2-container.html">05.06-adaptive-2-container</a><span class="name">Panels adapt to their own size</span></h3>
+        <p class="statement">Every panel is a CSS size container that picks form A, B or C from its own width and height, and the page breakpoints change only the grid columns: 12, 6 or 1.</p>
+        <div class="shots">
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-2-container-1440x900.png" width="1440" height="900"
+                 alt="Panels adapt to their own size (05.06-adaptive-2-container) rendered at 1440x900.">
+            <figcaption>1440x900</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-2-container-1280x800.png" width="1280" height="800"
+                 alt="Panels adapt to their own size (05.06-adaptive-2-container) rendered at 1280x800.">
+            <figcaption>1280x800</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2321">
+            <img src="shots/05.06-adaptive-2-container-1024x768.png" width="1024" height="768"
+                 alt="Panels adapt to their own size (05.06-adaptive-2-container) rendered at 1024x768.">
+            <figcaption>1024x768</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.1305">
+            <img src="shots/05.06-adaptive-2-container-768x1024.png" width="768" height="1024"
+                 alt="Panels adapt to their own size (05.06-adaptive-2-container) rendered at 768x1024.">
+            <figcaption>768x1024</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.0804">
+            <img src="shots/05.06-adaptive-2-container-390x844.png" width="390" height="844"
+                 alt="Panels adapt to their own size (05.06-adaptive-2-container) rendered at 390x844.">
+            <figcaption>390x844</figcaption>
+          </figure>
+        </div>
+        <div class="spec-wrap">
+          <table>
+            <caption>adaptive-spec of 05.06-adaptive-2-container</caption>
+            <thead><tr><th>Viewport</th><th>Layout</th><th>Visible panels and forms</th><th>Dropped</th></tr></thead>
+            <tbody>
+            <tr><td>1440x900</td><td>12 grid columns</td><td><ul><li><code>cpu-stat</code>: form A, value tile, plot and foot (height 100 px or more)</li><li><code>mem-stat</code>: form A, value tile, plot and foot (height 100 px or more)</li><li><code>proc-stat</code>: form A, count and shown line (height 100 px or more)</li><li><code>net-panel</code>: form A, paired plots, legend beside (440 px wide and 170 px tall or more)</li><li><code>cpu-gauge-panel</code>: form A, arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)</li><li><code>mem-gauge-panel</code>: form A, arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)</li><li><code>gpu-load</code>: form A, plot, legend beside: model, utilisation, VRAM, temperature and power (520 px wide and 160 px tall or more)</li><li><code>cores</code>: form A, 8x8 grid, label and value (360 px wide and 165 px tall or more)</li><li><code>storage</code>: form A, bars with swap detail (150 px tall or more)</li><li><code>proc-panel</code>: form A, all seven columns (700 px wide or more)</li></ul></td><td>nothing</td></tr>
+            <tr><td>1280x800</td><td>12 grid columns</td><td><ul><li><code>cpu-stat</code>: form A, value tile, plot and foot (height 100 px or more)</li><li><code>mem-stat</code>: form A, value tile, plot and foot (height 100 px or more)</li><li><code>proc-stat</code>: form A, count and shown line (height 100 px or more)</li><li><code>net-panel</code>: form A, paired plots, legend beside (440 px wide and 170 px tall or more)</li><li><code>cpu-gauge-panel</code>: form A, arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)</li><li><code>mem-gauge-panel</code>: form A, arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)</li><li><code>gpu-load</code>: form A, plot, legend beside: model, utilisation, VRAM, temperature and power (520 px wide and 160 px tall or more)</li><li><code>cores</code>: form A, 8x8 grid, label and value (360 px wide and 165 px tall or more)</li><li><code>storage</code>: form A, bars with swap detail (150 px tall or more)</li><li><code>proc-panel</code>: form A, all seven columns (700 px wide or more)</li></ul></td><td>nothing</td></tr>
+            <tr><td>1024x768</td><td>12 grid columns</td><td><ul><li><code>cpu-stat</code>: form B, value tile and plot; foot dropped (84 to 99 px)</li><li><code>mem-stat</code>: form B, value tile and plot; foot dropped (84 to 99 px)</li><li><code>proc-stat</code>: form B, count (84 to 99 px)</li><li><code>net-panel</code>: form B, paired plots, legend below: name, rate and top (360 px wide and 120 px tall or more)</li><li><code>cpu-gauge-panel</code>: form B, thin arc, value in the hollow; facts beside when 305 px or wider, below when narrower (130 to 169 px tall, or under 305 px wide and 170 px tall or more)</li><li><code>mem-gauge-panel</code>: form A, arc with tick labels, readout in the hollow, facts beside (305 px wide and 170 px tall or more)</li><li><code>gpu-load</code>: form B, plot, legend below in three columns; model dropped (330 px wide and 150 px tall or more)</li><li><code>cores</code>: form B, 16x4 grid, value only (220 px wide and 100 px tall or more)</li><li><code>storage</code>: form A, bars with swap detail (150 px tall or more)</li><li><code>proc-panel</code>: form A, all seven columns (700 px wide or more)</li></ul></td><td><ul><li><code>cpu-stat</code>: frequency, load average</li><li><code>mem-stat</code>: available percent, used percent</li><li><code>proc-stat</code>: shown count</li><li><code>net-panel</code>: now Mibps, total</li><li><code>cpu-gauge-panel</code>: caption, tick labels</li><li><code>gpu-load</code>: model</li><li><code>cores</code>: core labels</li></ul></td></tr>
+            <tr><td>768x1024</td><td>6 grid columns</td><td><ul><li><code>cpu-stat</code>: form B, value tile and plot; foot dropped (84 to 99 px)</li><li><code>mem-stat</code>: form B, value tile and plot; foot dropped (84 to 99 px)</li><li><code>proc-stat</code>: form B, count (84 to 99 px)</li><li><code>net-panel</code>: form A, paired plots, legend beside (440 px wide and 170 px tall or more)</li><li><code>cpu-gauge-panel</code>: form B, thin arc, value in the hollow; facts beside when 305 px or wider, below when narrower (130 to 169 px tall, or under 305 px wide and 170 px tall or more)</li><li><code>mem-gauge-panel</code>: form B, thin arc, value in the hollow; facts beside when 305 px or wider, below when narrower (130 to 169 px tall, or under 305 px wide and 170 px tall or more)</li><li><code>gpu-load</code>: form B, plot, legend below in three columns; model dropped (330 px wide and 150 px tall or more)</li><li><code>cores</code>: form B, 16x4 grid, value only (220 px wide and 100 px tall or more)</li><li><code>storage</code>: form B, one line per mount: name, bar, value (96 to 149 px tall, 220 px wide or more)</li><li><code>proc-panel</code>: form A, all seven columns (700 px wide or more)</li></ul></td><td><ul><li><code>cpu-stat</code>: frequency, load average</li><li><code>mem-stat</code>: available percent, used percent</li><li><code>proc-stat</code>: shown count</li><li><code>cpu-gauge-panel</code>: caption, tick labels</li><li><code>mem-gauge-panel</code>: caption, percent of total, tick labels</li><li><code>gpu-load</code>: model</li><li><code>cores</code>: core labels</li><li><code>storage</code>: swap used and free</li></ul></td></tr>
+            <tr><td>390x844</td><td>1 grid column</td><td><ul><li><code>cpu-stat</code>: form C, value beside its plot (under 84 px)</li><li><code>mem-stat</code>: form C, value beside its plot (under 84 px)</li><li><code>proc-stat</code>: form C, count beside the head (under 84 px)</li><li><code>net-panel</code>: form C, one combined plot, rates beside (under 360 px wide or 120 px tall)</li><li><code>cpu-gauge-panel</code>: form C, bar with value; facts on a line below from 100 px tall (under 130 px tall, or under 305 px wide and under 170 px tall)</li><li><code>mem-gauge-panel</code>: form C, bar with value; facts on a line below from 100 px tall (under 130 px tall, or under 305 px wide and under 170 px tall)</li><li><code>gpu-load</code>: form C, plot with one line per GPU beside it: utilisation and VRAM (under 330 px wide or 150 px tall)</li><li><code>cores</code>: form C, one heat strip of 64 cells, tint and fill height by load (under 220 px wide or 100 px tall)</li><li><code>storage</code>: form C, one summary line, ellipsised with a title (under 96 px tall or 220 px wide)</li><li><code>proc-panel</code>: form C, Pid, Program, MemB and Cpu% (under 440 px)</li></ul></td><td><ul><li><code>top bar</code>: version, host, clock</li><li><code>cpu-stat</code>: frequency, load average</li><li><code>mem-stat</code>: available percent, total, used percent</li><li><code>proc-stat</code>: shown count</li><li><code>net-panel</code>: legend names, now Mibps, top rate, total, x-axis labels</li><li><code>cpu-gauge-panel</code>: arc, caption, core count, frequency, load average, tick labels</li><li><code>mem-gauge-panel</code>: arc, available, cached, caption, free, percent of total, tick labels, total and swap</li><li><code>gpu-load</code>: model, temperature and power, x-axis labels</li><li><code>cores</code>: core labels, core values, count and scale</li><li><code>storage</code>: swap size, swap used and free, usage bars</li><li><code>proc-panel</code>: Command column, Threads column, User column</li></ul></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="concept">
+        <h3><a href="05.06-adaptive-3-split.html">05.06-adaptive-3-split</a><span class="name">Two-pane split</span></h3>
+        <p class="statement">The desktop grid holds at 1280 px and wider; from 768 to 1279 px two panes separate the telemetry from the process table, side by side in landscape and stacked in portrait; a phone shows a strip of P1 values with sparklines above the process table.</p>
+        <div class="shots">
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-3-split-1440x900.png" width="1440" height="900"
+                 alt="Two-pane split (05.06-adaptive-3-split) rendered at 1440x900.">
+            <figcaption>1440x900</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-3-split-1280x800.png" width="1280" height="800"
+                 alt="Two-pane split (05.06-adaptive-3-split) rendered at 1280x800.">
+            <figcaption>1280x800</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2321">
+            <img src="shots/05.06-adaptive-3-split-1024x768.png" width="1024" height="768"
+                 alt="Two-pane split (05.06-adaptive-3-split) rendered at 1024x768.">
+            <figcaption>1024x768</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.1305">
+            <img src="shots/05.06-adaptive-3-split-768x1024.png" width="768" height="1024"
+                 alt="Two-pane split (05.06-adaptive-3-split) rendered at 768x1024.">
+            <figcaption>768x1024</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.0804">
+            <img src="shots/05.06-adaptive-3-split-390x844.png" width="390" height="844"
+                 alt="Two-pane split (05.06-adaptive-3-split) rendered at 390x844.">
+            <figcaption>390x844</figcaption>
+          </figure>
+        </div>
+        <div class="spec-wrap">
+          <table>
+            <caption>adaptive-spec of 05.06-adaptive-3-split</caption>
+            <thead><tr><th>Viewport</th><th>Layout</th><th>Visible panels and forms</th><th>Dropped</th></tr></thead>
+            <tbody>
+            <tr><td>1440x900</td><td>desktop grid: 12 columns, bands 116 / 214 / 190 / 314 px</td><td><ul><li><code>cpu-stat</code>: value 4.8 %, history plot, foot with frequency and load</li><li><code>mem-stat</code>: value 39.7 GiB, history plot, foot with used and available</li><li><code>proc-stat</code>: count 249, foot 0 / 249 shown</li><li><code>net-panel</code>: download and upload plots on one time axis with x labels; legend 168 px: name, rate, now, top, total</li><li><code>cpu-gauge-panel</code>: arc, readout in the hollow, facts beside: frequency, load</li><li><code>mem-gauge-panel</code>: arc, readout in the hollow, facts beside: available, cached, free; swap in the head</li><li><code>gpu-load</code>: one plot, three lines, x labels; legend 224 px: name, model, utilisation, VRAM, temperature, power</li><li><code>cores</code>: 8 x 8 cells, label and value</li><li><code>storage</code>: swap, /, /home, nas-shared with bars</li><li><code>proc-panel</code>: full width, 7 columns: Pid, Program, Command, Threads, User, MemB, Cpu%</li></ul></td><td>nothing</td></tr>
+            <tr><td>1280x800</td><td>desktop grid, compact tokens: top bar 24, head 24, stat value 28, row 20, gaps 6; bands 104 / 191 / 170 / 281 px</td><td><ul><li><code>cpu-stat</code>: value, history plot, foot</li><li><code>mem-stat</code>: value, history plot, foot</li><li><code>proc-stat</code>: count, foot</li><li><code>net-panel</code>: paired plots with x labels; legend 168 px with every field</li><li><code>cpu-gauge-panel</code>: arc, readout in the hollow, facts beside</li><li><code>mem-gauge-panel</code>: arc, readout in the hollow, facts beside</li><li><code>gpu-load</code>: plot with three lines; legend 224 px with every field</li><li><code>cores</code>: 8 x 8 cells, label and value</li><li><code>storage</code>: four mounts with bars</li><li><code>proc-panel</code>: full width, 7 columns</li></ul></td><td>nothing</td></tr>
+            <tr><td>1024x768</td><td>two panes, landscape: telemetry pane left (1.45 share) stacks the stats, network, gauges, GPU and cores; process pane right (1 share) holds the table at full height</td><td><ul><li><code>cpu-stat</code>: half the pane: value, history plot, foot</li><li><code>mem-stat</code>: half the pane: value, history plot, foot</li><li><code>net-panel</code>: full pane width: paired plots with x labels; legend 161 px with every field</li><li><code>cpu-gauge-panel</code>: half the pane: arc, readout in the hollow, facts beside</li><li><code>mem-gauge-panel</code>: half the pane: arc, readout in the hollow, facts beside</li><li><code>gpu-load</code>: full pane width: plot with three lines; legend 183 px, model ellipsised with its title</li><li><code>cores</code>: full pane width: 16 x 4 cells, value only</li><li><code>proc-panel</code>: right pane at full height, 5 columns: Pid, Program, Command, MemB, Cpu%</li></ul></td><td><ul><li>proc-stat panel (P3; the count stays in the process head)</li><li>storage panel: swap and mounts (P4)</li><li>core labels C0-C63 (P4)</li><li>process column Threads (P3)</li><li>process column User (P3)</li></ul></td></tr>
+            <tr><td>768x1024</td><td>two panes, portrait: telemetry pane above (53 share) in two columns: CPU and memory stats, network beside GPU, the two gauges, cores; process pane below (47 share)</td><td><ul><li><code>cpu-stat</code>: half width: value, history plot, foot</li><li><code>mem-stat</code>: half width: value, history plot, foot</li><li><code>net-panel</code>: half width, beside GPU: paired plots with x labels; legend 132 px with every field</li><li><code>gpu-load</code>: half width, beside network: plot with three lines; legend 150 px, model ellipsised with its title</li><li><code>cpu-gauge-panel</code>: half width: arc, readout in the hollow, facts beside</li><li><code>mem-gauge-panel</code>: half width: arc, readout in the hollow, facts beside</li><li><code>cores</code>: full width: 32 x 2 cells, value only</li><li><code>proc-panel</code>: lower pane, 7 columns</li></ul></td><td><ul><li>proc-stat panel (P3; the count stays in the process head)</li><li>storage panel: swap and mounts (P4)</li><li>core labels C0-C63 (P4)</li></ul></td></tr>
+            <tr><td>390x844</td><td>phone: telemetry strip of P1 values with sparklines above the process table</td><td><ul><li><code>strip</code>: CPU total, memory used, download rate, upload rate, each with a sparkline, two per row; one row per GPU: name, sparkline, utilisation, VRAM used / total</li><li><code>proc-panel</code>: rest of the height, 4 columns: Pid, Program, MemB, Cpu%; filter 92 px</li></ul></td><td><ul><li>top bar version (P4)</li><li>top bar host (P4)</li><li>top bar clock (P4)</li><li>cpu-stat panel (its total and sparkline move to the strip; frequency and load P3)</li><li>mem-stat panel (used and sparkline move to the strip; used % and available P3)</li><li>proc-stat panel (P3; the count stays in the process head)</li><li>network panel (rates and sparklines move to the strip; Mibps, top, total, x labels P3)</li><li>CPU gauge and its facts (P2)</li><li>memory gauge, available, cached, free, swap (P2, P3)</li><li>GPU load panel (utilisation, sparkline and VRAM move to the strip; model, temperature, power P3)</li><li>cores panel (values P3, labels P4)</li><li>storage panel (P4)</li><li>process column Command (P3)</li><li>process column Threads (P3)</li><li>process column User (P3)</li></ul></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="concept">
+        <h3><a href="05.06-adaptive-4-tabs.html">05.06-adaptive-4-tabs</a><span class="name">Summary strip and tabs</span></h3>
+        <p class="statement">The desktop grid holds at 1024 px wide and 780 px tall and above; below either bound a summary strip carries the P1 values and a tab bar (System, Network, GPU, Processes) shows one group at full height, two groups side by side in landscape.</p>
+        <div class="shots">
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-4-tabs-1440x900.png" width="1440" height="900"
+                 alt="Summary strip and tabs (05.06-adaptive-4-tabs) rendered at 1440x900.">
+            <figcaption>1440x900</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2785">
+            <img src="shots/05.06-adaptive-4-tabs-1280x800.png" width="1280" height="800"
+                 alt="Summary strip and tabs (05.06-adaptive-4-tabs) rendered at 1280x800.">
+            <figcaption>1280x800</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.2321">
+            <img src="shots/05.06-adaptive-4-tabs-1024x768.png" width="1024" height="768"
+                 alt="Summary strip and tabs (05.06-adaptive-4-tabs) rendered at 1024x768.">
+            <figcaption>1024x768</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.1305">
+            <img src="shots/05.06-adaptive-4-tabs-768x1024.png" width="768" height="1024"
+                 alt="Summary strip and tabs (05.06-adaptive-4-tabs) rendered at 768x1024.">
+            <figcaption>768x1024</figcaption>
+          </figure>
+          <figure style="flex-grow: 0.0804">
+            <img src="shots/05.06-adaptive-4-tabs-390x844.png" width="390" height="844"
+                 alt="Summary strip and tabs (05.06-adaptive-4-tabs) rendered at 390x844.">
+            <figcaption>390x844</figcaption>
+          </figure>
+        </div>
+        <div class="spec-wrap">
+          <table>
+            <caption>adaptive-spec of 05.06-adaptive-4-tabs</caption>
+            <thead><tr><th>Viewport</th><th>Layout</th><th>Visible panels and forms</th><th>Dropped</th></tr></thead>
+            <tbody>
+            <tr><td>1440x900</td><td>desktop grid, bands 116 / 214 / 190 / 314 px</td><td><ul><li><code>panels</code>: cpu-stat, mem-stat, proc-stat, net-panel, cpu-gauge-panel, mem-gauge-panel, gpu-load, cores, storage, proc-panel</li><li><code>top bar</code>: brand, version, host, interval, clock, LIVE with age, READ-ONLY, CONFIG</li><li><code>cpu-stat, mem-stat</code>: value tile, history plot, foot</li><li><code>proc-stat</code>: count tile and foot</li><li><code>net-panel</code>: two paired plots on one time axis, legend beside (168 px) with name, rate, now, top, total</li><li><code>cpu-gauge-panel</code>: arc with readout in the hollow, frequency and load beside</li><li><code>mem-gauge-panel</code>: arc with readout in the hollow, available, cached and free beside</li><li><code>gpu-load</code>: one plot with three lines, legend beside (224 px): name, model, utilisation, VRAM, temperature, power</li><li><code>cores</code>: 8 x 8 grid, label and value</li><li><code>storage</code>: four mounts in a column</li><li><code>proc-panel</code>: 7 columns</li></ul></td><td>nothing</td></tr>
+            <tr><td>1280x800</td><td>desktop grid with the 860 px height step</td><td><ul><li><code>panels</code>: cpu-stat, mem-stat, proc-stat, net-panel, cpu-gauge-panel, mem-gauge-panel, gpu-load, cores, storage, proc-panel</li><li><code>all panels</code>: as 1440x900; bands share the height, plots shorter, heads 24 px, gaps 6 px</li></ul></td><td>nothing</td></tr>
+            <tr><td>1024x768</td><td>tabs, landscape: System and Network side by side; strip in one row, tab system at load<ul><li>other tab gpu, proc: GPU and Processes side by side: GPU plot with the legend below in three columns (model names ellipsised, title kept); process table Pid, Program, MemB, Cpu%</li></ul></td><td><ul><li><code>panels</code>: cpu-stat, mem-stat, net-panel, cpu-gauge-panel, mem-gauge-panel, cores, storage</li><li><code>strip</code>: seven values in one row: CPU, memory, down, up, GPU 0, GPU 1, GPU 2</li><li><code>tab bar</code>: four tabs; System and Network marked as the shown pair</li><li><code>cpu-stat, mem-stat</code>: history plot and foot</li><li><code>cpu-gauge-panel, mem-gauge-panel</code>: arc with readout in the hollow, alone</li><li><code>cores</code>: 8 x 8 grid, label and value</li><li><code>storage</code>: two mounts per row</li><li><code>net-panel</code>: two paired plots at full height, legend below in two columns</li></ul></td><td><ul><li>proc-stat panel (the count stays in the process head)</li><li>CPU and memory value tiles (the strip carries both values)</li><li>CPU gauge facts: frequency, load (also in the CPU panel foot)</li><li>memory gauge facts: available, cached, free</li><li>memory gauge head: of 503 GiB, swap (in the memory panel head and storage)</li></ul></td></tr>
+            <tr><td>768x1024</td><td>tabs, portrait: one group; strip in one row, tab system at load<ul><li>other tab network: two paired plots at full height, legend below in two columns</li><li>other tab gpu: one plot at full height, legend below in three columns</li><li>other tab proc: 7 columns</li></ul></td><td><ul><li><code>panels</code>: cpu-stat, mem-stat, cpu-gauge-panel, mem-gauge-panel, cores, storage</li><li><code>strip</code>: seven values in one row</li><li><code>tab bar</code>: four tabs, System selected</li><li><code>cpu-stat, mem-stat</code>: history plot and foot</li><li><code>cpu-gauge-panel</code>: arc with readout in the hollow, frequency and load below</li><li><code>mem-gauge-panel</code>: arc with readout in the hollow, available, cached and free below</li><li><code>cores</code>: 8 x 8 grid at full width, label and value</li><li><code>storage</code>: four mounts in one row</li></ul></td><td><ul><li>proc-stat panel (the count stays in the process head)</li><li>CPU and memory value tiles (the strip carries both values)</li></ul></td></tr>
+            <tr><td>390x844</td><td>tabs, portrait: one group; strip in two rows, tab system at load<ul><li>other tab network: two paired plots at full height, legend below in two columns</li><li>other tab gpu: one plot at full height, legend below in one column</li><li>other tab proc: Pid, Program, MemB, Cpu%</li></ul></td><td><ul><li><code>panels</code>: cpu-stat, mem-stat, cpu-gauge-panel, mem-gauge-panel, cores, storage</li><li><code>top bar</code>: brand, interval, LIVE with age, READ-ONLY, CONFIG</li><li><code>strip</code>: two rows: CPU, memory, down, up over GPU 0, GPU 1, GPU 2</li><li><code>tab bar</code>: four tabs, System selected</li><li><code>cpu-stat, mem-stat</code>: history plot and foot</li><li><code>cpu-gauge-panel</code>: arc with readout in the hollow, frequency and load below</li><li><code>mem-gauge-panel</code>: arc with readout in the hollow, available, cached and free below</li><li><code>cores</code>: 8 x 8 grid, label and value</li><li><code>storage</code>: two mounts per row</li></ul></td><td><ul><li>top bar version, host and clock (P4)</li><li>proc-stat panel (the count stays in the process head)</li><li>CPU and memory value tiles (the strip carries both values)</li><li>memory gauge head: of 503 GiB, swap (in the memory panel head and storage)</li></ul></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+    </div>
+  </section>
+  <!-- adaptive:end -->
+
+</main>
+</div>
+
+</body>
+</html>

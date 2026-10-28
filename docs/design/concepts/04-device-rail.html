@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web · devices</title>
+<style>
+html[data-theme="default"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #000000; --surface-raised: #050505; --surface-sunken: #040404;
+  --text: #cccccc; --text-strong: #eeeeee; --muted: #757575;
+  --accent: #b54040; --selection-bg: #6a2f2f; --selection-fg: #eeeeee;
+  --border: #5a5a5a; --border-subtle: #2d2d2d;
+  --border-cpu: #556d59; --border-mem: #6c6c4b; --border-net: #5c588d; --border-proc: #805252;
+  --ok: #77ca9b; --warn: #cbc06c; --crit: #dc4c4c; --unavailable: #757575;
+  --meter-track: #5a5a5a; --grid-line: #5a5a5a;
+  --chart-cpu: #77ca9b; --chart-mem-used: #ff4769; --chart-mem-available: #ffb814;
+  --chart-mem-cached: #26c5ff; --chart-mem-free: #dcff85;
+  --chart-net-down: #b0a9de; --chart-net-up: #dcafde; --chart-proc: #dcd179;
+}
+html[data-theme="default"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #ffffff; --surface-raised: #f7f7f7; --surface-sunken: #fbfbfb;
+  --text: #333333; --text-strong: #111111; --muted: #6b6b6b;
+  --accent: #bf4a4a; --selection-bg: #d09595; --selection-fg: #111111;
+  --border: #949494; --border-subtle: #cacaca;
+  --border-cpu: #849a88; --border-mem: #96967b; --border-net: #7672a7; --border-proc: #ad7f7f;
+  --ok: #358859; --warn: #938834; --crit: #b32323; --unavailable: #767676;
+  --meter-track: #949494; --grid-line: #949494;
+  --chart-cpu: #358859; --chart-mem-used: #b80022; --chart-mem-available: #c48900;
+  --chart-mem-cached: #009fd9; --chart-mem-free: #577a00;
+  --chart-net-down: #282156; --chart-net-up: #4e2150; --chart-proc: #867b23;
+}
+
+:root {
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 11px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.page {
+  height: 100%;
+  padding: 6px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: 360px minmax(0, 1fr);
+}
+.panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+.rail { grid-column: 1; grid-row: 1 / 3; background: var(--surface-raised); }
+.detail { grid-column: 2; grid-row: 1; border-color: var(--border-cpu); }
+.proc { grid-column: 2; grid-row: 2; border-color: var(--border-proc); }
+
+.rail-head {
+  flex: 0 0 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.rail-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* house chip: 1px border, 2px radius, uppercase, 12% tint */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--border));
+}
+.chip b { font-family: var(--mono); font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text); }
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); color: var(--text-strong); }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.lamp { width: 4px; height: 4px; background: var(--ok); }
+.chip-live.paused .lamp { background: var(--warn); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); color: var(--text-strong); margin-left: auto; cursor: pointer; }
+
+.devs { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.dev {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.dev:last-child { border-bottom: 0; }
+.dev:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.dev[aria-current="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.dev[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+.dev-spark { display: block; width: 52px; height: 40px; }
+.dev-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dev-name { font-size: 10px; line-height: 1; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.dev-val { font-family: var(--mono); font-size: 17px; font-weight: 600; line-height: 1.15; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev-model { font-size: 10px; line-height: 1.2; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev-sub { font-size: 10px; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.store { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 7px 8px 8px; border-top: 1px solid var(--border-subtle); }
+.store-head { display: flex; justify-content: space-between; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.store-row { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; line-height: 1.2; }
+.store-row .v { font-family: var(--mono); color: var(--text-strong); }
+.bar { height: 3px; display: flex; background: var(--border-subtle); }
+.bar i { display: block; height: 100%; }
+
+.rail-foot {
+  flex: 0 0 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.rail-foot .clock { margin-left: auto; color: var(--text); }
+/* detail pane */
+.detail-head {
+  flex: 0 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.detail-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-strong);
+}
+.detail-model {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 10px;
+  padding: 8px;
+}
+.detail-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.hero { flex: 0 0 40px; display: flex; align-items: baseline; gap: 8px; }
+.hero-val {
+  font-family: var(--mono);
+  font-size: 31px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-strong);
+}
+.hero-unit { font-size: 10px; letter-spacing: 0.02em; color: var(--muted); }
+.dchart { flex: 1 1 auto; min-height: 0; border: 1px solid var(--border-subtle); overflow: hidden; }
+
+.cores { flex: 0 0 36px; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.cores[hidden] { display: none; }
+.cores-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.cores-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(64, minmax(0, 1fr)); gap: 1px; }
+.core-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-strong);
+  background: var(--border-subtle);
+}
+
+.stats { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border-subtle); }
+.stat {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 0 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.stat:last-child { border-bottom: 0; }
+.s-label { font-size: 9px; line-height: 1; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.s-val {
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1.15;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.s-val i { font-family: var(--ui); font-style: normal; font-size: 10px; color: var(--muted); }
+
+.chart { display: block; width: 100%; height: 100%; }
+.chart .area { fill: var(--chart, var(--text)); opacity: 0.15; }
+.chart .line { fill: none; stroke: var(--chart, var(--text)); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+
+/* process table */
+.proc-head {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.proc-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-strong);
+}
+.proc-count { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.filter {
+  width: 140px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.filter::placeholder { color: var(--muted); }
+.proc-hints { margin-left: auto; display: flex; gap: 10px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.proc-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-gutter: stable; scrollbar-color: var(--border) var(--surface); }
+.proc-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: var(--mono); font-size: 12px; }
+.proc-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 20px;
+  padding: 0 7px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.proc-table td { height: 24px; padding: 0 7px; border: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proc-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.proc-table tbody tr:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.proc-table .num { text-align: right; }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--muted); }
+
+/* config popover */
+.config {
+  position: fixed;
+  z-index: 40;
+  width: 236px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 11px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label { font-size: 10px; line-height: 18px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--accent); }
+.opt.on { border-color: var(--accent); color: var(--text-strong); }
+.opt.on::before { opacity: 0.12; }
+
+@media (max-width: 899px) {
+  .page { grid-template-columns: minmax(0, 1fr); grid-template-rows: 62px 300px minmax(0, 1fr); }
+  .rail { grid-column: 1; grid-row: 1; }
+  .store, .rail-foot { display: none; }
+  .rail-head { flex-basis: 26px; padding: 0 6px; }
+  .rail-label { font-size: 9px; }
+  .devs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .dev {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    padding: 4px 5px;
+    border-bottom: 0;
+    border-right: 1px solid var(--border-subtle);
+  }
+  .dev:last-child { border-right: 0; }
+  .dev-spark, .dev-model, .dev-sub { display: none; }
+  .dev-name { font-size: 8px; }
+  .dev-val { font-size: 10px; }
+  .dev[aria-current="true"]::before { top: 0; bottom: auto; left: 0; width: 100%; height: 2px; }
+  .detail { grid-column: 1; grid-row: 2; }
+  .detail-body { grid-template-columns: minmax(0, 1fr); padding: 8px; }
+  .stats, .cores { display: none; }
+  .hero { flex-basis: 34px; }
+  .hero-val { font-size: 26px; }
+  .proc { grid-column: 1; grid-row: 3; }
+  .proc-hints { display: none; }
+  .filter { width: 92px; }
+  .proc-table { table-layout: auto; }
+  .proc-table th:nth-child(3), .proc-table td:nth-child(3),
+  .proc-table th:nth-child(4), .proc-table td:nth-child(4),
+  .proc-table th:nth-child(5), .proc-table td:nth-child(5) { display: none; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <aside class="panel rail" aria-label="Devices">
+    <header class="rail-head">
+      <span class="rail-label">devices</span>
+      <button class="chip chip-config" id="config-toggle" type="button" aria-expanded="false" aria-controls="config">config</button>
+    </header>
+    <div class="devs" id="devs">
+      <button class="dev" type="button" data-dev="cpu" aria-current="true">
+        <span class="dev-spark" data-spark="cpu" style="--chart:var(--chart-cpu)" aria-hidden="true"></span>
+        <span class="dev-text">
+          <span class="dev-name">CPU</span>
+          <span class="dev-val">4.8%</span>
+          <span class="dev-sub">3.99 GHz · L 96 95 94</span>
+        </span>
+      </button>
+      <button class="dev" type="button" data-dev="mem" aria-current="false">
+        <span class="dev-spark" data-spark="mem" style="--chart:var(--chart-mem-used)" aria-hidden="true"></span>
+        <span class="dev-text">
+          <span class="dev-name">Memory</span>
+          <span class="dev-val">39.7 GiB</span>
+          <span class="dev-sub">of 503 GiB · 8%</span>
+        </span>
+      </button>
+      <button class="dev" type="button" data-dev="net" aria-current="false">
+        <span class="dev-spark" data-spark="net" style="--chart:var(--chart-net-down)" aria-hidden="true"></span>
+        <span class="dev-text">
+          <span class="dev-name">Network</span>
+          <span class="dev-val">1.07 MiB/s</span>
+          <span class="dev-sub">940 KiB/s up · eth0</span>
+        </span>
+      </button>
+      <button class="dev" type="button" data-dev="gpu0" aria-current="false" title="RTX PRO 4000 Blackwell">
+        <span class="dev-spark" data-spark="gpu0" style="--chart:var(--chart-cpu)" aria-hidden="true"></span>
+        <span class="dev-text">
+          <span class="dev-name">GPU 0</span>
+          <span class="dev-val">0%</span>
+          <span class="dev-model">RTX PRO 4000 Blackwell</span>
+          <span class="dev-sub">452M / 24G · 36 C · 3.9 W</span>
+        </span>
+      </button>
+      <button class="dev" type="button" data-dev="gpu1" aria-current="false" title="RTX PRO 6000 Blackwell Max-Q">
+        <span class="dev-spark" data-spark="gpu1" style="--chart:var(--chart-cpu)" aria-hidden="true"></span>
+        <span class="dev-text">
+          <span class="dev-name">GPU 1</span>
+          <span class="dev-val">0%</span>
+          <span class="dev-model">RTX PRO 6000 Blackwell Max-Q</span>
+          <span class="dev-sub">64M / 98G · 37 C · 14.1 W</span>
+        </span>
+      </button>
+      <button class="dev" type="button" data-dev="gpu2" aria-current="false" title="RTX PRO 5000 72GB">
+        <span class="dev-spark" data-spark="gpu2" style="--chart:var(--chart-cpu)" aria-hidden="true"></span>
+        <span class="dev-text">
+          <span class="dev-name">GPU 2</span>
+          <span class="dev-val">1%</span>
+          <span class="dev-model">RTX PRO 5000 72GB</span>
+          <span class="dev-sub">853M / 73G · 37 C · 21.9 W</span>
+        </span>
+      </button>
+    </div>
+    <div class="store">
+      <div class="store-head"><span>storage</span><span>128 GiB</span></div>
+      <div class="store-row"><span>swap</span><span class="v">2.9 GiB · 98% free</span></div>
+      <div class="bar"><i style="width:2.3%;background:var(--chart-mem-cached)"></i><i style="flex:1 1 auto;background:var(--ok)"></i></div>
+      <div class="store-row"><span>/</span><span class="v">66%</span></div>
+      <div class="bar"><i style="width:66%;background:var(--chart-mem-used)"></i></div>
+      <div class="store-row"><span>/home</span><span class="v">66%</span></div>
+      <div class="bar"><i style="width:66%;background:var(--chart-mem-used)"></i></div>
+      <div class="store-row"><span>nas-shared</span><span class="v">31%</span></div>
+      <div class="bar"><i style="width:31%;background:var(--chart-mem-used)"></i></div>
+    </div>
+    <footer class="rail-foot">
+      <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word">live</span><b id="sample-age">0.4 s</b></span>
+      <span class="clock">06:12</span>
+      <span>2000 ms</span>
+    </footer>
+  </aside>
+
+  <section class="panel detail" id="detail" aria-labelledby="detail-title">
+    <header class="detail-head">
+      <h2 class="detail-title" id="detail-title">cpu</h2>
+      <span class="detail-model" id="detail-model">64 cores</span>
+    </header>
+    <div class="detail-body">
+      <div class="detail-main">
+        <div class="hero"><span class="hero-val" id="hero-val">4.8%</span><span class="hero-unit" id="hero-unit">utilisation</span></div>
+        <div class="dchart" id="dchart" role="img" aria-label="CPU history, 4.8 percent now"></div>
+        <div class="cores" id="cores">
+          <div class="cores-head"><span>cores · 64</span><span id="cores-mean">mean 4.8%</span></div>
+          <div class="cores-grid" id="cores-grid"></div>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>
+  </section>
+
+  <section class="panel proc" aria-labelledby="proc-title">
+    <header class="proc-head">
+      <h2 class="proc-title" id="proc-title">processes</h2>
+      <span class="proc-count" id="proc-count">0/249</span>
+      <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+      <span class="proc-hints"><span>per-core</span><span>reverse</span><span>tree</span><span>cpu direct</span></span>
+    </header>
+    <div class="proc-table-wrap">
+      <table class="proc-table">
+        <caption class="sr-only">Processes sorted by CPU descending</caption>
+        <colgroup>
+          <col style="width:70px"><col style="width:132px"><col><col style="width:58px"><col style="width:52px"><col style="width:64px"><col style="width:58px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num" scope="col">Pid</th>
+            <th scope="col">Program</th>
+            <th scope="col">Command</th>
+            <th class="num" scope="col">Threads</th>
+            <th scope="col">User</th>
+            <th class="num" scope="col">MemB</th>
+            <th class="num" scope="col">Cpu%</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">mode</span>
+    <div class="cfg-opts" data-group="mode">
+      <button class="opt on" type="button" data-value="dark">dark</button>
+      <button class="opt" type="button" data-value="light">light</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">pause</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  function series(n, fn) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(fn(i));
+    return out;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  var cores = (function () {
+    var base = [5, 4, 6, 3, 7, 5, 4, 6, 3, 5, 8, 4, 6, 2, 7, 5];
+    var tail = [4, 5, 3, 6, 4, 5, 7, 3, 4, 4, 6, 2, 4, 5, 3, 3];
+    return base.concat(base, base, tail);
+  })();
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var memUsed = series(24, function (i) { return 8 + 0.5 * Math.sin(i * 0.55 + 0.4); });
+  memUsed[memUsed.length - 1] = 8;
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[gpu0.length - 1] = 0;
+  gpu1[gpu1.length - 1] = 0;
+  gpu2[gpu2.length - 1] = 1;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+
+  /* rail sparks downsample the same series so a 52px line reads as a trend */
+  var cpuSpark = cpuData.filter(function (_, i) { return i % 4 === 0; });
+  var netSpark = netDown.filter(function (_, i) { return i % 2 === 0; });
+  cpuSpark[cpuSpark.length - 1] = 4.8;
+  netSpark[netSpark.length - 1] = 1.07;
+
+  /* PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+  function round2(v) { return Math.round(v * 100) / 100; }
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return { line: line, area: line + "L" + round2(w) + " " + round2(h) + "L0 " + round2(h) + "Z" };
+  }
+  function svgMarkup(d, w, h) {
+    return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="area" d="' + d.area + '"/>' +
+      '<path class="line" d="' + d.line + '"/></svg>';
+  }
+
+  var DEVICES = {
+    cpu: {
+      title: "cpu", model: "64 cores", value: "4.8%", unit: "utilisation",
+      chart: "var(--chart-cpu)", border: "var(--border-cpu)", data: cpuData, spark: cpuSpark, min: 0, max: 25,
+      stats: [["Speed", "3.99", "GHz"], ["Load average", "96 95 94", ""], ["Cores", "64", ""], ["Processes", "249", ""]]
+    },
+    mem: {
+      title: "memory", model: "503 GiB total", value: "39.7 GiB", unit: "used of 503 GiB",
+      chart: "var(--chart-mem-used)", border: "var(--border-mem)", data: memUsed, min: 0, max: 100, sparkMin: 6, sparkMax: 10,
+      stats: [["Used", "39.7 GiB", "8%"], ["Available", "463 GiB", "92%"], ["Cached", "253 GiB", "50%"], ["Free", "184 GiB", "37%"]]
+    },
+    net: {
+      title: "network", model: "eth0", value: "1.07 MiB/s", unit: "download · 8.56 Mibps",
+      chart: "var(--chart-net-down)", border: "var(--border-net)", data: netDown, spark: netSpark, min: 0, max: 2.2,
+      stats: [["Upload", "940 KiB/s", "7.34 Mibps"], ["Top down", "62.1 Mibps", ""], ["Top up", "10.0 Mibps", ""], ["Total", "391 GiB", ""]]
+    },
+    gpu0: {
+      title: "gpu 0", model: "RTX PRO 4000 Blackwell", value: "0%", unit: "utilisation",
+      chart: "var(--chart-cpu)", border: "var(--border-cpu)", data: gpu0, min: 0, max: 4,
+      stats: [["Memory", "452M", "of 24G"], ["Temperature", "36", "C"], ["Power", "3.9", "W"]]
+    },
+    gpu1: {
+      title: "gpu 1", model: "RTX PRO 6000 Blackwell Max-Q", value: "0%", unit: "utilisation",
+      chart: "var(--chart-cpu)", border: "var(--border-cpu)", data: gpu1, min: 0, max: 4,
+      stats: [["Memory", "64M", "of 98G"], ["Temperature", "37", "C"], ["Power", "14.1", "W"]]
+    },
+    gpu2: {
+      title: "gpu 2", model: "RTX PRO 5000 72GB", value: "1%", unit: "utilisation",
+      chart: "var(--chart-cpu)", border: "var(--border-cpu)", data: gpu2, min: 0, max: 4,
+      stats: [["Memory", "853M", "of 73G"], ["Temperature", "37", "C"], ["Power", "21.9", "W"]]
+    }
+  };
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  document.getElementById("proc-body").innerHTML = PROCS.map(function (p) {
+    var cpu = p[6];
+    var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+    return '<tr><td class="num">' + p[0] + "</td><td>" + p[1] + "</td><td>" + p[2] +
+      '</td><td class="num">' + p[3] + "</td><td>" + p[4] + '</td><td class="num">' + p[5] +
+      '</td><td class="num ' + cls + '">' + cpu.toFixed(1) + "</td></tr>";
+  }).join("");
+
+  (function renderCores() {
+    var mean = cores.reduce(function (a, b) { return a + b; }, 0) / cores.length;
+    document.getElementById("cores-mean").textContent = "mean " + mean.toFixed(1) + "%";
+    document.getElementById("cores-grid").innerHTML = cores.map(function (p, i) {
+      var tint = 12 + p * 5;
+      return '<span class="core-cell" title="C' + i + " " + p + '%" style="background:color-mix(in srgb, var(--chart-cpu) ' +
+        tint + '%, var(--surface))">' + p + "</span>";
+    }).join("");
+  })();
+
+  var state = { device: "cpu", mode: "dark", paused: false };
+
+  Array.prototype.forEach.call(document.querySelectorAll(".dev-spark"), function (el) {
+    var d = DEVICES[el.getAttribute("data-spark")];
+    if (!d) return;
+    var lo = d.sparkMin != null ? d.sparkMin : d.min;
+    var hi = d.sparkMax != null ? d.sparkMax : d.max;
+    el.innerHTML = svgMarkup(pchipPath(d.spark || d.data, 52, 40, lo, hi), 52, 40);
+  });
+
+  function drawDetail() {
+    var host = document.getElementById("dchart");
+    var d = DEVICES[state.device];
+    var w = host.clientWidth;
+    var h = host.clientHeight;
+    if (!w || !h) return;
+    var old = host.querySelector("svg.chart");
+    if (old) old.remove();
+    host.insertAdjacentHTML("afterbegin", svgMarkup(pchipPath(d.data, w, h, d.min, d.max), w, h));
+  }
+
+  function selectDevice(id) {
+    var d = DEVICES[id];
+    if (!d) return;
+    state.device = id;
+    Array.prototype.forEach.call(document.querySelectorAll(".dev"), function (el) {
+      el.setAttribute("aria-current", String(el.getAttribute("data-dev") === id));
+    });
+    var detail = document.getElementById("detail");
+    detail.style.setProperty("--chart", d.chart);
+    detail.style.borderColor = d.border;
+    document.getElementById("detail-title").textContent = d.title;
+    document.getElementById("detail-model").textContent = d.model;
+    document.getElementById("hero-val").textContent = d.value;
+    document.getElementById("hero-unit").textContent = d.unit;
+    document.getElementById("cores").hidden = id !== "cpu";
+    document.getElementById("stats").innerHTML = d.stats.map(function (s) {
+      return '<div class="stat"><span class="s-label">' + s[0] + '</span><span class="s-val">' + s[1] +
+        (s[2] ? " <i>" + s[2] + "</i>" : "") + "</span></div>";
+    }).join("");
+    document.getElementById("dchart").setAttribute("aria-label", d.title + " history, " + d.value + " now");
+    requestAnimationFrame(drawDetail);
+  }
+
+  document.getElementById("devs").addEventListener("click", function (ev) {
+    var btn = ev.target.closest(".dev");
+    if (btn) selectDevice(btn.getAttribute("data-dev"));
+  });
+
+  var filter = document.getElementById("filter");
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    Array.prototype.forEach.call(document.getElementById("proc-body").rows, function (tr) {
+      tr.hidden = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+    });
+  });
+  filter.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      filter.value = "";
+      filter.dispatchEvent(new Event("input"));
+    }
+  });
+
+  var config = document.getElementById("config");
+  var toggle = document.getElementById("config-toggle");
+
+  function positionConfig() {
+    var r = toggle.getBoundingClientRect();
+    config.style.visibility = "hidden";
+    config.hidden = false;
+    var left = Math.max(6, Math.min(window.innerWidth - config.offsetWidth - 6, r.right - config.offsetWidth));
+    config.style.left = left + "px";
+    config.style.top = r.bottom + 4 + "px";
+    config.style.visibility = "";
+  }
+  toggle.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    if (config.hidden) positionConfig();
+    else config.hidden = true;
+    toggle.setAttribute("aria-expanded", String(!config.hidden));
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      state[name] = btn.getAttribute("data-value");
+      root.setAttribute("data-" + name, state[name]);
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  pauseBtn.addEventListener("click", function () {
+    state.paused = !state.paused;
+    pauseBtn.classList.toggle("on", state.paused);
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "resume" : "pause";
+    document.getElementById("live-chip").classList.toggle("paused", state.paused);
+    document.querySelector(".live-word").textContent = state.paused ? "paused" : "live";
+  });
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { drawDetail(); }).observe(document.getElementById("dchart"));
+  }
+  window.addEventListener("resize", drawDetail);
+
+  selectDevice("cpu");
+})();
+</script>
+</body>
+</html>
+<!-- marks:settings trust=0cf162db5d0b6f9562dd59542426b8a7f7d95f4a687d7629a0130e5581511ab6 -->

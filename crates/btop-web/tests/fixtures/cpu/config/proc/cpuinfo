@@ -1,0 +1,17 @@
+processor	: 0
+vendor_id	: AuthenticAMD
+model name	: AMD Ryzen 9 7950X 16-Core Processor
+cpu MHz		: 3994.064
+physical id	: 0
+siblings	: 2
+core id		: 0
+cpu cores	: 2
+
+processor	: 1
+vendor_id	: AuthenticAMD
+model name	: AMD Ryzen 9 7950X 16-Core Processor
+cpu MHz		: 3994.064
+physical id	: 0
+siblings	: 2
+core id		: 1
+cpu cores	: 2

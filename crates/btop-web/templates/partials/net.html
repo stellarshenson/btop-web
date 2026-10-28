@@ -1,0 +1,34 @@
+<header class="ph"><h2 id="net-title">Network</h2><span class="head-right">{% if let Some(selected) = snapshot.net.selected_iface %}<span class="meta" data-p="3" data-field="net-interface" title="{% for interface in snapshot.net.interfaces %}{{ interface.name }} {% endfor %}">{{ selected }}</span>{% endif %}<span class="meta" data-p="3" data-field="net-axis-note">scale ▼ <span data-w="999M">{{ crate::collector::bytes_short(*snapshot.net.scale_down.label_max) }}</span> ▲ <span data-w="999M">{{ crate::collector::bytes_short(*snapshot.net.scale_up.label_max) }}</span>{% if let Some(window) = snapshot.axis_labels().first() %} &middot; {{ window }}{% endif %}</span></span></header>
+<div class="net-body">
+  <div class="net-plots">
+    <div class="net-plot net-down" data-chart="net-down" role="img" aria-label="Download history">
+      {% if !snapshot.net.down_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.net.scale_down.style.is_empty() %} rescale" style="{{ snapshot.net.scale_down.style }}" data-rescale="{{ snapshot.net.scale_down.rescale }}{% endif %}"><path class="area" d="{{ snapshot.net.down_chart.area }}"></path><path class="line" d="{{ snapshot.net.down_chart.line }}"></path></g></svg>{% endif %}
+    </div>
+    <div class="net-plot net-up" data-chart="net-up" role="img" aria-label="Upload history">
+      {% if !snapshot.net.up_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.net.scale_up.style.is_empty() %} rescale" style="{{ snapshot.net.scale_up.style }}" data-rescale="{{ snapshot.net.scale_up.rescale }}{% endif %}"><path class="area" d="{{ snapshot.net.up_chart.area }}"></path><path class="line" d="{{ snapshot.net.up_chart.line }}"></path></g></svg>{% endif %}
+    </div>
+    <div class="xaxis" data-p="3" data-field="net-x-axis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>
+  </div>
+  <aside class="net-legend" aria-label="Network legend">
+    {% if let Some(selected) = snapshot.net.selected_iface %}{% for interface in snapshot.net.interfaces %}{% if &interface.name == selected %}
+    <div class="legend-item">
+      <i class="sw sw-down"></i>
+      <span class="legend-name">download <span class="down">▼</span></span>
+      <b class="legend-value">{% if interface.down_rate.is_some() %}{{ interface.down_label() }}{% else %}unavailable{% endif %}</b>
+      {% if let Some(rate) = interface.down_rate %}<span class="legend-meta">now {{ (rate * 8.0 / 1048576.0)|fmt("{:.2}") }} Mibps</span>{% endif %}
+      {% if interface.top_down.is_some() %}<span class="legend-meta">top {{ crate::collector::rate(*interface.top_down) }}</span>{% endif %}
+      {% if interface.total_down.is_some() %}<span class="legend-meta">total {{ crate::collector::bytes(*interface.total_down) }}</span>{% endif %}
+    </div>
+    <div class="legend-item">
+      <i class="sw sw-up"></i>
+      <span class="legend-name">upload <span class="up-arrow">▲</span></span>
+      <b class="legend-value">{% if interface.up_rate.is_some() %}{{ interface.up_label() }}{% else %}unavailable{% endif %}</b>
+      {% if let Some(rate) = interface.up_rate %}<span class="legend-meta">now {{ (rate * 8.0 / 1048576.0)|fmt("{:.2}") }} Mibps</span>{% endif %}
+      {% if interface.top_up.is_some() %}<span class="legend-meta">top {{ crate::collector::rate(*interface.top_up) }}</span>{% endif %}
+      {% if interface.total_up.is_some() %}<span class="legend-meta">total {{ crate::collector::bytes(*interface.total_up) }}</span>{% endif %}
+    </div>
+    {% endif %}{% endfor %}{% else %}
+    <p class="unavailable">network unavailable</p>
+    {% endif %}
+  </aside>
+</div>

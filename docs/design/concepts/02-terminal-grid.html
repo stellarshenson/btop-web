@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en" data-phosphor="green">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>btop-web</title>
+<style>
+:root {
+  --mono: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --bg: #080a08;
+  --raised: #0d110d;
+  --ink: #c9d6c9;
+  --strong: #f0f7f0;
+  --dim: #7e8f7e;
+  --line: #56695a;
+  --line-soft: #263128;
+  --acc: #67e08d;
+  --acc-ink: #04120a;
+  --ok: #7fe0a0;
+  --warn: #d9c46a;
+  --crit: #e26767;
+  --chart-cpu: #67e08d;
+  --chart-mem-used: #e06a86;
+  --chart-mem-avail: #d9a94f;
+  --chart-mem-cached: #5fb8c9;
+  --chart-mem-free: #9fc46a;
+  --chart-net-down: #9d97d8;
+  --chart-net-up: #cf98c9;
+  --chart-proc: #d9c46a;
+  --tab-h: 17px;
+}
+:root[data-phosphor="amber"] { --acc: #e6c46a; --acc-ink: #141004; --ok: #e6c46a; --chart-cpu: #e6c46a; }
+:root[data-phosphor="ice"] { --acc: #8fd3f0; --acc-ink: #04121a; --ok: #8fd3f0; --chart-cpu: #8fd3f0; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+button { font-family: var(--mono); color: inherit; }
+:focus-visible { outline: 1px solid var(--acc); outline-offset: 1px; }
+
+.page {
+  height: 100%;
+  padding: 6px;
+  display: grid;
+  grid-template-rows: 22px minmax(0, 1fr);
+  gap: 6px;
+}
+
+/* top line */
+.topbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.brand { color: var(--acc); font-weight: 600; letter-spacing: 0.06em; }
+.topbar .sep { color: var(--dim); }
+.topbar .chip-live { margin-left: auto; }
+.topbar .clock { font-size: 11px; color: var(--strong); }
+.topbar .interval { font-size: 9.5px; color: var(--dim); }
+
+/* chips: 1 px border, 2 px radius, uppercase, tint */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 17px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 15px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--line));
+}
+.chip-live { --chip-hue: var(--acc); border-color: var(--acc); color: var(--strong); }
+.chip-live b { font-weight: 400; color: var(--ink); letter-spacing: 0; }
+.lamp { width: 4px; height: 4px; background: var(--acc); }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.chip-live.paused .lamp { background: var(--warn); }
+.chip-config { --chip-hue: var(--acc); border-color: var(--acc); color: var(--strong); cursor: pointer; }
+
+/* grid */
+.grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 652fr) minmax(0, 770fr);
+  grid-template-rows: minmax(0, 286fr) minmax(0, 292fr) minmax(0, 270fr);
+  gap: 6px;
+}
+
+/* 1:1 btop box with an inverted label tab */
+.box {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 21px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  overflow: hidden;
+}
+.tab {
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  height: var(--tab-h);
+  padding: 0 7px;
+  background: var(--acc);
+  color: var(--acc-ink);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+.note {
+  position: absolute;
+  right: 8px;
+  top: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dim);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+}
+.note b { font-weight: 400; color: var(--ink); }
+
+/* cpu */
+.cpu { grid-column: 1 / -1; grid-row: 1; }
+.cpu-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+}
+.cpu-left {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 84px;
+  gap: 6px;
+  padding: 2px 6px 6px;
+  border-right: 1px solid var(--line-soft);
+}
+.history { position: relative; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--line-soft); }
+.gpus { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; min-height: 0; }
+.gpu {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px 5px;
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+.gpu[data-selected="true"] { outline: 1px solid var(--acc); outline-offset: -2px; }
+.gpu-head { display: flex; align-items: baseline; gap: 5px; min-width: 0; font-size: 9.5px; }
+.gpu-id { color: var(--acc); letter-spacing: 0.05em; }
+.gpu-model { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gpu-mid { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gpu-util { flex: 0 0 auto; font-size: 13px; color: var(--strong); }
+.gpu-spark { flex: 1 1 auto; min-width: 0; height: 20px; display: block; }
+.gpu-vram { flex: 0 0 auto; font-size: 9.5px; color: var(--ink); white-space: nowrap; }
+.gpu-vram span { color: var(--dim); }
+.gpu-foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 9.5px; color: var(--dim); }
+
+.cpu-right { min-height: 0; display: flex; flex-direction: column; gap: 5px; padding: 2px 8px 6px; }
+.matrix-head { display: flex; align-items: baseline; gap: 8px; font-size: 10px; color: var(--dim); white-space: nowrap; min-width: 0; }
+.cpu-total { font-size: 20px; line-height: 1; font-weight: 600; color: var(--strong); }
+.matrix-head .unit { font-size: 9.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.matrix-head .ghz { font-size: 11px; color: var(--ink); }
+.matrix-head .spacer { margin-left: auto; }
+.load { font-size: 9.5px; color: var(--dim); letter-spacing: 0.04em; text-transform: uppercase; }
+.load b { margin-left: 6px; font-weight: 400; color: var(--ink); }
+.matrix {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 2px;
+}
+.core { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr) 18px; align-items: center; gap: 5px; font-size: 9.5px; line-height: 1; }
+.core-label { color: var(--dim); }
+.core-bar { position: relative; height: 4px; background: var(--line-soft); }
+.core-bar i { position: absolute; left: 0; top: 0; bottom: 0; min-width: 2px; background: var(--acc); }
+.core.warn .core-bar i { background: var(--warn); }
+.core.crit .core-bar i { background: var(--crit); }
+.core-pct { text-align: right; color: var(--ink); }
+
+/* lower left */
+.midrow { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); gap: 6px; }
+.net { grid-column: 1; grid-row: 3; }
+
+.mem-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.mem-row {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 46px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.mem-row:last-child { border-bottom: 0; }
+.mem-label { color: var(--ink); }
+.mem-val { text-align: right; white-space: nowrap; font-size: 12px; color: var(--strong); }
+.mem-val span { margin-left: 6px; font-size: 9.5px; color: var(--dim); }
+.spark { width: 46px; height: 24px; display: block; }
+
+.disks-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: space-evenly; gap: 4px; padding: 2px 8px 8px; }
+.swap-head, .mount-row { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--ink); white-space: nowrap; }
+.swap-head b, .mount-row b { font-weight: 400; color: var(--strong); }
+.swap-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 9.5px; color: var(--dim); }
+.bar { position: relative; height: 6px; background: var(--line-soft); overflow: hidden; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; }
+.bar .used { background: var(--chart-mem-cached); }
+.bar .fill { background: var(--chart-mem-used); }
+
+.net-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: 1fr 1fr; gap: 6px; padding: 2px 6px 6px; }
+.net-graph { position: relative; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--line-soft); }
+.net-tag { position: absolute; top: 2px; left: 8px; z-index: 2; font-size: 9.5px; color: var(--dim); letter-spacing: 0.06em; }
+.net-readout { position: absolute; left: 4px; bottom: 3px; z-index: 2; display: flex; align-items: baseline; gap: 10px; padding: 1px 5px; background: var(--bg); border: 1px solid var(--line-soft); white-space: nowrap; }
+.net-readout b { font-size: 12px; font-weight: 400; color: var(--strong); }
+.net-readout .dim { font-size: 9.5px; color: var(--dim); }
+.net-down b { color: var(--chart-net-down); }
+.net-up b { color: var(--chart-net-up); }
+
+/* processes */
+.proc { grid-column: 2; grid-row: 2 / 4; }
+.proc-bar {
+  flex: 0 0 22px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 9.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.filter {
+  width: 120px;
+  height: 15px;
+  padding: 0 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.filter::placeholder { color: var(--dim); }
+.proc-controls { margin-left: auto; display: flex; gap: 10px; }
+.proc-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line) var(--bg); }
+.proc-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11.5px; }
+.proc-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 18px;
+  padding: 0 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--dim);
+  text-align: left;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.proc-table td { height: 22px; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proc-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.proc-table tbody tr:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.proc-table .num { text-align: right; }
+.sort { color: var(--acc); }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--dim); }
+.proc-foot { flex: 0 0 14px; display: flex; align-items: center; padding: 0 7px; border-top: 1px solid var(--line-soft); font-size: 9.5px; color: var(--dim); }
+
+/* charts */
+.chart { display: block; width: 100%; height: 100%; }
+.chart .area { opacity: 0.14; }
+.chart .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart .dot { stroke: none; }
+.history .area { fill: var(--chart-cpu); }
+.history .line { stroke: var(--chart-cpu); }
+.history .dot { fill: var(--chart-cpu); }
+.net-down .area { fill: var(--chart-net-down); }
+.net-down .line { stroke: var(--chart-net-down); }
+.net-down .dot { fill: var(--chart-net-down); }
+.net-up .area { fill: var(--chart-net-up); }
+.net-up .line { stroke: var(--chart-net-up); }
+.net-up .dot { fill: var(--chart-net-up); }
+.spark-total .area { fill: var(--ink); }
+.spark-total .line { stroke: var(--ink); }
+.spark-total .dot { fill: var(--ink); }
+.spark-used .area { fill: var(--chart-mem-used); }
+.spark-used .line { stroke: var(--chart-mem-used); }
+.spark-used .dot { fill: var(--chart-mem-used); }
+.spark-avail .area { fill: var(--chart-mem-avail); }
+.spark-avail .line { stroke: var(--chart-mem-avail); }
+.spark-avail .dot { fill: var(--chart-mem-avail); }
+.spark-cached .area { fill: var(--chart-mem-cached); }
+.spark-cached .line { stroke: var(--chart-mem-cached); }
+.spark-cached .dot { fill: var(--chart-mem-cached); }
+.spark-free .area { fill: var(--chart-mem-free); }
+.spark-free .line { stroke: var(--chart-mem-free); }
+.spark-free .dot { fill: var(--chart-mem-free); }
+.spark-gpu .area { fill: var(--chart-cpu); }
+.spark-gpu .line { stroke: var(--chart-cpu); }
+.spark-gpu .dot { fill: var(--chart-cpu); }
+
+/* config popover */
+.config {
+  position: fixed;
+  z-index: 40;
+  width: 236px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  font-size: 10px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label { font-size: 9.5px; line-height: 17px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 17px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: none;
+  color: var(--ink);
+  font-size: 9.5px;
+  line-height: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--acc); }
+.opt.on { border-color: var(--acc); color: var(--strong); }
+.opt.on::before { opacity: 0.12; }
+
+/* narrow screens: summary rows replace the boxes, process table takes the rest */
+.summary { display: none; grid-column: 1; grid-row: 1; }
+.summary-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.sum-row {
+  flex: 0 0 25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 8px;
+  border-bottom: 1px dashed var(--line-soft);
+  font-size: 10px;
+}
+.sum-row:last-child { border-bottom: 0; }
+.sum-label { font-size: 9.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.sum-val { color: var(--strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-val span { font-size: 9.5px; color: var(--dim); }
+
+@media (max-width: 899px) {
+  .grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .cpu, .midrow, .net { display: none; }
+  .summary { display: flex; }
+  .proc { grid-column: 1; grid-row: 2; }
+  .proc-controls { display: none; }
+  .filter { width: 96px; }
+  .proc-table { table-layout: auto; }
+  .proc-table th:nth-child(3), .proc-table td:nth-child(3),
+  .proc-table th:nth-child(4), .proc-table td:nth-child(4),
+  .proc-table th:nth-child(5), .proc-table td:nth-child(5) { display: none; }
+  .topbar { gap: 6px; }
+  .topbar .clock { font-size: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+<header class="topbar">
+  <span class="brand">btop-web</span>
+  <span class="sep">::</span>
+  <span class="sep">terminal</span>
+  <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word">live</span><b id="sample-age">0.4 s</b></span>
+  <span class="clock">06:12</span>
+  <span class="interval">2000 ms</span>
+  <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config">config</button>
+</header>
+
+<main class="grid">
+  <section class="box cpu" aria-label="CPU">
+    <span class="tab">cpu</span>
+    <div class="cpu-body">
+      <div class="cpu-left">
+        <div class="history" id="history" role="img" aria-label="CPU history, 4.8 percent now"></div>
+        <div class="gpus">
+          <article class="gpu" data-gpu="0" data-selected="false">
+            <div class="gpu-head"><span class="gpu-id">gpu0</span><span class="gpu-model">RTX PRO 4000 Blackwell</span></div>
+            <div class="gpu-mid"><span class="gpu-util">0%</span><span class="gpu-spark spark-gpu" data-spark="gpu0" aria-hidden="true"></span><span class="gpu-vram">452M <span>/ 24G</span></span></div>
+            <div class="gpu-foot"><span>36 C</span><span>3.9 W</span></div>
+          </article>
+          <article class="gpu" data-gpu="1" data-selected="true">
+            <div class="gpu-head"><span class="gpu-id">gpu1</span><span class="gpu-model">RTX PRO 6000 Blackwell Max-Q</span></div>
+            <div class="gpu-mid"><span class="gpu-util">0%</span><span class="gpu-spark spark-gpu" data-spark="gpu1" aria-hidden="true"></span><span class="gpu-vram">64M <span>/ 98G</span></span></div>
+            <div class="gpu-foot"><span>37 C</span><span>14.1 W</span></div>
+          </article>
+          <article class="gpu" data-gpu="2" data-selected="false">
+            <div class="gpu-head"><span class="gpu-id">gpu2</span><span class="gpu-model">RTX PRO 5000 72GB</span></div>
+            <div class="gpu-mid"><span class="gpu-util">1%</span><span class="gpu-spark spark-gpu" data-spark="gpu2" aria-hidden="true"></span><span class="gpu-vram">853M <span>/ 73G</span></span></div>
+            <div class="gpu-foot"><span>37 C</span><span>21.9 W</span></div>
+          </article>
+        </div>
+      </div>
+      <div class="cpu-right">
+        <div class="matrix-head">
+          <span class="cpu-total" id="cpu-total">4.8%</span>
+          <span class="unit">total</span>
+          <span class="ghz">3.99 GHz</span>
+          <span class="spacer"></span>
+          <span class="load">load<b>96</b><b>95</b><b>94</b></span>
+        </div>
+        <div class="matrix" id="matrix"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="midrow">
+    <section class="box mem" aria-label="Memory">
+      <span class="tab">mem</span>
+      <span class="note">503 GiB</span>
+      <div class="mem-body">
+        <div class="mem-row"><span class="mem-label">total</span><span class="mem-val">503 GiB</span><span class="spark spark-total" data-spark="memTotal" aria-hidden="true"></span></div>
+        <div class="mem-row"><span class="mem-label">used</span><span class="mem-val">39.7 GiB <span>8%</span></span><span class="spark spark-used" data-spark="memUsed" aria-hidden="true"></span></div>
+        <div class="mem-row"><span class="mem-label">available</span><span class="mem-val">463 GiB <span>92%</span></span><span class="spark spark-avail" data-spark="memAvail" aria-hidden="true"></span></div>
+        <div class="mem-row"><span class="mem-label">cached</span><span class="mem-val">253 GiB <span>50%</span></span><span class="spark spark-cached" data-spark="memCached" aria-hidden="true"></span></div>
+        <div class="mem-row"><span class="mem-label">free</span><span class="mem-val">184 GiB <span>37%</span></span><span class="spark spark-free" data-spark="memFree" aria-hidden="true"></span></div>
+      </div>
+    </section>
+
+    <section class="box disks" aria-label="Disks">
+      <span class="tab">disks</span>
+      <span class="note">swap 2.9 / 128 GiB</span>
+      <div class="disks-body">
+        <div class="swap">
+          <div class="swap-head"><span>swap</span><b>128 GiB</b></div>
+          <div class="swap-meta"><span>used 2.9 GiB</span><span>free 98%</span></div>
+          <div class="bar"><i class="used" style="width:2.3%"></i></div>
+        </div>
+        <div class="mount">
+          <div class="mount-row"><span>/</span><b>66%</b></div>
+          <div class="bar"><i class="fill" style="width:66%"></i></div>
+        </div>
+        <div class="mount">
+          <div class="mount-row"><span>/home</span><b>66%</b></div>
+          <div class="bar"><i class="fill" style="width:66%"></i></div>
+        </div>
+        <div class="mount">
+          <div class="mount-row"><span>nas-shared</span><b>31%</b></div>
+          <div class="bar"><i class="fill" style="width:31%"></i></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="box net" aria-label="Network">
+    <span class="tab">net</span>
+    <span class="note">eth0</span>
+    <div class="net-body">
+      <div class="net-graph net-down" id="net-down" role="img" aria-label="Download history, 1.07 MiB per second">
+        <span class="net-tag">eth0 dn</span>
+        <div class="net-readout"><b>1.07 MiB/s</b><span class="dim">8.56 Mibps &middot; top 62.1 Mibps &middot; total 391 GiB</span></div>
+      </div>
+      <div class="net-graph net-up" id="net-up" role="img" aria-label="Upload history, 940 KiB per second">
+        <span class="net-tag">eth0 up</span>
+        <div class="net-readout"><b>940 KiB/s</b><span class="dim">7.34 Mibps &middot; top 10.0 Mibps &middot; total 391 GiB</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="box proc" aria-label="Processes">
+    <span class="tab">proc</span>
+    <span class="note">249 procs</span>
+    <div class="proc-bar">
+      <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+      <span class="proc-controls"><span>per-core</span><span>reverse</span><span>tree</span><span>cpu direct</span></span>
+    </div>
+    <div class="proc-table-wrap">
+      <table class="proc-table">
+        <caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">Processes sorted by CPU descending</caption>
+        <colgroup>
+          <col style="width:62px"><col style="width:112px"><col><col style="width:46px"><col style="width:44px"><col style="width:60px"><col style="width:54px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num" scope="col">pid</th>
+            <th scope="col">program</th>
+            <th scope="col">command</th>
+            <th class="num" scope="col">thr</th>
+            <th scope="col">user</th>
+            <th class="num" scope="col">memb</th>
+            <th class="num" scope="col">cpu% <span class="sort">v</span></th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </div>
+    <div class="proc-foot">read-only</div>
+  </section>
+
+  <section class="box summary" aria-label="Summary">
+    <span class="tab">summary</span>
+    <div class="summary-body">
+      <div class="sum-row"><span class="sum-label">cpu</span><span class="sum-val">4.8% <span>3.99 GHz &middot; load 96 95 94</span></span></div>
+      <div class="sum-row"><span class="sum-label">mem</span><span class="sum-val">39.7 / 503 GiB <span>8%</span></span></div>
+      <div class="sum-row"><span class="sum-label">gpu0</span><span class="sum-val">0% <span>452M / 24G &middot; 36 C</span></span></div>
+      <div class="sum-row"><span class="sum-label">gpu1</span><span class="sum-val">0% <span>64M / 98G &middot; 37 C</span></span></div>
+      <div class="sum-row"><span class="sum-label">gpu2</span><span class="sum-val">1% <span>853M / 73G &middot; 37 C</span></span></div>
+      <div class="sum-row"><span class="sum-label">net</span><span class="sum-val">1.07 MiB/s <span>dn &middot; 940 KiB/s up</span></span></div>
+      <div class="sum-row"><span class="sum-label">swap</span><span class="sum-val">2.9 / 128 GiB <span>2%</span></span></div>
+    </div>
+  </section>
+</main>
+</div>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">phosphor</span>
+    <div class="cfg-opts" data-group="phosphor">
+      <button class="opt on" type="button" data-value="green">green</button>
+      <button class="opt" type="button" data-value="amber">amber</button>
+      <button class="opt" type="button" data-value="ice">ice</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">gpu</span>
+    <div class="cfg-opts" data-group="gpu">
+      <button class="opt" type="button" data-value="0">0</button>
+      <button class="opt on" type="button" data-value="1">1</button>
+      <button class="opt" type="button" data-value="2">2</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">pause</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  /* ---------- sample arrays, identical to the base render ---------- */
+  function series(n, fn) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(fn(i));
+    return out;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+  function two(v) { return (v < 10 ? "0" : "") + v; }
+
+  var cores = (function () {
+    var base = [5, 4, 6, 3, 7, 5, 4, 6, 3, 5, 8, 4, 6, 2, 7, 5];
+    var tail = [4, 5, 3, 6, 4, 5, 7, 3, 4, 4, 6, 2, 4, 5, 3, 3];
+    return base.concat(base, base, tail);
+  })();
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var memTotal = series(24, function (i) { return 100 + 0.6 * Math.sin(i * 0.7); });
+  var memUsed = series(24, function (i) { return 8 + 0.5 * Math.sin(i * 0.55 + 0.4); });
+  var memAvail = series(24, function (i) { return 92 + 0.5 * Math.sin(i * 0.5 + 2.1); });
+  var memCached = series(24, function (i) { return 50 + 1.2 * Math.sin(i * 0.42 + 1.1); });
+  var memFree = series(24, function (i) { return 37 + 0.9 * Math.sin(i * 0.61 + 0.2); });
+  [memTotal, memUsed, memAvail, memCached, memFree].forEach(function (s, idx) {
+    s[s.length - 1] = [100, 8, 92, 50, 37][idx];
+  });
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[gpu0.length - 1] = 0;
+  gpu1[gpu1.length - 1] = 0;
+  gpu2[gpu2.length - 1] = 1;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+  var netUp = series(64, function (i) {
+    var v = 0.08 + 0.16 * Math.abs(Math.sin(i * 0.41 + 1)) + 0.08 * Math.abs(Math.sin(i * 1.9));
+    [10, 26, 40, 55].forEach(function (b) { v += 0.9 * Math.exp(-Math.pow((i - b) / 1.6, 2)); });
+    return clamp(v, 0, 1.5);
+  });
+  netUp[63] = 0.918;
+
+  /* ---------- PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes ---------- */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return {
+      line: line,
+      area: line + "L" + round2(w) + " " + round2(h) + "L0 " + round2(h) + "Z",
+      end: { x: x(n - 1), y: y(values[n - 1]) }
+    };
+  }
+
+  function svgMarkup(d, w, h) {
+    var ex = clamp(d.end.x - 2, 0, w - 2);
+    var ey = clamp(d.end.y - 1, 0, h - 2);
+    return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="area" d="' + d.area + '"/>' +
+      '<path class="line" d="' + d.line + '"/>' +
+      '<rect class="dot" x="' + round2(ex) + '" y="' + round2(ey) + '" width="2" height="2"/>' +
+      "</svg>";
+  }
+
+  /* ---------- charts ---------- */
+  var CHARTS = {
+    "history": { data: cpuData, min: 0, max: 25 },
+    "net-down": { data: netDown, min: 0, max: 2.2 },
+    "net-up": { data: netUp, min: 0, max: 1.6 }
+  };
+  var SPARKS = {
+    memTotal: { data: memTotal, min: 99, max: 101, vb: [46, 24] },
+    memUsed: { data: memUsed, min: 7, max: 9, vb: [46, 24] },
+    memAvail: { data: memAvail, min: 91, max: 93, vb: [46, 24] },
+    memCached: { data: memCached, min: 48, max: 52, vb: [46, 24] },
+    memFree: { data: memFree, min: 35.5, max: 38.5, vb: [46, 24] },
+    gpu0: { data: gpu0, min: 0, max: 4, vb: [120, 20] },
+    gpu1: { data: gpu1, min: 0, max: 4, vb: [120, 20] },
+    gpu2: { data: gpu2, min: 0, max: 4, vb: [120, 20] }
+  };
+
+  function drawChart(id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var cfg = CHARTS[id];
+    var w = host.clientWidth;
+    var h = host.clientHeight;
+    if (!w || !h) return;
+    var old = host.querySelector("svg.chart");
+    if (old) old.remove();
+    host.insertAdjacentHTML("afterbegin", svgMarkup(pchipPath(cfg.data, w, h, cfg.min, cfg.max), w, h));
+  }
+
+  function drawSpark(el) {
+    var cfg = SPARKS[el.getAttribute("data-spark")];
+    if (!cfg) return;
+    el.innerHTML = svgMarkup(pchipPath(cfg.data, cfg.vb[0], cfg.vb[1], cfg.min, cfg.max), cfg.vb[0], cfg.vb[1]);
+  }
+
+  function drawAll() {
+    Object.keys(CHARTS).forEach(drawChart);
+  }
+
+  /* ---------- core matrix as a terminal map ---------- */
+  (function renderMatrix() {
+    var host = document.getElementById("matrix");
+    var cells = [];
+    for (var row = 0; row < 8; row++) {
+      for (var col = 0; col < 8; col++) {
+        var i = col * 8 + row;
+        var p = cores[i];
+        var cls = p >= 66 ? "crit" : p >= 33 ? "warn" : "";
+        cells.push('<div class="core ' + cls + '"><span class="core-label">c' + two(i) +
+          '</span><span class="core-bar"><i style="width:' + p + '%"></i></span><span class="core-pct">' + two(p) + "</span></div>");
+      }
+    }
+    host.innerHTML = cells.join("");
+    var mean = cores.reduce(function (a, b) { return a + b; }, 0) / cores.length;
+    document.getElementById("cpu-total").textContent = mean.toFixed(1) + "%";
+  })();
+
+  /* ---------- process table, same rows as the base ---------- */
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  (function renderProcs() {
+    var body = document.getElementById("proc-body");
+    body.innerHTML = PROCS.map(function (p) {
+      var cpu = p[6];
+      var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+      return '<tr><td class="num">' + p[0] + "</td><td>" + p[1] + "</td><td>" + p[2] +
+        '</td><td class="num">' + p[3] + "</td><td>" + p[4] + '</td><td class="num">' + p[5] +
+        '</td><td class="num ' + cls + '">' + cpu.toFixed(1) + "</td></tr>";
+    }).join("");
+  })();
+
+  var filter = document.getElementById("filter");
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    Array.prototype.forEach.call(document.getElementById("proc-body").rows, function (tr) {
+      tr.hidden = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+    });
+  });
+  filter.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      filter.value = "";
+      filter.dispatchEvent(new Event("input"));
+    }
+  });
+
+  /* ---------- CONFIG popover ---------- */
+  var config = document.getElementById("config");
+  var toggles = Array.prototype.slice.call(document.querySelectorAll(".config-toggle"));
+
+  function setExpanded(open) {
+    toggles.forEach(function (btn) { btn.setAttribute("aria-expanded", String(open)); });
+  }
+  function positionConfig(btn) {
+    var r = btn.getBoundingClientRect();
+    config.style.visibility = "hidden";
+    config.hidden = false;
+    var left = Math.max(6, Math.min(window.innerWidth - config.offsetWidth - 6, r.right - config.offsetWidth));
+    config.style.left = left + "px";
+    config.style.top = (r.bottom + 4) + "px";
+    config.style.visibility = "";
+  }
+  toggles.forEach(function (btn) {
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (config.hidden) positionConfig(btn);
+      else config.hidden = true;
+      setExpanded(!config.hidden);
+    });
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+
+  var state = { phosphor: "green", gpu: "1", paused: false };
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      var value = btn.getAttribute("data-value");
+      if (name === "gpu") {
+        state.gpu = value;
+        Array.prototype.forEach.call(document.querySelectorAll(".gpu"), function (g) {
+          g.setAttribute("data-selected", String(g.getAttribute("data-gpu") === value));
+        });
+      } else {
+        state[name] = value;
+        root.setAttribute("data-" + name, value);
+      }
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  pauseBtn.addEventListener("click", function () {
+    state.paused = !state.paused;
+    pauseBtn.classList.toggle("on", state.paused);
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "resume" : "pause";
+    var chip = document.getElementById("live-chip");
+    chip.classList.toggle("paused", state.paused);
+    chip.querySelector(".live-word").textContent = state.paused ? "paused" : "live";
+  });
+
+  /* ---------- first paint and resize ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-spark]"), drawSpark);
+  drawAll();
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) { drawChart(entry.target.id); });
+    });
+    Object.keys(CHARTS).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) ro.observe(el);
+    });
+  }
+  window.addEventListener("resize", drawAll);
+})();
+</script>
+</body>
+</html>
+<!-- marks:settings trust=5ee6d799f6a88089a845b17eeea204cd3c9280b8fc8bbb9a165f713408d486b3 -->

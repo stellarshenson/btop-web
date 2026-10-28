@@ -1,0 +1,2461 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:,">
+<title>btop-web dashboard</title>
+<script>
+/* Theme and mode bootstrap. Runs before first paint; storage is optional. */
+(function () {
+  "use strict";
+  var THEMES = ["default", "gruvbox", "solarized", "everforest", "flexoki"];
+  var THEME_KEY = "btop-web-theme";
+  var MODE_KEY = "btop-web-mode";
+  var root = document.documentElement;
+
+  function read(key) {
+    try { return window.localStorage.getItem(key); } catch (error) { return null; }
+  }
+  function write(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (error) { /* optional */ }
+  }
+  function systemMode() {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) return "light";
+    } catch (error) { /* optional */ }
+    return "dark";
+  }
+
+  var theme = read(THEME_KEY);
+  if (THEMES.indexOf(theme) === -1) {
+    theme = "default";
+    write(THEME_KEY, theme);
+  }
+  var mode = read(MODE_KEY);
+  if (mode !== "light" && mode !== "dark") mode = systemMode();
+
+  root.setAttribute("data-theme", theme);
+  root.setAttribute("data-mode", mode);
+})();
+</script>
+<style>
+/* ------------------------------------------------------------------ themes
+   Ten variants, five families, dark and light. Values are computed semantic
+   tokens from the btop palettes; no colour literal appears outside this block.
+   -------------------------------------------------------------------------- */
+html[data-theme="default"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #000000;
+  --surface-raised: #040404;
+  --surface-sunken: #040404;
+  --text: #cccccc;
+  --text-strong: #eeeeee;
+  --muted: #757575;
+  --accent: #b54040;
+  --selection-bg: #6a2f2f;
+  --selection-fg: #eeeeee;
+  --border: #5a5a5a;
+  --border-subtle: #2d2d2d;
+  --border-cpu: #556d59;
+  --border-mem: #6c6c4b;
+  --border-net: #5c588d;
+  --border-proc: #805252;
+  --ok: #77ca9b;
+  --warn: #cbc06c;
+  --crit: #dc4c4c;
+  --unavailable: #757575;
+  --meter-track: #5a5a5a;
+  --grid-line: #5a5a5a;
+  --chart-cpu: #77ca9b;
+  --chart-cpu-warn: #cbc06c;
+  --chart-cpu-crit: #dc4c4c;
+  --chart-mem-used: #ff4769;
+  --chart-mem-available: #ffb814;
+  --chart-mem-cached: #26c5ff;
+  --chart-mem-free: #dcff85;
+  --chart-net-down: #b0a9de;
+  --chart-net-up: #dcafde;
+  --chart-proc: #dcd179;
+  --status-ok: #77ca9b;
+  --status-warn: #cbc06c;
+  --status-crit: #dc4c4c;
+}
+
+html[data-theme="default"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-raised: #fbfbfb;
+  --surface-sunken: #fbfbfb;
+  --text: #333333;
+  --text-strong: #111111;
+  --muted: #767676;
+  --accent: #bf4a4a;
+  --selection-bg: #d09595;
+  --selection-fg: #111111;
+  --border: #949494;
+  --border-subtle: #cacaca;
+  --border-cpu: #849a88;
+  --border-mem: #96967b;
+  --border-net: #7672a7;
+  --border-proc: #ad7f7f;
+  --ok: #358859;
+  --warn: #938834;
+  --crit: #b32323;
+  --unavailable: #767676;
+  --meter-track: #949494;
+  --grid-line: #949494;
+  --chart-cpu: #358859;
+  --chart-cpu-warn: #938834;
+  --chart-cpu-crit: #b32323;
+  --chart-mem-used: #b80022;
+  --chart-mem-available: #c48900;
+  --chart-mem-cached: #009fd9;
+  --chart-mem-free: #577a00;
+  --chart-net-down: #282156;
+  --chart-net-up: #4e2150;
+  --chart-proc: #867b23;
+  --status-ok: #358859;
+  --status-warn: #938834;
+  --status-crit: #b32323;
+}
+
+html[data-theme="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #1d2021;
+  --surface-raised: #202223;
+  --surface-sunken: #202223;
+  --text: #a89984;
+  --text-strong: #ebdbb2;
+  --muted: #918573;
+  --accent: #d79921;
+  --selection-bg: #282828;
+  --selection-fg: #fabd2f;
+  --border: #a89984;
+  --border-subtle: #625c52;
+  --border-cpu: #a89984;
+  --border-mem: #a89984;
+  --border-net: #a89984;
+  --border-proc: #a89984;
+  --ok: #b8bb26;
+  --warn: #d79921;
+  --crit: #fb4934;
+  --unavailable: #918573;
+  --meter-track: #6a6a6a;
+  --grid-line: #a89984;
+  --chart-cpu: #b8bb26;
+  --chart-cpu-warn: #d79921;
+  --chart-cpu-crit: #fb4934;
+  --chart-mem-used: #fb4934;
+  --chart-mem-available: #fabd2f;
+  --chart-mem-cached: #83a598;
+  --chart-mem-free: #98971a;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #d3869b;
+  --chart-proc: #d79921;
+  --status-ok: #b8bb26;
+  --status-warn: #d79921;
+  --status-crit: #fb4934;
+}
+
+html[data-theme="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fbf1c7;
+  --surface-raised: #f7edc4;
+  --surface-sunken: #f7edc4;
+  --text: #3c3836;
+  --text-strong: #3c3836;
+  --muted: #736d60;
+  --accent: #cc241d;
+  --selection-bg: #f2e5bc;
+  --selection-fg: #8f3f71;
+  --border: #968976;
+  --border-subtle: #c8bd9e;
+  --border-cpu: #968976;
+  --border-mem: #968976;
+  --border-net: #968976;
+  --border-proc: #968976;
+  --ok: #427b58;
+  --warn: #b5811c;
+  --crit: #cc241d;
+  --unavailable: #736d60;
+  --meter-track: #948a70;
+  --grid-line: #968976;
+  --chart-cpu: #427b58;
+  --chart-cpu-warn: #b5811c;
+  --chart-cpu-crit: #cc241d;
+  --chart-mem-used: #cc241d;
+  --chart-mem-available: #b57614;
+  --chart-mem-cached: #427b58;
+  --chart-mem-free: #427b58;
+  --chart-net-down: #79740e;
+  --chart-net-up: #b57614;
+  --chart-proc: #af3a03;
+  --status-ok: #427b58;
+  --status-warn: #b5811c;
+  --status-crit: #cc241d;
+}
+
+html[data-theme="solarized"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #002b36;
+  --surface-raised: #052f39;
+  --surface-sunken: #052f39;
+  --text: #eee8d5;
+  --text-strong: #fdf6e3;
+  --muted: #80918b;
+  --accent: #b58900;
+  --selection-bg: #073642;
+  --selection-fg: #d6a200;
+  --border: #5e737a;
+  --border-subtle: #2f4f58;
+  --border-cpu: #5e737a;
+  --border-mem: #5e737a;
+  --border-net: #5e737a;
+  --border-proc: #5e737a;
+  --ok: #adc700;
+  --warn: #d6a200;
+  --crit: #e65317;
+  --unavailable: #80918b;
+  --meter-track: #55757d;
+  --grid-line: #5f747a;
+  --chart-cpu: #adc700;
+  --chart-cpu-warn: #d6a200;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #edb400;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #bad600;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #f56caf;
+  --chart-proc: #d6a200;
+  --status-ok: #adc700;
+  --status-warn: #d6a200;
+  --status-crit: #e65317;
+}
+
+html[data-theme="solarized"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #586e75;
+  --text-strong: #002b36;
+  --muted: #60747a;
+  --accent: #b48800;
+  --selection-bg: #eee8d5;
+  --selection-fg: #846400;
+  --border: #859191;
+  --border-subtle: #c1c4ba;
+  --border-cpu: #859191;
+  --border-mem: #859191;
+  --border-net: #859191;
+  --border-proc: #859191;
+  --ok: #849800;
+  --warn: #b48800;
+  --crit: #e65317;
+  --unavailable: #60747a;
+  --meter-track: #928e82;
+  --grid-line: #859191;
+  --chart-cpu: #849700;
+  --chart-cpu-warn: #b48800;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #b38800;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #839700;
+  --chart-net-down: #8589c9;
+  --chart-net-up: #e063a0;
+  --chart-proc: #b48800;
+  --status-ok: #849700;
+  --status-warn: #b48800;
+  --status-crit: #e65317;
+}
+
+html[data-theme="everforest"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #2d353b;
+  --surface-raised: #30383d;
+  --surface-sunken: #30383d;
+  --text: #d3c6aa;
+  --text-strong: #d3c6aa;
+  --muted: #a39c8a;
+  --accent: #e67e80;
+  --selection-bg: #3d484d;
+  --selection-fg: #dbbc7f;
+  --border: #767e81;
+  --border-subtle: #525a5e;
+  --border-cpu: #767e81;
+  --border-mem: #767e81;
+  --border-net: #767e81;
+  --border-proc: #767e81;
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --crit: #f85552;
+  --unavailable: #a39c8a;
+  --meter-track: #797e82;
+  --grid-line: #767e81;
+  --chart-cpu: #a7c080;
+  --chart-cpu-warn: #dbbc7f;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #a7c080;
+  --chart-mem-cached: #a7c080;
+  --chart-mem-free: #a7c080;
+  --chart-net-down: #7fbbb3;
+  --chart-net-up: #e67e80;
+  --chart-proc: #e67e80;
+  --status-ok: #a7c080;
+  --status-warn: #dbbc7f;
+  --status-crit: #f85552;
+}
+
+html[data-theme="everforest"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #5c6a72;
+  --text-strong: #5c6a72;
+  --muted: #67737a;
+  --accent: #d765b3;
+  --selection-bg: #4f585e;
+  --selection-fg: #ecc86b;
+  --border: #4f585e;
+  --border-subtle: #a6a7a0;
+  --border-cpu: #4f585e;
+  --border-mem: #4f585e;
+  --border-net: #4f585e;
+  --border-proc: #4f585e;
+  --ok: #849701;
+  --warn: #b98500;
+  --crit: #f85552;
+  --unavailable: #67737a;
+  --meter-track: #879189;
+  --grid-line: #4f585e;
+  --chart-cpu: #849701;
+  --chart-cpu-warn: #b98500;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #849701;
+  --chart-mem-cached: #849701;
+  --chart-mem-free: #849701;
+  --chart-net-down: #3994c5;
+  --chart-net-up: #d765b3;
+  --chart-proc: #d765b3;
+  --status-ok: #849701;
+  --status-warn: #b98500;
+  --status-crit: #f85552;
+}
+
+html[data-theme="flexoki"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #100f0f;
+  --surface-raised: #141313;
+  --surface-sunken: #141313;
+  --text: #cecdc3;
+  --text-strong: #fffcf0;
+  --muted: #7c7b75;
+  --accent: #da702c;
+  --selection-bg: #403e3c;
+  --selection-fg: #fffcf0;
+  --border: #615f5e;
+  --border-subtle: #383736;
+  --border-cpu: #4385be;
+  --border-mem: #879a39;
+  --border-net: #ce5d97;
+  --border-proc: #3aa99f;
+  --ok: #3aa99f;
+  --warn: #d0a215;
+  --crit: #d14d41;
+  --unavailable: #7c7b75;
+  --meter-track: #61605e;
+  --grid-line: #615f5e;
+  --chart-cpu: #3aa99f;
+  --chart-cpu-warn: #d0a215;
+  --chart-cpu-crit: #d14d41;
+  --chart-mem-used: #d14d41;
+  --chart-mem-available: #da702c;
+  --chart-mem-cached: #3aa99f;
+  --chart-mem-free: #879a39;
+  --chart-net-down: #3aa99f;
+  --chart-net-up: #8b7ec8;
+  --chart-proc: #d0a215;
+  --status-ok: #3aa99f;
+  --status-warn: #d0a215;
+  --status-crit: #d14d41;
+}
+
+html[data-theme="flexoki"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fffcf0;
+  --surface-raised: #fbf8ec;
+  --surface-sunken: #fbf8ec;
+  --text: #343331;
+  --text-strong: #100f0f;
+  --muted: #76746f;
+  --accent: #bc5215;
+  --selection-bg: #e6e4d9;
+  --selection-fg: #100f0f;
+  --border: #93928b;
+  --border-subtle: #c9c7be;
+  --border-cpu: #205ea6;
+  --border-mem: #66800b;
+  --border-net: #a02f6f;
+  --border-proc: #24837b;
+  --ok: #24837b;
+  --warn: #ad8301;
+  --crit: #af3029;
+  --unavailable: #76746f;
+  --meter-track: #93928b;
+  --grid-line: #93928b;
+  --chart-cpu: #24837b;
+  --chart-cpu-warn: #ad8301;
+  --chart-cpu-crit: #af3029;
+  --chart-mem-used: #af3029;
+  --chart-mem-available: #bc5215;
+  --chart-mem-cached: #24837b;
+  --chart-mem-free: #66800b;
+  --chart-net-down: #24837b;
+  --chart-net-up: #5e409d;
+  --chart-proc: #ad8301;
+  --status-ok: #24837b;
+  --status-warn: #ad8301;
+  --status-crit: #af3029;
+}
+
+/* ------------------------------------------------------------- foundations */
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --fs-28: 28px;
+  --fs-40: 40px;
+  --lh-body: 1.45;
+  --lh-heading: 1.2;
+  --lh-number: 1.05;
+  --sp-2: 2px;
+  --sp-4: 4px;
+  --sp-8: 8px;
+  --sp-12: 12px;
+  --sp-16: 16px;
+  --sp-24: 24px;
+  --sp-32: 32px;
+  --sp-48: 48px;
+  --sp-64: 64px;
+  --r-control: 4px;
+  --r-panel: 8px;
+  --r-pill: 999px;
+  --dur-hover: 120ms;
+  --dur-theme: 180ms;
+  --page-max: 1600px;
+  --page-pad: 24px;
+  --layout-gap: 20px;
+  --header-h: 64px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+}
+h1, h2, h3, p, dl, dd, figure { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+a { color: var(--text-strong); text-decoration-color: var(--accent); text-underline-offset: 2px; }
+::selection { background: var(--selection-bg); color: var(--selection-fg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { transition: background-color var(--dur-theme) ease-out; }
+  .control, .badge, .panel, .sort-button {
+    transition: background-color var(--dur-hover) ease-out, border-color var(--dur-hover) ease-out,
+      color var(--dur-hover) ease-out, opacity var(--dur-hover) ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: var(--sp-8) var(--sp-12);
+  background: var(--surface);
+  color: var(--text-strong);
+  border: 1px solid var(--accent);
+  border-radius: 0 0 var(--r-control) 0;
+}
+.skip-link:focus { left: 0; }
+
+/* ------------------------------------------------------------------- shell */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.header-inner,
+.status-inner,
+.dashboard,
+.footer-inner {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding-inline: var(--page-pad);
+}
+.header-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-16);
+  min-height: var(--header-h);
+}
+.brand { display: flex; align-items: baseline; gap: var(--sp-12); flex-wrap: wrap; min-width: 0; }
+.wordmark {
+  font-size: var(--fs-20);
+  line-height: var(--lh-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.wordmark span { color: var(--accent); }
+.host-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-8);
+  flex-wrap: wrap;
+  font-size: var(--fs-13);
+  color: var(--muted);
+  min-width: 0;
+}
+.header-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-8);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  color: var(--text);
+  font-size: var(--fs-14);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.control:hover { border-color: var(--accent); }
+.control[aria-pressed="true"] { border-color: var(--warn); }
+.control:disabled {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+select.control { padding-right: var(--sp-24); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  color: var(--text-strong);
+  font-size: var(--fs-11);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge-readonly { border-color: var(--warn); }
+.badge-readonly::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
+
+/* ------------------------------------------------------------ status strip */
+.status-strip { background: var(--surface); border-bottom: 1px solid var(--border); }
+.status-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-8) var(--sp-16);
+  min-height: 40px;
+  padding-block: var(--sp-8);
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.status-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.status-item .value {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--status-ok); }
+.dot[data-state="warn"] { background: var(--status-warn); }
+.dot[data-state="crit"] { background: var(--status-crit); }
+.status-inner .control { min-height: 28px; padding: 0 8px; font-size: var(--fs-12); margin-left: auto; }
+.tick-state { color: var(--text); }
+
+/* ------------------------------------------------------------------- panels */
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-areas:
+    "cpu cpu cpu cpu cpu cpu cpu cpu cpu cpu cpu cpu"
+    "mem mem mem mem proc proc proc proc proc proc proc proc"
+    "net net net net proc proc proc proc proc proc proc proc"
+    "gpu gpu gpu gpu gpu gpu gpu gpu gpu gpu gpu gpu";
+  gap: var(--layout-gap);
+  padding-block: var(--sp-16) var(--sp-24);
+}
+.panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-12);
+  padding: var(--sp-16);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top-width: 2px;
+  border-radius: var(--r-panel);
+}
+.panel-cpu { grid-area: cpu; border-top-color: var(--border-cpu); min-height: 340px; }
+.panel-mem { grid-area: mem; border-top-color: var(--border-mem); min-height: 300px; }
+.panel-net { grid-area: net; border-top-color: var(--border-net); min-height: 320px; }
+.panel-proc { grid-area: proc; border-top-color: var(--border-proc); min-height: 640px; }
+.panel-gpu { grid-area: gpu; border-top-color: var(--border-proc); min-height: 180px; }
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-12);
+  flex-wrap: wrap;
+}
+.panel-title {
+  font-size: var(--fs-16);
+  line-height: var(--lh-heading);
+  font-weight: 650;
+  color: var(--text-strong);
+}
+.panel-subtitle { margin-top: 2px; font-size: var(--fs-12); color: var(--muted); }
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  flex-wrap: wrap;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.panel-body { display: flex; flex-direction: column; gap: var(--sp-12); min-width: 0; }
+.panel-footer {
+  margin-top: auto;
+  padding-top: var(--sp-8);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.micro {
+  font-size: var(--fs-11);
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* -------------------------------------------------------------------- CPU */
+.cpu-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: var(--sp-24);
+  align-items: start;
+}
+.cpu-left, .cpu-right { display: flex; flex-direction: column; gap: var(--sp-12); min-width: 0; }
+.hero { display: flex; align-items: flex-end; gap: var(--sp-12); flex-wrap: wrap; }
+.hero-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-40);
+  line-height: var(--lh-number);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+.hero-unit { margin-left: 2px; font-size: var(--fs-16); color: var(--muted); }
+.hero-note { font-size: var(--fs-12); color: var(--muted); }
+.chart { position: relative; height: 140px; min-width: 0; border-bottom: 1px solid var(--border-subtle); }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart-grid { stroke: var(--grid-line); stroke-opacity: 0.25; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-area { fill: var(--chart-cpu); fill-opacity: 0.2; }
+.chart-line {
+  fill: none;
+  stroke: var(--chart-cpu);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.chart-scale {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  padding-left: var(--sp-4);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--fs-11);
+}
+.breakdown { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-8); }
+.breakdown dt { font-size: var(--fs-11); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.breakdown dd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cpu-meta { display: flex; align-items: flex-end; gap: var(--sp-12) var(--sp-24); flex-wrap: wrap; }
+.metric { min-width: 0; }
+.metric-label { font-size: var(--fs-11); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-14);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.metric-value strong { font-weight: 500; color: var(--text-strong); }
+.load-row { display: flex; gap: var(--sp-12); }
+.pct { color: var(--muted); }
+.unavailable {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-control);
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+.unavailable strong { font-weight: 600; color: var(--text); }
+.reason { color: var(--muted); font-size: var(--fs-11); }
+.battery-note { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+
+.cores {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.core {
+  position: relative;
+  min-width: 0;
+  padding: 4px 4px 7px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-control);
+}
+.core-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.core-fill { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--chart-cpu); }
+.core[data-band="mid"] .core-fill { background: var(--chart-cpu-warn); }
+.core[data-band="high"] .core-fill { background: var(--chart-cpu-crit); }
+
+/* --------------------------------------------------------------- meters */
+.meter {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  background: var(--meter-track);
+  border-radius: 6px;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  background: var(--chart-mem-used);
+  border-radius: 6px;
+}
+.meter-fill.nonzero { min-width: 2px; }
+.meter-fill.available { background: var(--chart-mem-available); }
+.meter-fill.cached { background: var(--chart-mem-cached); }
+.meter-fill.free { background: var(--chart-mem-free); }
+.meter-fill.cpu { background: var(--chart-cpu); }
+.meter-fill.gpu { background: var(--chart-proc); }
+
+/* -------------------------------------------------------------- memory */
+.mem-list { display: flex; flex-direction: column; gap: var(--sp-8); }
+.mem-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--sp-8);
+  align-items: baseline;
+}
+.mem-row .micro { grid-column: 1; }
+.mem-value {
+  grid-column: 2;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.mem-row .meter { grid-column: 1 / -1; margin-top: 2px; }
+.mem-note { font-size: var(--fs-11); color: var(--muted); }
+
+.disk-table { display: block; width: 100%; font-size: var(--fs-12); }
+.disk-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+.disk-table tbody { display: block; }
+.disk-table tr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-4) var(--sp-8);
+  padding: var(--sp-8) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.disk-table tbody th, .disk-table tbody td {
+  padding: 0;
+  border: 0;
+  text-align: left;
+  font-weight: 400;
+}
+.disk-table tbody th { grid-column: 1 / -1; min-width: 0; color: var(--text); }
+.disk-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-8); }
+.disk-mount { font-size: var(--fs-13); overflow-wrap: anywhere; }
+.disk-meta { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-11); overflow-wrap: anywhere; }
+.disk-used { grid-column: 1; min-width: 0; }
+.disk-used .meter { margin-top: 2px; }
+.disk-pct {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.disk-io {
+  grid-column: 2;
+  align-self: center;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- network */
+.net-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-8) var(--sp-12); }
+.net-controls label {
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.net-address { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--muted); }
+.net-block { display: flex; flex-direction: column; gap: var(--sp-4); }
+.net-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-8); flex-wrap: wrap; }
+.net-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-14);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+.net-bits { font-size: var(--fs-11); color: var(--muted); }
+.net-chart { height: 64px; }
+.net-chart.down .chart-area { fill: var(--chart-net-down); }
+.net-chart.down .chart-line { stroke: var(--chart-net-down); }
+.net-chart.up .chart-area { fill: var(--chart-net-up); }
+.net-chart.up .chart-line { stroke: var(--chart-net-up); }
+.net-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-8) var(--sp-16); }
+.stat-label {
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------- processes */
+.proc-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-8) var(--sp-12); }
+.proc-filter { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0; }
+.proc-sort { display: flex; flex-direction: column; gap: 4px; }
+.proc-controls label {
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.proc-controls input, .proc-controls select {
+  min-height: 32px;
+  padding: 0 var(--sp-8);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  color: var(--text);
+  font-size: var(--fs-14);
+}
+.proc-controls input::placeholder { color: var(--text); opacity: 1; }
+.proc-count { font-size: var(--fs-12); color: var(--muted); margin-left: auto; white-space: nowrap; }
+.table-wrap { min-width: 0; overflow: auto; max-height: 480px; border-top: 1px solid var(--border-subtle); }
+.table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
+.data-table caption { padding-bottom: var(--sp-8); text-align: left; font-size: var(--fs-12); color: var(--muted); }
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--sp-8);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.data-table th.num, .data-table td.num { text-align: right; }
+.data-table td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.sort-button:hover { color: var(--text-strong); }
+.data-table th[aria-sort="ascending"] .sort-arrow::after { content: "\2191"; }
+.data-table th[aria-sort="descending"] .sort-arrow::after { content: "\2193"; }
+.data-table th[aria-sort="none"] .sort-arrow::after { content: ""; }
+.sort-arrow { font-family: var(--font-mono); }
+.data-table tbody tr { border-bottom: 1px solid var(--border-subtle); }
+.data-table tbody tr[aria-current="true"] { background: var(--selection-bg); color: var(--selection-fg); }
+.data-table tbody tr[aria-current="true"] td,
+.data-table tbody tr[aria-current="true"] th { color: var(--selection-fg); }
+.data-table tbody td, .data-table tbody th {
+  padding: 6px var(--sp-8);
+  vertical-align: middle;
+  font-weight: 400;
+}
+.data-table tbody th { text-align: left; white-space: nowrap; }
+.cmd {
+  display: block;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.data-table tbody tr[aria-current="true"] .cmd { color: var(--selection-fg); }
+.cpu-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.spark { width: 40px; height: 12px; flex: none; }
+.spark-line {
+  fill: none;
+  stroke: var(--chart-proc);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.data-table tbody tr[aria-current="true"] .spark-line { stroke: var(--selection-fg); }
+.pid-cell { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.cmd-col { width: 40%; }
+.panel-proc .panel-body { flex: 1; }
+.proc-hint { display: none; }
+@media (min-width: 1200px) {
+  .proc-hint {
+    display: grid;
+    flex: 1;
+    place-content: center;
+    gap: var(--sp-4);
+    padding: var(--sp-16);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--r-control);
+    text-align: center;
+  }
+  .proc-hint p { font-size: var(--fs-12); color: var(--muted); }
+}
+
+/* ---------------------------------------------------------------- drawer */
+.drawer {
+  width: min(560px, 100%);
+  max-height: min(88vh, 760px);
+  margin: auto;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-panel);
+  color: var(--text);
+  overflow: auto;
+}
+.drawer::backdrop { background: color-mix(in srgb, var(--surface) 78%, transparent); }
+.drawer-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-12);
+  padding: var(--sp-16);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.drawer-title { font-size: var(--fs-16); line-height: var(--lh-heading); color: var(--text-strong); }
+.drawer-body { display: flex; flex-direction: column; gap: var(--sp-16); padding: var(--sp-16); }
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-8) var(--sp-16); }
+.detail-grid dt {
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.detail-grid dd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.detail-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-12); }
+.detail-chart { height: 48px; }
+.detail-chart .chart-line { stroke: var(--chart-proc); }
+.actions { padding: var(--sp-12); border: 1px solid var(--border); border-radius: var(--r-panel); }
+.actions h3 { margin-bottom: var(--sp-8); font-size: var(--fs-13); color: var(--text-strong); }
+.actions .control { width: 100%; justify-content: flex-start; margin-top: var(--sp-4); }
+.actions-reason { margin-top: var(--sp-8); font-size: var(--fs-12); color: var(--muted); }
+
+/* -------------------------------------------------------------------- GPU */
+.gpu-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4) var(--sp-12);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.gpu-picker legend {
+  padding: 0;
+  margin-right: var(--sp-8);
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.gpu-picker label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--text); }
+.gpu-picker input { width: 16px; height: 16px; accent-color: var(--accent); }
+.gpu-list { display: flex; flex-direction: column; gap: var(--sp-8); margin: 0; padding: 0; list-style: none; }
+.gpu-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.5fr) repeat(2, minmax(0, 1fr)) auto auto;
+  gap: var(--sp-12);
+  align-items: center;
+  padding: var(--sp-12);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-control);
+}
+.gpu-name { font-size: var(--fs-14); color: var(--text-strong); overflow-wrap: anywhere; }
+.gpu-meta { margin-top: 2px; font-size: var(--fs-11); color: var(--muted); }
+.gpu-metric { min-width: 0; }
+.gpu-metric .metric-value { font-size: var(--fs-13); }
+.gpu-metric .meter { margin-top: 4px; }
+.gpu-empty {
+  display: none;
+  padding: var(--sp-16);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-control);
+  color: var(--muted);
+}
+.gpu-empty[data-visible="true"] { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); flex-wrap: wrap; }
+
+/* ----------------------------------------------------------------- footer */
+.system-footer { border-top: 1px solid var(--border); }
+.footer-inner { display: flex; flex-direction: column; gap: var(--sp-12); padding-block: var(--sp-24) var(--sp-32); }
+.system-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-16) var(--sp-24); }
+.system-grid p { font-size: var(--fs-12); color: var(--muted); }
+.system-grid .micro { margin-bottom: 2px; }
+
+/* ------------------------------------------------------------ responsive */
+@media (max-width: 1199px) {
+  :root { --page-pad: 16px; --layout-gap: 16px; }
+  .dashboard {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-areas:
+      "cpu cpu cpu cpu cpu cpu cpu cpu"
+      "mem mem mem mem net net net net"
+      "proc proc proc proc proc proc proc proc"
+      "gpu gpu gpu gpu gpu gpu gpu gpu";
+  }
+  .cpu-layout { grid-template-columns: 1fr; gap: var(--sp-16); }
+  .chart { height: 96px; }
+  .cores { grid-template-columns: repeat(16, minmax(0, 1fr)); }
+  .panel-cpu, .panel-proc { min-height: 0; }
+  .col-threads { display: none; }
+  .system-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 767px) {
+  :root { --page-pad: 16px; --layout-gap: 12px; }
+  .site-header { position: static; }
+  .header-inner { grid-template-columns: 1fr; gap: var(--sp-8); padding-block: var(--sp-8); }
+  .brand { justify-content: space-between; }
+  .header-controls { justify-content: flex-start; }
+  .dashboard {
+    grid-template-columns: 1fr;
+    grid-template-areas: "cpu" "mem" "net" "proc" "gpu";
+  }
+  .hero-value { font-size: var(--fs-28); }
+  .chart { height: 72px; }
+  .cores { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .breakdown { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .status-inner {
+    min-height: 0;
+    padding-block: var(--sp-4);
+    font-size: var(--fs-11);
+    gap: var(--sp-4) var(--sp-8);
+  }
+  .status-item { white-space: nowrap; }
+  .status-count { display: none; }
+  .status-inner .control { margin-left: 0; }
+  .control, .status-inner .control, .proc-controls input, .proc-controls select { min-height: 44px; }
+  .load-row { width: 100%; }
+  .net-chart { height: 56px; }
+  .net-stats { grid-template-columns: 1fr; }
+  .col-command, .col-user { display: none; }
+  .data-table { min-width: 560px; }
+  .data-table tbody td, .data-table tbody th { height: 44px; padding-block: 0; }
+  .data-table th:first-child, .data-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+  }
+  .data-table thead th:first-child { z-index: 3; }
+  .data-table tbody tr[aria-current="true"] th:first-child,
+  .data-table tbody tr[aria-current="true"] td:first-child { background: var(--selection-bg); }
+  .gpu-row { grid-template-columns: 1fr 1fr; }
+  .gpu-name { grid-column: 1 / -1; }
+  .gpu-picker { flex-direction: column; align-items: flex-start; }
+  .system-grid { grid-template-columns: 1fr; }
+  .drawer {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+  }
+  .detail-grid { grid-template-columns: 1fr; }
+}
+
+@media (forced-colors: active) {
+  .panel, .control, .badge, .meter, .core, .disk-table tbody th,
+  .disk-table tbody td, .data-table th, .data-table td, .gpu-row, .actions { border-color: CanvasText; }
+  .meter { background: Canvas; border: 1px solid CanvasText; }
+  .meter-fill, .core-fill, .dot { background: Highlight; }
+  .chart-line, .spark-line { stroke: CanvasText; }
+  .chart-area { fill: CanvasText; fill-opacity: 0.3; }
+  .badge-readonly::before { background: CanvasText; }
+}
+
+/* __APPEND__ */
+</style>
+</head>
+<body>
+<a class="skip-link" href="#dashboard">Skip to dashboard</a>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <h1 class="wordmark">btop<span>-web</span></h1>
+      <p class="host-line">
+        <span>lab-workstation</span>
+        <span aria-hidden="true">·</span>
+        <span>up <span class="mono">3d 12h 39m</span></span>
+      </p>
+    </div>
+    <div class="header-controls">
+      <span class="badge badge-readonly" aria-describedby="readonly-reason">READ-ONLY</span>
+      <p id="readonly-reason" class="visually-hidden">Read-only mode: this server refuses process signals and priority changes (ACC-SAFE-12).</p>
+      <label class="field-inline" for="theme-picker">
+        <span>Theme</span>
+        <select id="theme-picker" class="control">
+          <option value="default">Default</option>
+          <option value="gruvbox">Gruvbox</option>
+          <option value="solarized">Solarized</option>
+          <option value="everforest">Everforest</option>
+          <option value="flexoki">Flexoki</option>
+        </select>
+      </label>
+      <button id="mode-toggle" class="control" type="button" aria-pressed="false">Switch to light</button>
+    </div>
+  </div>
+</header>
+
+<div class="status-strip" role="status" aria-live="polite" aria-atomic="true">
+  <div class="status-inner">
+    <span class="status-item">
+      <span class="dot" id="conn-dot" data-state="ok" aria-hidden="true"></span>
+      <span id="conn-word">Live</span>
+    </span>
+    <span class="status-item"><span>clock</span> <time class="value" datetime="03:16:16">03:16:16</time></span>
+    <span class="status-item" id="sample-age">updated 0.4 s ago</span>
+    <span class="status-item"><span>interval</span> <span class="value">500 ms</span></span>
+    <span class="status-item status-count"><span class="value">201</span> processes · <span class="value">7,860</span> threads</span>
+    <span class="status-item" id="tick-cost">
+      server tick <span class="value">2.1 ms</span> / 8 ms budget ·
+      <span class="tick-state">within budget</span>
+    </span>
+    <button id="pause" class="control" type="button" aria-pressed="false">Pause</button>
+  </div>
+</div>
+
+<main id="dashboard" class="dashboard">
+  <section class="panel panel-cpu" aria-labelledby="cpu-title">
+    <header class="panel-header">
+      <div>
+        <h2 class="panel-title" id="cpu-title">CPU</h2>
+        <p class="panel-subtitle">AMD Ryzen Threadripper PRO 7975WX 32-Cores · 64 threads · SMT 2</p>
+      </div>
+      <div class="panel-actions">
+        <p class="battery-note">
+          <span class="micro">Battery</span>
+          <span class="unavailable"><strong>Unavailable</strong> <span class="reason">no /sys/class/power_supply</span></span>
+        </p>
+      </div>
+    </header>
+
+    <div class="cpu-layout">
+      <div class="cpu-left">
+        <div class="hero">
+          <p class="hero-value">5<span class="hero-unit">%</span></p>
+          <div>
+            <p class="micro">Total utilization</p>
+            <p class="hero-note">4.80% exact · 1.00 s sample delta</p>
+          </div>
+        </div>
+
+        <figure class="chart" role="img" aria-label="CPU total utilization over the last 120 samples, about 5 percent">
+          <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+            <g class="chart-grid">
+              <line x1="0" y1="250" x2="1000" y2="250"></line>
+              <line x1="0" y1="500" x2="1000" y2="500"></line>
+              <line x1="0" y1="750" x2="1000" y2="750"></line>
+            </g>
+            <path class="chart-area" id="cpu-area" d=""></path>
+            <path class="chart-line" id="cpu-line" d=""></path>
+          </svg>
+          <span class="chart-scale">100% top · 0% base</span>
+        </figure>
+
+        <dl class="breakdown">
+          <div><dt>user</dt><dd>2.1%</dd></div>
+          <div><dt>system</dt><dd>1.4%</dd></div>
+          <div><dt>iowait</dt><dd>0.4%</dd></div>
+          <div><dt>irq</dt><dd>0.0%</dd></div>
+          <div><dt>softirq</dt><dd>0.9%</dd></div>
+          <div><dt>steal</dt><dd>0.0%</dd></div>
+        </dl>
+        <p class="hero-note">idle 95.2% · six busy shares, one decimal each</p>
+
+        <div class="cpu-meta">
+          <div class="metric">
+            <p class="metric-label">Frequency</p>
+            <p class="metric-value"><strong>3.99</strong> GHz <span class="pct">· 3994.064 MHz</span></p>
+          </div>
+          <div class="metric">
+            <p class="metric-label">Load 1m / 5m / 15m</p>
+            <p class="metric-value load-row"><strong>84.55</strong><strong>85.26</strong><strong>87.32</strong></p>
+          </div>
+          <div class="metric">
+            <p class="metric-label">Temperature</p>
+            <p class="metric-value">
+              <span class="unavailable"><strong>Unavailable</strong> <span class="reason">no hwmon or thermal zone</span></span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cpu-right">
+        <p class="micro">Per-core utilization · logical CPUs 0-63 · 8 × 8</p>
+        <ul class="cores" aria-label="Per-core utilization, 64 logical CPUs">
+          <li class="core" role="img" aria-label="CPU 0: 34 percent" data-band="high"><span class="core-label" aria-hidden="true">34</span><span class="core-fill" style="width:33.8%"></span></li>
+          <li class="core" role="img" aria-label="CPU 1: 5 percent" data-band="low"><span class="core-label" aria-hidden="true">5</span><span class="core-fill" style="width:4.9%"></span></li>
+          <li class="core" role="img" aria-label="CPU 2: 25 percent" data-band="mid"><span class="core-label" aria-hidden="true">25</span><span class="core-fill" style="width:25.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 3: 9 percent" data-band="low"><span class="core-label" aria-hidden="true">9</span><span class="core-fill" style="width:9.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 4: 13 percent" data-band="mid"><span class="core-label" aria-hidden="true">13</span><span class="core-fill" style="width:12.9%"></span></li>
+          <li class="core" role="img" aria-label="CPU 5: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 6: 2 percent" data-band="low"><span class="core-label" aria-hidden="true">2</span><span class="core-fill" style="width:2.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 7: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 8: 2 percent" data-band="low"><span class="core-label" aria-hidden="true">2</span><span class="core-fill" style="width:2.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 9: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 10: 3 percent" data-band="low"><span class="core-label" aria-hidden="true">3</span><span class="core-fill" style="width:3.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 11: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 12: 5 percent" data-band="low"><span class="core-label" aria-hidden="true">5</span><span class="core-fill" style="width:5.1%"></span></li>
+          <li class="core" role="img" aria-label="CPU 13: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 14: 6 percent" data-band="low"><span class="core-label" aria-hidden="true">6</span><span class="core-fill" style="width:6.1%"></span></li>
+          <li class="core" role="img" aria-label="CPU 15: 13 percent" data-band="mid"><span class="core-label" aria-hidden="true">13</span><span class="core-fill" style="width:13.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 16: 4 percent" data-band="low"><span class="core-label" aria-hidden="true">4</span><span class="core-fill" style="width:3.9%"></span></li>
+          <li class="core" role="img" aria-label="CPU 17: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 18: 3 percent" data-band="low"><span class="core-label" aria-hidden="true">3</span><span class="core-fill" style="width:3.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 19: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 20: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 21: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 22: 7 percent" data-band="low"><span class="core-label" aria-hidden="true">7</span><span class="core-fill" style="width:7.1%"></span></li>
+          <li class="core" role="img" aria-label="CPU 23: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 24: 2 percent" data-band="low"><span class="core-label" aria-hidden="true">2</span><span class="core-fill" style="width:2.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 25: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 26: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 27: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 28: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 29: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 30: 11 percent" data-band="mid"><span class="core-label" aria-hidden="true">11</span><span class="core-fill" style="width:10.9%"></span></li>
+          <li class="core" role="img" aria-label="CPU 31: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 32: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 33: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 34: 3 percent" data-band="low"><span class="core-label" aria-hidden="true">3</span><span class="core-fill" style="width:2.9%"></span></li>
+          <li class="core" role="img" aria-label="CPU 35: 3 percent" data-band="low"><span class="core-label" aria-hidden="true">3</span><span class="core-fill" style="width:3.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 36: 4 percent" data-band="low"><span class="core-label" aria-hidden="true">4</span><span class="core-fill" style="width:4.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 37: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 38: 49 percent" data-band="high"><span class="core-label" aria-hidden="true">49</span><span class="core-fill" style="width:49.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 39: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 40: 3 percent" data-band="low"><span class="core-label" aria-hidden="true">3</span><span class="core-fill" style="width:3.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 41: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 42: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 43: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 44: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 45: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 46: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 47: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 48: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 49: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 50: 14 percent" data-band="mid"><span class="core-label" aria-hidden="true">14</span><span class="core-fill" style="width:14.1%"></span></li>
+          <li class="core" role="img" aria-label="CPU 51: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 52: 25 percent" data-band="mid"><span class="core-label" aria-hidden="true">25</span><span class="core-fill" style="width:25.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 53: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 54: 2 percent" data-band="low"><span class="core-label" aria-hidden="true">2</span><span class="core-fill" style="width:2.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 55: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 56: 30 percent" data-band="high"><span class="core-label" aria-hidden="true">30</span><span class="core-fill" style="width:30.3%"></span></li>
+          <li class="core" role="img" aria-label="CPU 57: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 58: 2 percent" data-band="low"><span class="core-label" aria-hidden="true">2</span><span class="core-fill" style="width:2.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 59: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 60: 1 percent" data-band="low"><span class="core-label" aria-hidden="true">1</span><span class="core-fill" style="width:1.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 61: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 62: 2 percent" data-band="low"><span class="core-label" aria-hidden="true">2</span><span class="core-fill" style="width:2.0%"></span></li>
+          <li class="core" role="img" aria-label="CPU 63: 0 percent" data-band="low"><span class="core-label" aria-hidden="true">0</span><span class="core-fill" style="width:0.0%"></span></li>
+        </ul>
+      </div>
+    </div>
+
+    <footer class="panel-footer">Temperature, per-core temperature and battery are unavailable on this host; no value is invented. Load average is host-global and can exceed the 64 logical CPUs.</footer>
+  </section>
+
+  <section class="panel panel-mem" aria-labelledby="mem-title">
+    <header class="panel-header">
+      <div>
+        <h2 class="panel-title" id="mem-title">Memory</h2>
+        <p class="panel-subtitle">/proc/meminfo · 503 GiB total · 128 GiB swap</p>
+      </div>
+    </header>
+
+    <div class="panel-body">
+      <div class="mem-list">
+        <div class="mem-row">
+          <span class="micro">Used</span>
+          <span class="mem-value">33.6 GiB <span class="pct">7%</span></span>
+          <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="6.69" aria-label="Used 33.6 GiB, 7 percent" aria-valuetext="33.6 GiB, 7 percent">
+            <span class="meter-fill" style="width:6.69%"></span>
+          </span>
+        </div>
+        <div class="mem-row">
+          <span class="micro">Available</span>
+          <span class="mem-value">469 GiB <span class="pct">93%</span></span>
+          <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="93.31" aria-label="Available 469 GiB, 93 percent" aria-valuetext="469 GiB, 93 percent">
+            <span class="meter-fill available" style="width:93.31%"></span>
+          </span>
+        </div>
+        <div class="mem-row">
+          <span class="micro">Cached</span>
+          <span class="mem-value">280 GiB <span class="pct">56%</span></span>
+          <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="55.83" aria-label="Cached 280 GiB, 56 percent" aria-valuetext="280 GiB, 56 percent">
+            <span class="meter-fill cached" style="width:55.83%"></span>
+          </span>
+        </div>
+        <div class="mem-row">
+          <span class="micro">Free</span>
+          <span class="mem-value">161 GiB <span class="pct">32%</span></span>
+          <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="32.17" aria-label="Free 161 GiB, 32 percent" aria-valuetext="161 GiB, 32 percent">
+            <span class="meter-fill free" style="width:32.17%"></span>
+          </span>
+        </div>
+        <div class="mem-row">
+          <span class="micro">Swap</span>
+          <span class="mem-value">455 MiB <span class="pct">0.3% of 128 GiB</span></span>
+          <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.35" aria-label="Swap 455 MiB, 0.3 percent of 128 GiB" aria-valuetext="455 MiB, 0.3 percent of 128 GiB">
+            <span class="meter-fill nonzero" style="width:0.35%"></span>
+          </span>
+        </div>
+      </div>
+      <p class="mem-note">Integer percent, except a non-zero value below 1%: swap reads 0.3%, not 0%.</p>
+
+      <table class="disk-table">
+        <caption class="visually-hidden">Mounted file systems: capacity, used percent and IO activity</caption>
+        <thead>
+          <tr><th scope="col">Mount</th><th scope="col">Used</th><th scope="col" class="num">IO</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+              <th scope="row"><span class="disk-line"><span class="disk-mount">/home</span><span class="disk-pct">67%</span></span><span class="disk-meta">/dev/sdd · ext4 · 1.64 TiB used of 2.46 TiB · 843 GiB free</span></th>
+              <td class="disk-used"><span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="66.5" aria-label="/home used 67 percent" aria-valuetext="/home, 67 percent used"><span class="meter-fill" style="width:66.5%"></span></span></td>
+              <td class="disk-io">IO 1%</td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="disk-line"><span class="disk-mount">/dev/shm</span><span class="disk-pct">7%</span></span><span class="disk-meta">tmpfs · tmpfs · 4.4 MiB used of 64 MiB · 59.6 MiB free</span></th>
+              <td class="disk-used"><span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="6.9" aria-label="/dev/shm used 7 percent" aria-valuetext="/dev/shm, 7 percent used"><span class="meter-fill" style="width:6.9%"></span></span></td>
+              <td class="disk-io">IO 0%</td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="disk-line"><span class="disk-mount">/mnt/nas-shared</span><span class="disk-pct">31%</span></span><span class="disk-meta">nfs · nfs · 6.8 TiB used of 21.8 TiB · 15.0 TiB free</span></th>
+              <td class="disk-used"><span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="31.2" aria-label="/mnt/nas-shared used 31 percent" aria-valuetext="/mnt/nas-shared, 31 percent used"><span class="meter-fill" style="width:31.2%"></span></span></td>
+              <td class="disk-io">IO 1%</td>
+            </tr>
+            <tr>
+              <th scope="row"><span class="disk-line"><span class="disk-mount">/mnt/personal/onedrive-konrad-jelen-gmail-com</span><span class="disk-pct">29%</span></span><span class="disk-meta">nfs · nfs · 0.29 TiB used of 1.01 TiB · 739.7 GiB free</span></th>
+              <td class="disk-used"><span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="28.8" aria-label="/mnt/personal/onedrive-konrad-jelen-gmail-com used 29 percent" aria-valuetext="/mnt/personal/onedrive-konrad-jelen-gmail-com, 29 percent used"><span class="meter-fill" style="width:28.8%"></span></span></td>
+              <td class="disk-io">IO 0%</td>
+            </tr>
+        </tbody>
+      </table>
+      <p class="mem-note">IO is btop's disk activity percent per sample interval, not throughput. Mounts are the statvfs entries the collector reads.</p>
+    </div>
+
+    <footer class="panel-footer">A mount whose statvfs fails renders Unavailable with the mount name; it is never dropped or shown as zero.</footer>
+  </section>
+  <section class="panel panel-net" aria-labelledby="net-title">
+    <header class="panel-header">
+      <div>
+        <h2 class="panel-title" id="net-title">Network</h2>
+        <p class="panel-subtitle">/proc/net/dev · one interface at a time · net_auto, net_sync</p>
+      </div>
+    </header>
+
+    <div class="net-controls">
+      <label for="net-iface">Interface</label>
+      <select id="net-iface" class="control">
+        <option value="eth0" selected>eth0</option>
+        <option value="eth1">eth1</option>
+        <option value="lo">lo</option>
+      </select>
+      <span class="net-address" id="net-address">172.24.0.0/16</span>
+    </div>
+
+    <div class="panel-body">
+      <div class="net-block">
+        <div class="net-head">
+          <span class="micro">Download</span>
+          <span><span class="net-value" id="net-down-value">1.6 MiB/s</span> <span class="net-bits" id="net-down-bits">(13.4 Mibps)</span></span>
+        </div>
+        <figure class="chart net-chart down" role="img" aria-label="Download rate over the last 120 samples, about 1.6 MiB per second">
+          <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+            <path class="chart-area" id="net-down-area" d=""></path>
+            <path class="chart-line" id="net-down-line" d=""></path>
+          </svg>
+          <span class="chart-scale" id="net-scale-down">scale 2.0 MiB/s</span>
+        </figure>
+      </div>
+
+      <div class="net-block">
+        <div class="net-head">
+          <span class="micro">Upload</span>
+          <span><span class="net-value" id="net-up-value">94 KiB/s</span> <span class="net-bits" id="net-up-bits">(752 Kibps)</span></span>
+        </div>
+        <figure class="chart net-chart up" role="img" aria-label="Upload rate over the last 120 samples, about 94 KiB per second">
+          <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+            <path class="chart-area" id="net-up-area" d=""></path>
+            <path class="chart-line" id="net-up-line" d=""></path>
+          </svg>
+          <span class="chart-scale" id="net-scale-up">scale 2.0 MiB/s</span>
+        </figure>
+      </div>
+
+      <dl class="net-stats">
+        <div><dt class="stat-label">Top down / up</dt><dd class="stat-value" id="net-top">24.8 Mibps / 3.2 Mibps</dd></div>
+        <div><dt class="stat-label">Total down / up</dt><dd class="stat-value" id="net-total">461.6 GiB / 27.0 GiB</dd></div>
+        <div><dt class="stat-label">Errors / drops</dt><dd class="stat-value">0 / 0</dd></div>
+        <div><dt class="stat-label">Scale</dt><dd class="stat-value" id="net-scale">2.0 MiB/s · auto, synced</dd></div>
+      </dl>
+    </div>
+
+    <footer class="panel-footer">Each interface keeps its own 120-sample history; switching back restores its traces. A missing counter file renders Unavailable, never zero.</footer>
+  </section>
+
+  <section class="panel panel-proc" aria-labelledby="proc-title">
+    <header class="panel-header">
+      <div>
+        <h2 class="panel-title" id="proc-title">Processes</h2>
+        <p class="panel-subtitle">201 processes · 7,860 threads · default sort cpu lazy</p>
+      </div>
+    </header>
+
+    <div class="panel-body">
+      <div class="proc-controls">
+        <div class="proc-filter">
+          <label for="proc-filter">Filter</label>
+          <input id="proc-filter" type="search" placeholder="PID, program, command or user" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="proc-sort">
+          <label for="proc-sort">Sort</label>
+          <select id="proc-sort" class="control">
+            <option value="cpu-lazy" selected>CPU lazy (default)</option>
+            <option value="cpu-direct">CPU direct</option>
+            <option value="pid">PID</option>
+            <option value="name">Program</option>
+            <option value="command">Command</option>
+            <option value="threads">Threads</option>
+            <option value="user">User</option>
+            <option value="memory">Memory</option>
+          </select>
+        </div>
+        <span class="proc-count" id="proc-count">12 of 201 processes</span>
+      </div>
+
+      <div class="table-wrap" id="proc-wrap" tabindex="0" aria-label="Process table. Use Up and Down to select a row, Enter for details.">
+        <table class="data-table" id="proc-table">
+          <caption class="visually-hidden">Process table, sorted by CPU share of all 64 cores. Select a row and press Enter for details.</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="num" aria-sort="none">
+                <button class="sort-button" type="button" data-sort="pid">PID <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+              <th scope="col" aria-sort="none">
+                <button class="sort-button" type="button" data-sort="name">Program <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+              <th scope="col" class="cmd-col" aria-sort="none">
+                <button class="sort-button" type="button" data-sort="command">Command <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+              <th scope="col" class="num col-threads" aria-sort="none">
+                <button class="sort-button" type="button" data-sort="threads">Threads <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+              <th scope="col" class="col-user" aria-sort="none">
+                <button class="sort-button" type="button" data-sort="user">User <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+              <th scope="col" class="num" aria-sort="none">
+                <button class="sort-button" type="button" data-sort="memory">Mem <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+              <th scope="col" class="num" aria-sort="descending">
+                <button class="sort-button" type="button" data-sort="cpu-lazy">CPU (all cores) <span class="sort-arrow" aria-hidden="true"></span></button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr id="proc-1158344" data-pid="1158344" data-program="python" data-user="lab" data-cpu="1.2" data-cum="1.172" data-mem="412" data-threads="24" data-command="/tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7/bin/python /tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7/bin/python -m my_test_repo_7" data-hist="0.66,0.96,0.84,1.14,1.20">
+              <th scope="row" class="pid-cell num">1158344</th>
+              <td>python</td>
+              <td class="col-command"><span class="cmd" title="/tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7/bin/python /tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7/bin/python -m my_test_repo_7">/tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7/bin/python /tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7/bin/python -m my_test_repo_7</span></td>
+              <td class="num col-threads">24</td>
+              <td class="col-user">lab</td>
+              <td class="num">412M</td>
+              <td class="num"><span class="cpu-cell"><span>1.2%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-1158269" data-pid="1158269" data-program="python" data-user="lab" data-cpu="1.4" data-cum="0.208" data-mem="128" data-threads="12" data-command="python -m pip install -r requirements.txt" data-hist="0.77,1.12,0.98,1.33,1.40">
+              <th scope="row" class="pid-cell num">1158269</th>
+              <td>python</td>
+              <td class="col-command"><span class="cmd" title="python -m pip install -r requirements.txt">python -m pip install -r requirements.txt</span></td>
+              <td class="num col-threads">12</td>
+              <td class="col-user">lab</td>
+              <td class="num">128M</td>
+              <td class="num"><span class="cpu-cell"><span>1.4%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-1158246" data-pid="1158246" data-program="conda" data-user="lab" data-cpu="0.2" data-cum="0.152" data-mem="96" data-threads="8" data-command="/opt/conda/bin/python /opt/conda/condabin/conda run -p /tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7" data-hist="0.11,0.16,0.14,0.19,0.20">
+              <th scope="row" class="pid-cell num">1158246</th>
+              <td>conda</td>
+              <td class="col-command"><span class="cmd" title="/opt/conda/bin/python /opt/conda/condabin/conda run -p /tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7">/opt/conda/bin/python /opt/conda/condabin/conda run -p /tmp/tmp2xm95usddata-project/my-test-repo-7/.venv/my_test_repo_7</span></td>
+              <td class="num col-threads">8</td>
+              <td class="col-user">lab</td>
+              <td class="num">96M</td>
+              <td class="num"><span class="cpu-cell"><span>0.2%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-1106598" data-pid="1106598" data-program="claude" data-user="lab" data-cpu="0.2" data-cum="0.131" data-mem="486" data-threads="18" data-command="claude --dangerously-skip-permissions" data-hist="0.11,0.16,0.14,0.19,0.20">
+              <th scope="row" class="pid-cell num">1106598</th>
+              <td>claude</td>
+              <td class="col-command"><span class="cmd" title="claude --dangerously-skip-permissions">claude --dangerously-skip-permissions</span></td>
+              <td class="num col-threads">18</td>
+              <td class="col-user">lab</td>
+              <td class="num">486M</td>
+              <td class="num"><span class="cpu-cell"><span>0.2%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-4030252" data-pid="4030252" data-program="claude" data-user="lab" data-cpu="0.1" data-cum="0.122" data-mem="512" data-threads="20" data-command="claude --dangerously-skip-permissions -c" data-hist="0.06,0.08,0.07,0.10,0.10">
+              <th scope="row" class="pid-cell num">4030252</th>
+              <td>claude</td>
+              <td class="col-command"><span class="cmd" title="claude --dangerously-skip-permissions -c">claude --dangerously-skip-permissions -c</span></td>
+              <td class="num col-threads">20</td>
+              <td class="col-user">lab</td>
+              <td class="num">512M</td>
+              <td class="num"><span class="cpu-cell"><span>0.1%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-4023903" data-pid="4023903" data-program="claude" data-user="lab" data-cpu="0.1" data-cum="0.094" data-mem="505" data-threads="19" data-command="claude --dangerously-skip-permissions -c" data-hist="0.06,0.08,0.07,0.10,0.10">
+              <th scope="row" class="pid-cell num">4023903</th>
+              <td>claude</td>
+              <td class="col-command"><span class="cmd" title="claude --dangerously-skip-permissions -c">claude --dangerously-skip-permissions -c</span></td>
+              <td class="num col-threads">19</td>
+              <td class="col-user">lab</td>
+              <td class="num">505M</td>
+              <td class="num"><span class="cpu-cell"><span>0.1%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-3901223" data-pid="3901223" data-program="claude" data-user="lab" data-cpu="0.1" data-cum="0.077" data-mem="498" data-threads="18" data-command="claude --dangerously-skip-permissions -c" data-hist="0.06,0.08,0.07,0.10,0.10">
+              <th scope="row" class="pid-cell num">3901223</th>
+              <td>claude</td>
+              <td class="col-command"><span class="cmd" title="claude --dangerously-skip-permissions -c">claude --dangerously-skip-permissions -c</span></td>
+              <td class="num col-threads">18</td>
+              <td class="col-user">lab</td>
+              <td class="num">498M</td>
+              <td class="num"><span class="cpu-cell"><span>0.1%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-633023" data-pid="633023" data-program="claude" data-user="lab" data-cpu="0.1" data-cum="0.072" data-mem="470" data-threads="17" data-command="claude --dangerously-skip-permissions -c" data-hist="0.06,0.08,0.07,0.10,0.10">
+              <th scope="row" class="pid-cell num">633023</th>
+              <td>claude</td>
+              <td class="col-command"><span class="cmd" title="claude --dangerously-skip-permissions -c">claude --dangerously-skip-permissions -c</span></td>
+              <td class="num col-threads">17</td>
+              <td class="col-user">lab</td>
+              <td class="num">470M</td>
+              <td class="num"><span class="cpu-cell"><span>0.1%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-1" data-pid="1" data-program="systemd" data-user="root" data-cpu="0.0" data-cum="0.000" data-mem="12" data-threads="1" data-command="/sbin/init" data-hist="0.00,0.00,0.00,0.00,0.00">
+              <th scope="row" class="pid-cell num">1</th>
+              <td>systemd</td>
+              <td class="col-command"><span class="cmd" title="/sbin/init">/sbin/init</span></td>
+              <td class="num col-threads">1</td>
+              <td class="col-user">root</td>
+              <td class="num">12M</td>
+              <td class="num"><span class="cpu-cell"><span>0.0%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-884" data-pid="884" data-program="containerd" data-user="root" data-cpu="0.0" data-cum="0.000" data-mem="84" data-threads="12" data-command="/usr/bin/containerd" data-hist="0.00,0.00,0.00,0.00,0.00">
+              <th scope="row" class="pid-cell num">884</th>
+              <td>containerd</td>
+              <td class="col-command"><span class="cmd" title="/usr/bin/containerd">/usr/bin/containerd</span></td>
+              <td class="num col-threads">12</td>
+              <td class="col-user">root</td>
+              <td class="num">84M</td>
+              <td class="num"><span class="cpu-cell"><span>0.0%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-1158345" data-pid="1158345" data-program="node" data-user="lab" data-cpu="0.0" data-cum="0.000" data-mem="210" data-threads="11" data-command="node /opt/conda/lib/node_modules/npm/bin/npm-cli.js" data-hist="0.00,0.00,0.00,0.00,0.00">
+              <th scope="row" class="pid-cell num">1158345</th>
+              <td>node</td>
+              <td class="col-command"><span class="cmd" title="node /opt/conda/lib/node_modules/npm/bin/npm-cli.js">node /opt/conda/lib/node_modules/npm/bin/npm-cli.js</span></td>
+              <td class="num col-threads">11</td>
+              <td class="col-user">lab</td>
+              <td class="num">210M</td>
+              <td class="num"><span class="cpu-cell"><span>0.0%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+            <tr id="proc-1158346" data-pid="1158346" data-program="postgres" data-user="lab" data-cpu="0.0" data-cum="0.000" data-mem="64" data-threads="7" data-command="postgres: checkpointer" data-hist="0.00,0.00,0.00,0.00,0.00">
+              <th scope="row" class="pid-cell num">1158346</th>
+              <td>postgres</td>
+              <td class="col-command"><span class="cmd" title="postgres: checkpointer">postgres: checkpointer</span></td>
+              <td class="num col-threads">7</td>
+              <td class="col-user">lab</td>
+              <td class="num">64M</td>
+              <td class="num"><span class="cpu-cell"><span>0.0%</span><svg class="spark" viewBox="0 0 40 12" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="spark-line" d=""></path></svg></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="proc-hint">
+        <p class="micro">Process detail</p>
+        <p>Select a row and press Enter for state, IO, nice and command lines.</p>
+        <p class="reason">Mock sample: 12 of 201 processes; the live table caps at 200 rows.</p>
+      </div>
+    </div>
+
+    <footer class="panel-footer">
+      Process actions disabled in read-only mode (ACC-SAFE-12). CPU % is the interval share of all 64 cores: one saturated core reads 1.6%.
+    </footer>
+  </section>
+
+  <section class="panel panel-gpu" aria-labelledby="gpu-title">
+    <header class="panel-header">
+      <div>
+        <h2 class="panel-title" id="gpu-title">GPU</h2>
+        <p class="panel-subtitle">NVML · 3 devices · sample 2026-10-25T02:33:33Z · no compute processes</p>
+      </div>
+      <div class="panel-actions">
+        <fieldset class="gpu-picker">
+          <legend>Show devices</legend>
+          <label><input type="checkbox" name="gpu" value="0" checked> GPU 0</label>
+          <label><input type="checkbox" name="gpu" value="1" checked> GPU 1</label>
+          <label><input type="checkbox" name="gpu" value="2" checked> GPU 2</label>
+        </fieldset>
+      </div>
+    </header>
+
+    <div class="panel-body">
+      <ul class="gpu-list" aria-label="GPU devices">
+        <li class="gpu-row" data-gpu="0">
+          <div>
+            <p class="gpu-name">NVIDIA RTX PRO 4000 Blackwell</p>
+            <p class="gpu-meta">GPU 0 · PCI 00000000:21:00.0 · 24,467 MiB VRAM</p>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Utilization</p>
+            <p class="metric-value"><strong>0</strong>%</p>
+            <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="GPU 0 utilization 0 percent"><span class="meter-fill gpu" style="width:0%"></span></span>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">VRAM</p>
+            <p class="metric-value"><strong>0</strong> MiB / 24,467 MiB <span class="pct">0%</span></p>
+            <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="GPU 0 VRAM 0 of 24,467 MiB, 0 percent"><span class="meter-fill gpu" style="width:0%"></span></span>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Temp</p>
+            <p class="metric-value"><strong>36</strong> °C</p>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Power</p>
+            <p class="metric-value"><strong>3.9</strong> W <span class="pct">/ 145 W</span></p>
+          </div>
+        </li>
+        <li class="gpu-row" data-gpu="1">
+          <div>
+            <p class="gpu-name">NVIDIA RTX PRO 6000 Blackwell Max-Q</p>
+            <p class="gpu-meta">GPU 1 · PCI 00000000:E1:00.0 · 97,887 MiB VRAM</p>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Utilization</p>
+            <p class="metric-value"><strong>0</strong>%</p>
+            <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="GPU 1 utilization 0 percent"><span class="meter-fill gpu" style="width:0%"></span></span>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">VRAM</p>
+            <p class="metric-value"><strong>64</strong> MiB / 97,887 MiB <span class="pct">0.1%</span></p>
+            <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.07" aria-label="GPU 1 VRAM 64 of 97,887 MiB, 0.1 percent"><span class="meter-fill gpu nonzero" style="width:0.07%"></span></span>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Temp</p>
+            <p class="metric-value"><strong>37</strong> °C</p>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Power</p>
+            <p class="metric-value"><strong>14.1</strong> W <span class="pct">/ 300 W</span></p>
+          </div>
+        </li>
+        <li class="gpu-row" data-gpu="2">
+          <div>
+            <p class="gpu-name">NVIDIA RTX PRO 5000 72GB Blackwell</p>
+            <p class="gpu-meta">GPU 2 · PCI 00000000:E2:00.0 · 73,415 MiB VRAM</p>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Utilization</p>
+            <p class="metric-value"><strong>1</strong>%</p>
+            <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="1" aria-label="GPU 2 utilization 1 percent"><span class="meter-fill gpu" style="width:1%"></span></span>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">VRAM</p>
+            <p class="metric-value"><strong>853</strong> MiB / 73,415 MiB <span class="pct">1%</span></p>
+            <span class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="1.16" aria-label="GPU 2 VRAM 853 of 73,415 MiB, 1 percent"><span class="meter-fill gpu" style="width:1.16%"></span></span>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Temp</p>
+            <p class="metric-value"><strong>37</strong> °C</p>
+          </div>
+          <div class="gpu-metric">
+            <p class="metric-label">Power</p>
+            <p class="metric-value"><strong>21.9</strong> W <span class="pct">/ 300 W</span></p>
+          </div>
+        </li>
+      </ul>
+      <p class="gpu-empty" id="gpu-empty" data-visible="false">
+        <span>No devices selected.</span>
+        <button class="control" id="gpu-show-all" type="button">Show all devices</button>
+      </p>
+    </div>
+
+    <footer class="panel-footer">All three NVML devices are shown by default. The selection persists in localStorage behind try/catch. Unavailable is shown only when NVML reports no device at all.</footer>
+  </section>
+</main>
+
+<footer class="system-footer">
+  <div class="footer-inner">
+    <h2 class="panel-title" id="system-title">Design system at a glance</h2>
+    <div class="system-grid">
+      <div>
+        <p class="micro">Palette</p>
+        <p>Five families, ten variants: eight file-backed pairs plus the generated Default pair. Components read semantic tokens only; raw btop values are confined to chart fills after the 3:1 clamp and never carry text.</p>
+      </div>
+      <div>
+        <p class="micro">Graphs</p>
+        <p>PCHIP, Fritsch-Carlson slopes, on every sparkline and history chart. 120 knots for history; knots land on their timestamps; monotone runs stay monotone; the curve never overshoots the sample extremes. Measured 120-knot rebuild: PCHIP 0.0995 ms median, natural cubic 0.1045 ms; the cubic scheme was 5% slower and overshot at 13 sampled points, so PCHIP stays.</p>
+      </div>
+      <div>
+        <p class="micro">Performance budget</p>
+        <p>One sampler tick per interval, fanned out to every client; static facts cached. No per-frame work, no timer, no rAF loop: the DOM changes only when a fragment arrives. Hidden tabs stop applying snapshots and resync on show. Tick 2.1 ms of an 8 ms budget; chart rebuild under 4 ms at 120 knots.</p>
+      </div>
+      <div>
+        <p class="micro">Read-only</p>
+        <p>Read-only is the default and visible state. The server refuses every mutating request with a typed 403; the UI disables terminate, kill, signal and priority with the reason in view. No unlock toggle exists.</p>
+      </div>
+      <div>
+        <p class="micro">Type and space</p>
+        <p>Scale 11, 12, 13, 14, 16, 20, 28, 40 px. Spacing 2, 4, 8, 12, 16, 24, 32, 48, 64 px on a 4 px base. Radii 4 px controls, 8 px panels, 999 px pills. 1 px borders, 2 px panel top rules, no shadows.</p>
+      </div>
+      <div>
+        <p class="micro">Accessibility</p>
+        <p>WCAG AA in every variant; semantic landmarks; focus-visible rings; reduced motion honoured; no colour-only encoding. Status carries a word, sort carries aria-sort, read-only carries the words READ-ONLY.</p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<dialog class="drawer" id="proc-detail" aria-labelledby="proc-detail-title">
+  <div class="drawer-head">
+    <div>
+      <h2 class="drawer-title" id="proc-detail-title">Process detail</h2>
+      <p class="panel-subtitle" id="proc-detail-sub">Select a row</p>
+    </div>
+    <form method="dialog"><button class="control" type="submit">Close</button></form>
+  </div>
+  <div class="drawer-body">
+    <dl class="detail-grid">
+      <div><dt>State</dt><dd>R</dd></div>
+      <div><dt>Elapsed</dt><dd>00:04:12</dd></div>
+      <div><dt>IO read</dt><dd>12.4 MiB</dd></div>
+      <div><dt>IO write</dt><dd>0 B</dd></div>
+      <div><dt>Parent</dt><dd>1</dd></div>
+      <div><dt>User</dt><dd id="d-user">lab</dd></div>
+      <div><dt>Threads</dt><dd id="d-threads">24</dd></div>
+      <div><dt>Nice</dt><dd>0</dd></div>
+    </dl>
+    <div class="detail-history">
+      <figure class="chart detail-chart" role="img" aria-label="Selected process CPU history">
+        <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="chart-line" id="proc-cpu-line" d=""></path></svg>
+      </figure>
+      <figure class="chart detail-chart" role="img" aria-label="Selected process memory history">
+        <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="chart-line" id="proc-mem-line" d=""></path></svg>
+      </figure>
+    </div>
+    <div>
+      <p class="micro">Command</p>
+      <p class="mono" id="d-command" style="overflow-wrap:anywhere"></p>
+    </div>
+    <div class="actions">
+      <h3>Actions</h3>
+      <button class="control" type="button" disabled aria-describedby="readonly-drawer-reason">Terminate (SIGTERM)</button>
+      <button class="control" type="button" disabled aria-describedby="readonly-drawer-reason">Kill (SIGKILL)</button>
+      <button class="control" type="button" disabled aria-describedby="readonly-drawer-reason">Send signal</button>
+      <button class="control" type="button" disabled aria-describedby="readonly-drawer-reason">Priority / nice</button>
+      <p class="actions-reason" id="readonly-drawer-reason">Read-only mode: this server refuses process signals and priority changes (ACC-SAFE-12).</p>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+  var doc = document;
+  var root = doc.documentElement;
+  function $(id) { return doc.getElementById(id); }
+
+  /* PCHIP: monotone piecewise cubic Hermite with Fritsch-Carlson slopes.
+     Endpoints use the one-sided three-point estimate; interior slopes are the
+     weighted harmonic mean, zeroed at a sign change. The curve passes through
+     every knot and cannot leave the interval between adjacent samples. */
+  function slopes(values) {
+    var n = values.length;
+    if (n === 2) return [values[1] - values[0], values[1] - values[0]];
+    var dx = 1 / (n - 1);
+    var d = new Array(n - 1);
+    for (var i = 0; i < n - 1; i++) d[i] = (values[i + 1] - values[i]) / dx;
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+      var limit = 3 * Math.min(Math.abs(d[i - 1]), Math.abs(d[i]));
+      if (Math.abs(m[i]) > limit) m[i] = limit * (m[i] < 0 ? -1 : 1);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function curve(values, width, map) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = 1 / (n - 1);
+    var lo = Math.min.apply(null, values);
+    var hi = Math.max.apply(null, values);
+    var yTop = map(hi);
+    var yBottom = map(lo);
+    function yOf(v) {
+      return Math.max(yTop, Math.min(yBottom, map(Math.max(lo, Math.min(hi, v)))));
+    }
+    var pts = [];
+    var ok = true;
+    for (var i = 0; i < n - 1; i++) {
+      for (var s = 0; s < 8; s++) {
+        var t = s / 8;
+        var t2 = t * t;
+        var t3 = t2 * t;
+        var v = (2 * t3 - 3 * t2 + 1) * values[i]
+          + (t3 - 2 * t2 + t) * dx * m[i]
+          + (-2 * t3 + 3 * t2) * values[i + 1]
+          + (t3 - t2) * dx * m[i + 1];
+        if (v < lo - 1e-9 || v > hi + 1e-9) ok = false;
+        pts.push([(i + t) * width / (n - 1), yOf(v)]);
+      }
+    }
+    pts.push([width, yOf(values[n - 1])]);
+    return { pts: pts, ok: ok, yTop: yTop, yBottom: yBottom };
+  }
+
+  function pathOf(pts, yTop, yBottom) {
+    var top = yTop === undefined ? null : Math.ceil(yTop * 100) / 100;
+    var bottom = yBottom === undefined ? null : Math.floor(yBottom * 100) / 100;
+    var out = "";
+    for (var i = 0; i < pts.length; i++) {
+      var y = +pts[i][1].toFixed(2);
+      if (top !== null && y < top) y = top;
+      if (bottom !== null && y > bottom) y = bottom;
+      out += (i ? "L" : "M") + pts[i][0].toFixed(2) + " " + y.toFixed(2);
+    }
+    return out;
+  }
+
+  function linear(values, width, map) {
+    var pts = [];
+    var n = values.length;
+    for (var i = 0; i < n; i++) pts.push([i * width / (n - 1), map(values[i])]);
+    return pts;
+  }
+
+  function chart(values, width, height, map, area) {
+    var c = curve(values, width, map);
+    var pts = c.ok ? c.pts : linear(values, width, map);
+    var d = pathOf(pts, c.yTop, c.yBottom);
+    if (area) d += " L" + width + " " + height + " L0 " + height + " Z";
+    return d;
+  }
+
+  function percentMap(height) {
+    return function (v) { return height - (v / 100) * (height * 0.94) - height * 0.03; };
+  }
+
+  function scaledMap(height, max) {
+    return function (v) {
+      var f = Math.max(0, Math.min(1, v / max));
+      return height - f * (height * 0.94) - height * 0.03;
+    };
+  }
+
+  function sparkMap(height, values) {
+    var lo = Math.min.apply(null, values);
+    var hi = Math.max.apply(null, values);
+    if (hi === lo) hi = lo + 1;
+    return function (v) { return height - 1 - ((v - lo) / (hi - lo)) * (height - 2); };
+  }
+
+  function zero(n) {
+    var a = [];
+    for (var i = 0; i < n; i++) a.push(0);
+    return a;
+  }
+
+  function rateHistory(base, amp, peakEvery, peak, last) {
+    var a = [];
+    for (var i = 0; i < 120; i++) {
+      var v = base + amp * Math.sin(i * 0.29) + amp * 0.4 * Math.sin(i * 0.07 + 1.1);
+      if (peakEvery && i % peakEvery === 0) v += peak;
+      a.push(Math.max(0, v));
+    }
+    a[119] = last;
+    return a;
+  }
+
+  function cpuHistory() {
+    var a = [];
+    for (var i = 0; i < 120; i++) {
+      var v = 4.8 + 2.4 * Math.sin(i * 0.37) + 1.1 * Math.sin(i * 0.11 + 0.7)
+        + (i % 29 === 0 ? 5.5 : 0) + (i % 47 === 0 ? 3 : 0);
+      a.push(Math.max(0.3, Math.min(19, v)));
+    }
+    a[119] = 4.8;
+    return a;
+  }
+
+  var MIB = 1048576;
+  var KIB = 1024;
+  var NET = {
+    eth0: {
+      address: "172.24.0.0/16",
+      downText: "1.6 MiB/s", downBits: "(13.4 Mibps)",
+      upText: "94 KiB/s", upBits: "(752 Kibps)",
+      top: "24.8 Mibps / 3.2 Mibps",
+      total: "461.6 GiB / 27.0 GiB",
+      scale: 2 * MIB,
+      scaleText: "2.0 MiB/s",
+      down: rateHistory(1.6 * MIB, 0.18 * MIB, 41, 0.1 * MIB, 1.6 * MIB),
+      up: rateHistory(94 * KIB, 20 * KIB, 53, 8 * KIB, 94 * KIB)
+    },
+    eth1: {
+      address: "10.230.6.0/24",
+      downText: "0 B/s", downBits: "(0 bps)",
+      upText: "0 B/s", upBits: "(0 bps)",
+      top: "0 bps / 0 bps",
+      total: "10.4 KiB / 9.2 KiB",
+      scale: 10 * KIB,
+      scaleText: "10 KiB/s",
+      down: zero(120), up: zero(120)
+    },
+    lo: {
+      address: "127.0.0.1",
+      downText: "0 B/s", downBits: "(0 bps)",
+      upText: "0 B/s", upBits: "(0 bps)",
+      top: "0 bps / 0 bps",
+      total: "380.5 GiB / 380.5 GiB",
+      scale: 10 * KIB,
+      scaleText: "10 KiB/s",
+      down: zero(120), up: zero(120)
+    }
+  };
+
+  function drawCpu() {
+    var values = cpuHistory();
+    var map = percentMap(1000);
+    $("cpu-line").setAttribute("d", chart(values, 1000, 1000, map, false));
+    $("cpu-area").setAttribute("d", chart(values, 1000, 1000, map, true));
+  }
+
+  function renderNet(key) {
+    var d = NET[key] || NET.eth0;
+    $("net-address").textContent = d.address;
+    $("net-down-value").textContent = d.downText;
+    $("net-down-bits").textContent = d.downBits;
+    $("net-up-value").textContent = d.upText;
+    $("net-up-bits").textContent = d.upBits;
+    $("net-top").textContent = d.top;
+    $("net-total").textContent = d.total;
+    $("net-scale").textContent = d.scaleText + " · auto, synced";
+    $("net-scale-down").textContent = "scale " + d.scaleText;
+    $("net-scale-up").textContent = "scale " + d.scaleText;
+    var map = scaledMap(1000, d.scale);
+    $("net-down-line").setAttribute("d", chart(d.down, 1000, 1000, map, false));
+    $("net-down-area").setAttribute("d", chart(d.down, 1000, 1000, map, true));
+    $("net-up-line").setAttribute("d", chart(d.up, 1000, 1000, map, false));
+    $("net-up-area").setAttribute("d", chart(d.up, 1000, 1000, map, true));
+  }
+
+  function drawSparks() {
+    var lines = doc.querySelectorAll(".spark-line");
+    for (var i = 0; i < lines.length; i++) {
+      var row = lines[i].closest("tr");
+      var values = (row && row.dataset.hist ? row.dataset.hist : "0,0,0,0,0").split(",").map(Number);
+      lines[i].setAttribute("d", chart(values, 40, 12, sparkMap(12, values), false));
+    }
+  }
+
+  function drawDetail(row) {
+    var cpu = Number(row.dataset.cpu) || 0;
+    var mem = Number(row.dataset.mem) || 0;
+    var cpuValues = [cpu * 0.4, cpu * 0.7, cpu * 0.55, cpu * 0.95, cpu];
+    var memValues = [mem * 0.92, mem * 0.94, mem * 0.97, mem * 0.99, mem];
+    $("proc-cpu-line").setAttribute("d", chart(cpuValues, 1000, 1000, sparkMap(1000, cpuValues), false));
+    $("proc-mem-line").setAttribute("d", chart(memValues, 1000, 1000, sparkMap(1000, memValues), false));
+  }
+
+  /* ---------------------------------------------------------- theme controls */
+  function readStore(key) {
+    try { return window.localStorage.getItem(key); } catch (error) { return null; }
+  }
+  function writeStore(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (error) { /* optional */ }
+  }
+
+  var picker = $("theme-picker");
+  var modeToggle = $("mode-toggle");
+  if (picker) {
+    picker.value = root.getAttribute("data-theme") || "default";
+    picker.addEventListener("change", function () {
+      root.setAttribute("data-theme", picker.value);
+      writeStore("btop-web-theme", picker.value);
+    });
+  }
+  function syncMode() {
+    if (!modeToggle) return;
+    var dark = root.getAttribute("data-mode") === "dark";
+    modeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
+    modeToggle.textContent = dark ? "Switch to light" : "Switch to dark";
+  }
+  function toggleMode() {
+    var next = root.getAttribute("data-mode") === "dark" ? "light" : "dark";
+    root.setAttribute("data-mode", next);
+    writeStore("btop-web-mode", next);
+    syncMode();
+  }
+  if (modeToggle) modeToggle.addEventListener("click", toggleMode);
+  syncMode();
+
+  if (window.matchMedia) {
+    var media = window.matchMedia("(prefers-color-scheme: light)");
+    var follow = function () {
+      if (readStore("btop-web-mode")) return;
+      root.setAttribute("data-mode", media.matches ? "light" : "dark");
+      syncMode();
+    };
+    if (media.addEventListener) media.addEventListener("change", follow);
+  }
+
+  /* --------------------------------------------------------------- pause */
+  var paused = false;
+  var pauseButton = $("pause");
+  function setConn(word, state) {
+    $("conn-word").textContent = word;
+    $("conn-dot").setAttribute("data-state", state);
+  }
+  function togglePause() {
+    paused = !paused;
+    if (pauseButton) {
+      pauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
+      pauseButton.textContent = paused ? "Resume" : "Pause";
+    }
+    setConn(paused ? "Paused" : "Live", paused ? "warn" : "ok");
+    $("sample-age").textContent = paused ? "paused - no snapshots applied" : "updated 0.4 s ago";
+  }
+  if (pauseButton) pauseButton.addEventListener("click", togglePause);
+  doc.addEventListener("visibilitychange", function () {
+    if (doc.hidden) {
+      if (!paused) {
+        setConn("Paused", "warn");
+        $("sample-age").textContent = "paused - tab hidden";
+      }
+    } else if (!paused) {
+      setConn("Live", "ok");
+      $("sample-age").textContent = "updated 0.4 s ago";
+    }
+  });
+
+  /* ----------------------------------------------------------- processes */
+  var table = $("proc-table");
+  var tbody = table ? table.tBodies[0] : null;
+  var rows = tbody ? Array.prototype.slice.call(tbody.rows) : [];
+  var wrap = $("proc-wrap");
+  var filter = $("proc-filter");
+  var sortSelect = $("proc-sort");
+  var count = $("proc-count");
+  var sortKey = "cpu-lazy";
+  var sortDir = -1;
+  var selected = null;
+  var filterTimer = null;
+
+  function rowValue(row, key) {
+    var current = Number(row.dataset.cpu) || 0;
+    switch (key) {
+      case "pid": return Number(row.dataset.pid);
+      case "name": return row.dataset.program.toLowerCase();
+      case "command": return row.dataset.command.toLowerCase();
+      case "threads": return Number(row.dataset.threads);
+      case "user": return row.dataset.user.toLowerCase();
+      case "memory": return Number(row.dataset.mem);
+      case "cpu-direct": return current;
+      case "cpu-lazy": return Number(row.dataset.cum) || 0;
+      default: return current;
+    }
+  }
+
+  function applySort() {
+    rows.sort(function (a, b) {
+      var av = rowValue(a, sortKey);
+      var bv = rowValue(b, sortKey);
+      if (av < bv) return -1 * sortDir;
+      if (av > bv) return 1 * sortDir;
+      return (Number(a.dataset.pid) - Number(b.dataset.pid)) * sortDir;
+    });
+    for (var i = 0; i < rows.length; i++) tbody.appendChild(rows[i]);
+  }
+
+  function markSort() {
+    if (!table) return;
+    var headers = table.querySelectorAll("thead th");
+    for (var i = 0; i < headers.length; i++) {
+      var button = headers[i].querySelector(".sort-button");
+      var key = button ? button.getAttribute("data-sort") : "";
+      var match = key === sortKey || (key === "cpu-lazy" && sortKey === "cpu-direct");
+      headers[i].setAttribute("aria-sort", match ? (sortDir === 1 ? "ascending" : "descending") : "none");
+    }
+    if (sortSelect) sortSelect.value = sortKey;
+  }
+
+  if (table) {
+    var sortButtons = table.querySelectorAll(".sort-button");
+    for (var b = 0; b < sortButtons.length; b++) {
+      sortButtons[b].addEventListener("click", function () {
+        var key = this.getAttribute("data-sort");
+        if (key === sortKey) sortDir = -sortDir;
+        else { sortKey = key; sortDir = -1; }
+        applySort();
+        markSort();
+      });
+    }
+  }
+  if (sortSelect) {
+    sortSelect.addEventListener("change", function () {
+      sortKey = sortSelect.value;
+      sortDir = -1;
+      applySort();
+      markSort();
+    });
+  }
+
+  function applyFilter() {
+    if (!filter) return;
+    var q = filter.value.trim().toLowerCase();
+    var shown = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var hay = (row.dataset.pid + " " + row.dataset.program + " " + row.dataset.command + " " + row.dataset.user).toLowerCase();
+      var ok = !q || hay.indexOf(q) !== -1;
+      row.hidden = !ok;
+      if (ok) shown++;
+    }
+    if (count) count.textContent = shown + " of 201 processes";
+  }
+  if (filter) {
+    filter.addEventListener("input", function () {
+      window.clearTimeout(filterTimer);
+      filterTimer = window.setTimeout(applyFilter, 150);
+    });
+    filter.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        filter.value = "";
+        applyFilter();
+      }
+    });
+  }
+
+  function selectRow(row) {
+    if (!row) return;
+    if (selected) selected.removeAttribute("aria-current");
+    selected = row;
+    row.setAttribute("aria-current", "true");
+    if (row.scrollIntoView) row.scrollIntoView({ block: "nearest" });
+  }
+
+  function visibleRows() {
+    return rows.filter(function (row) { return !row.hidden; });
+  }
+
+  var dialog = $("proc-detail");
+
+  function openDetail(row) {
+    if (!row || !dialog) return;
+    selectRow(row);
+    $("proc-detail-title").textContent = row.dataset.program + " · PID " + row.dataset.pid;
+    $("proc-detail-sub").textContent = "Read-only detail · CPU " + row.dataset.cpu + "% of all cores · " + row.dataset.mem + " MB";
+    $("d-user").textContent = row.dataset.user;
+    $("d-threads").textContent = row.dataset.threads;
+    $("d-command").textContent = row.dataset.command;
+    drawDetail(row);
+    if (dialog.showModal) dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
+  if (tbody) {
+    tbody.addEventListener("click", function (event) {
+      var node = event.target;
+      while (node && node !== tbody && node.tagName !== "TR") node = node.parentNode;
+      if (!node || node.tagName !== "TR") return;
+      if (node === selected) openDetail(node);
+      else selectRow(node);
+    });
+  }
+
+  if (wrap) {
+    wrap.addEventListener("keydown", function (event) {
+      var list = visibleRows();
+      var index = list.indexOf(selected);
+      var next = null;
+      if (event.key === "ArrowDown") next = list[Math.min(list.length - 1, index + 1)];
+      else if (event.key === "ArrowUp") next = list[Math.max(0, index <= 0 ? 0 : index - 1)];
+      else if (event.key === "Home") next = list[0];
+      else if (event.key === "End") next = list[list.length - 1];
+      else if (event.key === "PageDown") next = list[Math.min(list.length - 1, index + 10)];
+      else if (event.key === "PageUp") next = list[Math.max(0, index - 10)];
+      else if (event.key === "Enter") {
+        event.preventDefault();
+        openDetail(selected || list[0]);
+        return;
+      } else return;
+      event.preventDefault();
+      selectRow(next || list[0]);
+    });
+  }
+
+  if (dialog) {
+    dialog.addEventListener("close", function () { if (wrap) wrap.focus(); });
+  }
+
+  /* ----------------------------------------------------------------- GPU */
+  var GPU_KEY = "btop-web-gpu-devices";
+  var allGpus = ["0", "1", "2"];
+  var gpuBoxes = doc.querySelectorAll('input[name="gpu"]');
+
+  function readGpu() {
+    try {
+      var raw = window.localStorage.getItem(GPU_KEY);
+      if (raw === null) return allGpus.slice();
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return allGpus.slice();
+      var valid = [];
+      for (var i = 0; i < parsed.length; i++) {
+        var id = String(parsed[i]);
+        if (allGpus.indexOf(id) !== -1 && valid.indexOf(id) === -1) valid.push(id);
+      }
+      return valid;
+    } catch (error) {
+      return allGpus.slice();
+    }
+  }
+
+  function applyGpu(ids) {
+    var gpuRows = doc.querySelectorAll(".gpu-row");
+    for (var i = 0; i < gpuRows.length; i++) gpuRows[i].hidden = ids.indexOf(gpuRows[i].dataset.gpu) === -1;
+    for (var j = 0; j < gpuBoxes.length; j++) gpuBoxes[j].checked = ids.indexOf(gpuBoxes[j].value) !== -1;
+    var empty = $("gpu-empty");
+    if (empty) empty.setAttribute("data-visible", ids.length === 0 ? "true" : "false");
+  }
+
+  function chosenGpu() {
+    var out = [];
+    for (var i = 0; i < gpuBoxes.length; i++) if (gpuBoxes[i].checked) out.push(gpuBoxes[i].value);
+    return out;
+  }
+
+  function saveGpu(ids) {
+    try { window.localStorage.setItem(GPU_KEY, JSON.stringify(ids)); } catch (error) { /* optional */ }
+  }
+
+  for (var g = 0; g < gpuBoxes.length; g++) {
+    gpuBoxes[g].addEventListener("change", function () {
+      var ids = chosenGpu();
+      saveGpu(ids);
+      applyGpu(ids);
+    });
+  }
+  var showAll = $("gpu-show-all");
+  if (showAll) {
+    showAll.addEventListener("click", function () {
+      saveGpu(allGpus.slice());
+      applyGpu(allGpus.slice());
+    });
+  }
+  applyGpu(readGpu());
+
+  /* -------------------------------------------------------------- keyboard */
+  doc.addEventListener("keydown", function (event) {
+    var tag = (event.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "select" || tag === "textarea" || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === "/") {
+      event.preventDefault();
+      if (filter) filter.focus();
+    } else if (event.key === "p") {
+      event.preventDefault();
+      togglePause();
+    } else if (event.key === "l") {
+      event.preventDefault();
+      toggleMode();
+    }
+  });
+
+  /* ------------------------------------------------------------------ init */
+  drawCpu();
+  drawSparks();
+  var iface = $("net-iface");
+  renderNet(iface ? iface.value : "eth0");
+  if (iface) iface.addEventListener("change", function () { renderNet(iface.value); });
+  applySort();
+  markSort();
+  applyFilter();
+})();
+</script>
+</body>
+</html>
+<!-- marks:settings trust=933e9d699acab5299d585e958bfd29b26061405824f365c67563a487738f115a -->

@@ -1,0 +1,19 @@
+<header class="ph"><h2 id="proc-stat-title">Processes</h2></header>
+<div class="stat-body">
+  {% if let Some(total) = snapshot.proc.total %}{% let w = crate::collector::count_width(*snapshot.proc.chart_max) %}<div class="stat-tile"><span class="stat-value" data-w="{{ w }}">{{ total }}</span><span class="proc-facts">
+    {% if let Some(n) = snapshot.proc.running %}<span>running <b>{{ n }}</b></span>{% else %}<span>running unavailable</span>{% endif %}
+    {% if let Some(n) = snapshot.proc.sleeping %}<span>sleeping <b>{{ n }}</b></span>{% else %}<span>sleeping unavailable</span>{% endif %}
+    {% if let Some(n) = snapshot.proc.waiting %}<span>waiting <b>{{ n }}</b></span>{% else %}<span>waiting unavailable</span>{% endif %}
+    {% if let Some(n) = snapshot.proc.zombie %}<span>zombie <b>{{ n }}</b></span>{% else %}<span>zombie unavailable</span>{% endif %}
+    {% if let Some(n) = snapshot.proc.threads %}<span>threads <b>{{ n }}</b></span>{% else %}<span>threads unavailable</span>{% endif %}
+    {% if snapshot.gpu.available() %}{% if let Some(n) = snapshot.gpu.process_count %}<span>gpu <b>{{ n }}</b></span>{% else %}<span>gpu unavailable</span>{% endif %}{% endif %}
+  </span></div>
+  <div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to {{ snapshot.proc.chart_max }}">
+    {% if !snapshot.proc.chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::PROC_COUNT.width }} {{ crate::chart::PROC_COUNT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.proc.scale.style.is_empty() %} rescale" style="{{ snapshot.proc.scale.style }}" data-rescale="{{ snapshot.proc.scale.rescale }}{% endif %}"><path class="area" d="{{ snapshot.proc.chart.area }}"></path><path class="line" d="{{ snapshot.proc.chart.line }}"></path></g></svg>{% endif %}
+  </div>
+  <div class="stat-foot">
+    {% if let Some(top) = snapshot.proc.top %}<span title="pid {{ top.pid }}, the highest Cpu%">top <b>{% if let Some(name) = top.name %}{{ name }} {% endif %}{{ top.cpu_label() }}%</b></span>{% else %}<span>top unavailable</span>{% endif %}
+    {% if let Some(n) = snapshot.proc.cpu_80 %}<span title="processes that together use 80 percent of all process CPU">80% cpu <b data-w="{{ w }}">{{ n }}</b></span>{% else %}<span>80% cpu unavailable</span>{% endif %}
+    {% if let Some(n) = snapshot.proc.mem_80 %}<span title="processes that together use 80 percent of all process memory">80% mem <b data-w="{{ w }}">{{ n }}</b></span>{% else %}<span>80% mem unavailable</span>{% endif %}
+  </div>{% else %}<div class="stat-tile centred"><span class="stat-na">unavailable</span></div>{% endif %}
+</div>

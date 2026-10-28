@@ -1,0 +1,11 @@
+<header class="ph"><h2 id="cpu-stat-title">CPU</h2></header>
+<div class="stat-body">
+  <div class="stat-tile">{% if let Some(pct) = snapshot.cpu.total_pct %}<span class="stat-value {{ crate::collector::band(**pct) }}" data-w="100.0" id="cpu-total">{{ pct|fmt("{:.1}") }}</span><span class="stat-unit">%</span>{% else %}<span class="stat-na">unavailable</span>{% endif %}</div>
+  <div class="stat-chart" data-chart="cpu" role="img" aria-label="CPU history, 0 to 100 percent">
+    {% if !snapshot.cpu.chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::CPU_HISTORY.width }} {{ crate::chart::CPU_HISTORY.height }}" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="{{ snapshot.cpu.chart.area }}"></path><path class="line" d="{{ snapshot.cpu.chart.line }}"></path></svg>{% endif %}
+  </div>
+  <div class="stat-foot" data-p="3" data-field="cpu-stat-foot">
+    {% if snapshot.cpu.cpu_hz.is_some() || snapshot.cpu.frequency_mhz.is_some() %}<span><b>{{ snapshot.cpu.frequency_label() }}</b></span>{% endif %}
+    {% if let Some(load) = snapshot.cpu.load_avg %}<span>load <b data-w="000">{{ load[0]|fmt("{:.0}") }}</b> <b data-w="000">{{ load[1]|fmt("{:.0}") }}</b> <b data-w="000">{{ load[2]|fmt("{:.0}") }}</b></span>{% else if snapshot.container %}<span>load unavailable</span>{% endif %}
+  </div>
+</div>

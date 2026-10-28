@@ -1,0 +1,11 @@
+/target
+/tmp
+/coverage
+/graphify-out
+/logs/*.log
+*.local.conf
+*.profraw
+*.pending-snap
+.DS_Store
+.playwright-mcp/
+.ipynb_checkpoints/

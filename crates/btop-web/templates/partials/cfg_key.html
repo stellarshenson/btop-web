@@ -1,0 +1,16 @@
+{% if readonly -%}
+<div class="cfg-key" data-key="{{ row.option.key }}"><span class="cfg-k" title="{{ row.option.help }}">{{ row.option.key }}</span><span class="cfg-val">{% if row.value.is_empty() %}""{% else %}{{ row.value }}{% endif %}</span></div>
+{%- else -%}
+<form class="cfg-key" data-key="{{ row.option.key }}" novalidate hx-post="config" hx-trigger="change, submit" hx-swap="outerHTML" hx-sync="this:replace"><input type="hidden" name="key" value="{{ row.option.key }}">
+{%- match row.option.control -%}
+{%- when crate::config::Control::Bool -%}
+<span class="cfg-k" id="cfg-{{ row.option.key }}-k" title="{{ row.option.help }}">{{ row.option.key }}</span><span class="cfg-opts" role="group" aria-labelledby="cfg-{{ row.option.key }}-k"><button class="opt{% if row.value == "True" %} on{% endif %}" type="submit" name="value" value="True" id="cfg-{{ row.option.key }}-on" aria-pressed="{{ row.value == "True" }}">on</button><button class="opt{% if row.value == "False" %} on{% endif %}" type="submit" name="value" value="False" id="cfg-{{ row.option.key }}-off" aria-pressed="{{ row.value == "False" }}">off</button></span>
+{%- when crate::config::Control::Int { min, max } -%}
+<label class="cfg-k" for="cfg-{{ row.option.key }}" title="{{ row.option.help }}">{{ row.option.key }}</label><input class="opt cfg-in" type="number" name="value" id="cfg-{{ row.option.key }}" value="{{ row.value }}" min="{{ min }}" max="{{ max }}" step="1">
+{%- when crate::config::Control::Text -%}
+<label class="cfg-k" for="cfg-{{ row.option.key }}" title="{{ row.option.help }}">{{ row.option.key }}</label><input class="opt cfg-in" type="text" name="value" id="cfg-{{ row.option.key }}" value="{{ row.value }}" autocomplete="off" spellcheck="false">
+{%- when crate::config::Control::Choice(choices) -%}
+<label class="cfg-k" for="cfg-{{ row.option.key }}" title="{{ row.option.help }}">{{ row.option.key }}</label><select class="opt cfg-in" name="value" id="cfg-{{ row.option.key }}">{% for (value, label) in choices %}<option value="{{ value }}"{% if *value == row.value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+{%- endmatch -%}
+<output class="cfg-msg">{{ row.msg }}</output></form>
+{%- endif %}

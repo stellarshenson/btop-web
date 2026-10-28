@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web</title>
+<style>
+/* theme tokens: btop's five palettes, both modes */
+html[data-theme="default"][data-mode="dark"] { color-scheme: dark; --surface: #000000; --surface-raised: #040404; --surface-sunken: #040404; --text: #cccccc; --text-strong: #eeeeee; --muted: #757575; --accent: #b54040; --selection-bg: #6a2f2f; --selection-fg: #eeeeee; --border: #5a5a5a; --border-subtle: #2d2d2d; --ok: #77ca9b; --warn: #cbc06c; --crit: #dc4c4c; --meter-track: #5a5a5a; --chart-cpu: #77ca9b; --chart-cpu-warn: #cbc06c; --chart-cpu-crit: #dc4c4c; --chart-mem-used: #ff4769; --chart-mem-available: #ffb814; --chart-mem-cached: #26c5ff; --chart-mem-free: #dcff85; --chart-net-down: #b0a9de; --chart-net-up: #dcafde; --chart-proc: #dcd179; }
+html[data-theme="default"][data-mode="light"] { color-scheme: light; --surface: #ffffff; --surface-raised: #fbfbfb; --surface-sunken: #fbfbfb; --text: #333333; --text-strong: #111111; --muted: #767676; --accent: #bf4a4a; --selection-bg: #d09595; --selection-fg: #111111; --border: #949494; --border-subtle: #cacaca; --ok: #358859; --warn: #938834; --crit: #b32323; --meter-track: #949494; --chart-cpu: #358859; --chart-cpu-warn: #938834; --chart-cpu-crit: #b32323; --chart-mem-used: #b80022; --chart-mem-available: #c48900; --chart-mem-cached: #009fd9; --chart-mem-free: #577a00; --chart-net-down: #282156; --chart-net-up: #4e2150; --chart-proc: #867b23; }
+html[data-theme="gruvbox"][data-mode="dark"] { color-scheme: dark; --surface: #1d2021; --surface-raised: #202223; --surface-sunken: #202223; --text: #a89984; --text-strong: #ebdbb2; --muted: #918573; --accent: #d79921; --selection-bg: #282828; --selection-fg: #fabd2f; --border: #a89984; --border-subtle: #625c52; --ok: #b8bb26; --warn: #d79921; --crit: #fb4934; --meter-track: #6a6a6a; --chart-cpu: #b8bb26; --chart-cpu-warn: #d79921; --chart-cpu-crit: #fb4934; --chart-mem-used: #fb4934; --chart-mem-available: #fabd2f; --chart-mem-cached: #83a598; --chart-mem-free: #98971a; --chart-net-down: #a3a8f7; --chart-net-up: #d3869b; --chart-proc: #d79921; }
+html[data-theme="gruvbox"][data-mode="light"] { color-scheme: light; --surface: #fbf1c7; --surface-raised: #f7edc4; --surface-sunken: #f7edc4; --text: #3c3836; --text-strong: #3c3836; --muted: #736d60; --accent: #cc241d; --selection-bg: #f2e5bc; --selection-fg: #8f3f71; --border: #968976; --border-subtle: #c8bd9e; --ok: #427b58; --warn: #b5811c; --crit: #cc241d; --meter-track: #948a70; --chart-cpu: #427b58; --chart-cpu-warn: #b5811c; --chart-cpu-crit: #cc241d; --chart-mem-used: #cc241d; --chart-mem-available: #b57614; --chart-mem-cached: #427b58; --chart-mem-free: #427b58; --chart-net-down: #79740e; --chart-net-up: #b57614; --chart-proc: #af3a03; }
+html[data-theme="solarized"][data-mode="dark"] { color-scheme: dark; --surface: #002b36; --surface-raised: #052f39; --surface-sunken: #052f39; --text: #eee8d5; --text-strong: #fdf6e3; --muted: #80918b; --accent: #b58900; --selection-bg: #073642; --selection-fg: #d6a200; --border: #5e737a; --border-subtle: #2f4f58; --ok: #adc700; --warn: #d6a200; --crit: #e65317; --meter-track: #55757d; --chart-cpu: #adc700; --chart-cpu-warn: #d6a200; --chart-cpu-crit: #e65317; --chart-mem-used: #e02f30; --chart-mem-available: #edb400; --chart-mem-cached: #268bd2; --chart-mem-free: #bad600; --chart-net-down: #a3a8f7; --chart-net-up: #f56caf; --chart-proc: #d6a200; }
+html[data-theme="solarized"][data-mode="light"] { color-scheme: light; --surface: #fdf6e3; --surface-raised: #faf3e1; --surface-sunken: #faf3e1; --text: #586e75; --text-strong: #002b36; --muted: #60747a; --accent: #b48800; --selection-bg: #eee8d5; --selection-fg: #846400; --border: #859191; --border-subtle: #c1c4ba; --ok: #849800; --warn: #b48800; --crit: #e65317; --meter-track: #928e82; --chart-cpu: #849700; --chart-cpu-warn: #b48800; --chart-cpu-crit: #e65317; --chart-mem-used: #e02f30; --chart-mem-available: #b38800; --chart-mem-cached: #268bd2; --chart-mem-free: #839700; --chart-net-down: #8589c9; --chart-net-up: #e063a0; --chart-proc: #b48800; }
+html[data-theme="everforest"][data-mode="dark"] { color-scheme: dark; --surface: #2d353b; --surface-raised: #30383d; --surface-sunken: #30383d; --text: #d3c6aa; --text-strong: #d3c6aa; --muted: #a39c8a; --accent: #e67e80; --selection-bg: #3d484d; --selection-fg: #dbbc7f; --border: #767e81; --border-subtle: #525a5e; --ok: #a7c080; --warn: #dbbc7f; --crit: #f85552; --meter-track: #797e82; --chart-cpu: #a7c080; --chart-cpu-warn: #dbbc7f; --chart-cpu-crit: #f85552; --chart-mem-used: #f85552; --chart-mem-available: #a7c080; --chart-mem-cached: #a7c080; --chart-mem-free: #a7c080; --chart-net-down: #7fbbb3; --chart-net-up: #e67e80; --chart-proc: #e67e80; }
+html[data-theme="everforest"][data-mode="light"] { color-scheme: light; --surface: #fdf6e3; --surface-raised: #faf3e1; --surface-sunken: #faf3e1; --text: #5c6a72; --text-strong: #5c6a72; --muted: #67737a; --accent: #d765b3; --selection-bg: #4f585e; --selection-fg: #ecc86b; --border: #4f585e; --border-subtle: #a6a7a0; --ok: #849701; --warn: #b98500; --crit: #f85552; --meter-track: #879189; --chart-cpu: #849701; --chart-cpu-warn: #b98500; --chart-cpu-crit: #f85552; --chart-mem-used: #f85552; --chart-mem-available: #849701; --chart-mem-cached: #849701; --chart-mem-free: #849701; --chart-net-down: #3994c5; --chart-net-up: #d765b3; --chart-proc: #d765b3; }
+html[data-theme="flexoki"][data-mode="dark"] { color-scheme: dark; --surface: #100f0f; --surface-raised: #141313; --surface-sunken: #141313; --text: #cecdc3; --text-strong: #fffcf0; --muted: #7c7b75; --accent: #da702c; --selection-bg: #403e3c; --selection-fg: #fffcf0; --border: #615f5e; --border-subtle: #383736; --ok: #3aa99f; --warn: #d0a215; --crit: #d14d41; --meter-track: #61605e; --chart-cpu: #3aa99f; --chart-cpu-warn: #d0a215; --chart-cpu-crit: #d14d41; --chart-mem-used: #d14d41; --chart-mem-available: #da702c; --chart-mem-cached: #3aa99f; --chart-mem-free: #879a39; --chart-net-down: #3aa99f; --chart-net-up: #8b7ec8; --chart-proc: #d0a215; }
+html[data-theme="flexoki"][data-mode="light"] { color-scheme: light; --surface: #fffcf0; --surface-raised: #fbf8ec; --surface-sunken: #fbf8ec; --text: #343331; --text-strong: #100f0f; --muted: #76746f; --accent: #bc5215; --selection-bg: #e6e4d9; --selection-fg: #100f0f; --border: #93928b; --border-subtle: #c9c7be; --ok: #24837b; --warn: #ad8301; --crit: #af3029; --meter-track: #93928b; --chart-cpu: #24837b; --chart-cpu-warn: #ad8301; --chart-cpu-crit: #af3029; --chart-mem-used: #af3029; --chart-mem-available: #bc5215; --chart-mem-cached: #24837b; --chart-mem-free: #66800b; --chart-net-down: #24837b; --chart-net-up: #5e409d; --chart-proc: #ad8301; }
+/* derived surfaces: quiet hairlines and a 1px inner highlight, from the theme's own text colour */
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --panel: color-mix(in srgb, var(--text) 3%, var(--surface));
+  --line: color-mix(in srgb, var(--text) 13%, transparent);
+  --line-top: color-mix(in srgb, var(--text) 24%, transparent);
+  --line-soft: color-mix(in srgb, var(--text) 7%, transparent);
+  --label: color-mix(in srgb, var(--muted) 70%, var(--text));
+  --cpu-h: 296px;
+  --mid-h: 296px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font-family: var(--sans); color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+.page {
+  height: 100%;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 652fr) minmax(0, 770fr);
+  grid-template-rows: var(--cpu-h) var(--mid-h) minmax(0, 1fr);
+}
+
+/* panel: hairline frame, a 1px lit top edge, the label cut into the border */
+.panel {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-top: 1px solid var(--line-top);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.legend {
+  position: absolute;
+  top: -1px;
+  left: 12px;
+  z-index: 2;
+  height: 16px;
+  margin: 0;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--label);
+  white-space: nowrap;
+}
+.legend .legend-sub {
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--label);
+}
+
+/* house chip: 1px border, 2px radius, uppercase, tint behind the text */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--line-top);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--text));
+}
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); color: var(--text-strong); }
+.chip-live b { font-family: var(--mono); font-weight: 400; letter-spacing: 0; color: var(--text); }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); color: var(--text-strong); cursor: pointer; }
+.chip-static { --chip-hue: var(--text); }
+.lamp { width: 4px; height: 4px; flex: 0 0 auto; background: var(--ok); }
+.chip-live.paused .lamp { background: var(--warn); }
+.meta { font-family: var(--mono); font-size: 10px; color: var(--label); }
+
+/* cpu */
+.cpu { grid-column: 1 / -1; grid-row: 1; }
+.cpu-head { flex: 0 0 30px; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 12px 0; }
+.cpu-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 43fr 57fr; }
+.cpu-left {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 64px;
+  gap: 10px;
+  padding: 4px 12px 12px;
+  border-right: 1px solid var(--line-soft);
+}
+.history { position: relative; min-height: 0; border-bottom: 1px solid var(--line); }
+.gpus { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-height: 0; }
+.gpu {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.gpu[data-selected="true"] { border-color: var(--accent); }
+.gpu-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gpu-name { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-strong); }
+.gpu-name::before { content: ""; width: 4px; height: 4px; background: transparent; }
+.gpu[data-selected="true"] .gpu-name::before { background: var(--accent); }
+.gpu-util { font-family: var(--mono); font-size: 14px; color: var(--text-strong); }
+.gpu-model { font-size: 9.5px; color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gpu-spark { display: block; height: 14px; }
+.gpu-bottom { display: flex; justify-content: space-between; gap: 8px; margin-top: auto; font-family: var(--mono); font-size: 9.5px; color: var(--label); }
+.gpu-bottom b { font-weight: 400; color: var(--text); }
+.cpu-right { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 6px 12px 12px 16px; }
+.stats { display: flex; align-items: flex-end; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+.stat { display: flex; flex-direction: column; gap: 3px; padding: 0 20px; border-left: 1px solid var(--line-soft); }
+.stat:first-child { padding-left: 0; border-left: 0; }
+.stat-label { font-size: 9px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--label); }
+.stat-value { font-family: var(--mono); font-size: 15px; line-height: 1.05; color: var(--text-strong); white-space: nowrap; }
+.stat-value b { font-weight: 400; }
+.stat-value .unit { font-style: normal; font-size: 10px; color: var(--label); margin-left: 3px; }
+.stat-value.hero { font-size: 26px; }
+.stat-value.hero .unit { font-size: 12px; }
+.matrix { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); column-gap: 14px; row-gap: 3px; }
+.core { min-width: 0; display: grid; grid-template-columns: 20px minmax(0, 1fr) 22px; align-items: center; gap: 5px; font-family: var(--mono); font-size: 9.5px; line-height: 1; }
+.core-label { color: var(--label); }
+.core-bar { position: relative; height: 4px; background: var(--line); }
+.core-bar i { display: block; height: 100%; min-width: 2px; background: var(--ok); }
+.core.warn .core-bar i { background: var(--warn); }
+.core.crit .core-bar i { background: var(--crit); }
+.core-pct { text-align: right; color: var(--text); }
+/* lower left: memory and disks */
+.midrow { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; display: grid; grid-template-columns: 55fr 45fr; gap: 10px; }
+.net { grid-column: 1; grid-row: 3; }
+.proc { grid-column: 2; grid-row: 2 / 4; }
+
+.mem-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 12px 12px 10px; }
+.mem-row {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 64px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mem-row:last-child { border-bottom: 0; }
+.mem-label { font-size: 11px; color: var(--text); }
+.mem-val { font-family: var(--mono); font-size: 14px; color: var(--text-strong); text-align: right; white-space: nowrap; }
+.mem-val .unit { font-style: normal; font-size: 10px; color: var(--label); margin-left: 3px; }
+.mem-val .pct { margin-left: 7px; font-size: 10px; color: var(--label); }
+.spark { width: 60px; height: 22px; display: block; }
+
+.disks-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 12px; }
+.swap { display: flex; flex-direction: column; }
+.swap-head, .mount-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.swap-name { font-size: 9px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--label); }
+.swap-total { font-family: var(--mono); font-size: 13px; color: var(--text-strong); }
+.swap-meta { display: flex; justify-content: space-between; gap: 8px; margin: 5px 0 7px; font-family: var(--mono); font-size: 9.5px; color: var(--label); }
+.mount { display: flex; flex-direction: column; gap: 7px; }
+.mount-label { font-family: var(--mono); font-size: 11px; color: var(--text); }
+.mount-pct { font-family: var(--mono); font-size: 15px; color: var(--text-strong); }
+.bar4 { height: 4px; display: flex; background: var(--line-soft); border-radius: 1px; overflow: hidden; }
+.bar4 span { display: block; height: 100%; }
+.bar4 .used { background: var(--chart-mem-cached); }
+.bar4 .fill { background: var(--ok); }
+.bar4 .fill.warn { background: var(--warn); }
+.bar4 .fill.crit { background: var(--crit); }
+
+/* network */
+.net-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.net-graph { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.net-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.net-name { font-size: 9px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--label); }
+.net-now { font-family: var(--mono); font-size: 13px; color: var(--text-strong); white-space: nowrap; }
+.net-now .muted { margin-left: 6px; font-size: 9.5px; color: var(--label); }
+.net-now .down { color: var(--chart-net-down); }
+.net-now .up-arrow { color: var(--chart-net-up); }
+.net-sub { display: flex; gap: 14px; padding: 3px 0 6px; font-family: var(--mono); font-size: 9.5px; color: var(--label); }
+.net-sub b { font-weight: 400; color: var(--text); }
+.net-plot { position: relative; flex: 1 1 auto; min-height: 0; border-bottom: 1px solid var(--line); }
+
+/* processes */
+.proc-head { flex: 0 0 34px; display: flex; align-items: center; gap: 12px; padding: 8px 12px 0; }
+.proc-count { font-family: var(--mono); font-size: 10px; color: var(--label); white-space: nowrap; }
+.proc-count b { font-weight: 400; color: var(--text-strong); }
+.filter {
+  width: 116px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 4%, var(--surface));
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.filter::placeholder { color: var(--label); }
+.proc-head .chip { margin-left: auto; }
+.proc-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-top) transparent; padding: 0 4px 4px; }
+.proc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.proc-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--label);
+  text-align: left;
+  white-space: nowrap;
+}
+.proc-table td { height: 22px; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.proc-table td.num, .proc-table th.num { text-align: right; }
+.proc-table .pid, .proc-table .cmd, .proc-table .threads, .proc-table .memb { font-family: var(--mono); font-size: 10.5px; }
+.proc-table .cmd { color: var(--label); }
+.proc-table .user { color: var(--label); font-size: 11px; }
+.proc-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--text) 2%, transparent); }
+.proc-table tbody tr:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--label); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* charts */
+.chart { display: block; width: 100%; height: 100%; }
+.chart .area { opacity: 0.12; }
+.chart .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.history .area { fill: var(--chart-cpu); }
+.history .line { stroke: var(--chart-cpu); }
+.history .dot { fill: var(--chart-cpu); }
+.net-down .area { fill: var(--chart-net-down); }
+.net-down .line { stroke: var(--chart-net-down); }
+.net-down .dot { fill: var(--chart-net-down); }
+.net-up .area { fill: var(--chart-net-up); }
+.net-up .line { stroke: var(--chart-net-up); }
+.net-up .dot { fill: var(--chart-net-up); }
+.spark .area { opacity: 0.1; }
+.spark .line { stroke-width: 1.25; }
+.spark-total .area { fill: var(--text); }
+.spark-total .line { stroke: var(--text); }
+.spark-used .area { fill: var(--chart-mem-used); }
+.spark-used .line { stroke: var(--chart-mem-used); }
+.spark-avail .area { fill: var(--chart-mem-available); }
+.spark-avail .line { stroke: var(--chart-mem-available); }
+.spark-cached .area { fill: var(--chart-mem-cached); }
+.spark-cached .line { stroke: var(--chart-mem-cached); }
+.spark-free .area { fill: var(--chart-mem-free); }
+.spark-free .line { stroke: var(--chart-mem-free); }
+.spark-gpu .area { fill: var(--chart-cpu); }
+.spark-gpu .line { stroke: var(--chart-cpu); }
+
+/* config popover */
+.config {
+  position: fixed;
+  z-index: 40;
+  width: 268px;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in srgb, var(--text) 30%, transparent);
+  border-radius: 2px;
+  font-size: 11px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: start; }
+.cfg-label { font-size: 9px; font-weight: 600; line-height: 18px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--label); }
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--line-top);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--accent); }
+.opt.on { border-color: var(--accent); color: var(--text-strong); }
+.opt.on::before { opacity: 0.12; }
+
+/* phone summary */
+.summary { display: none; grid-column: 1; grid-row: 1; }
+.summary-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 8px 0 4px; }
+.sum-row { flex: 0 0 34px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line-soft); }
+.sum-row:last-child { border-bottom: 0; }
+.sum-label { font-size: 9px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--label); }
+.sum-val { font-family: var(--mono); font-size: 12px; color: var(--text-strong); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-val .muted { color: var(--label); font-size: 10px; }
+
+@media (max-width: 899px) {
+  .page { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 8px; gap: 8px; }
+  .cpu, .midrow, .net { display: none; }
+  .summary { display: flex; }
+  .proc { grid-column: 1; grid-row: 2; }
+  .proc-table { table-layout: auto; }
+  .proc-table th:nth-child(3), .proc-table td:nth-child(3),
+  .proc-table th:nth-child(4), .proc-table td:nth-child(4),
+  .proc-table th:nth-child(5), .proc-table td:nth-child(5) { display: none; }
+  .filter { width: 92px; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="panel cpu" aria-labelledby="cpu-title">
+    <h2 class="legend" id="cpu-title">CPU</h2>
+    <div class="cpu-head">
+      <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word">live</span><b id="sample-age">0.4 s</b></span>
+      <span class="meta">06:12</span>
+      <span class="meta">2000 ms</span>
+      <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config">config</button>
+    </div>
+    <div class="cpu-body">
+      <div class="cpu-left">
+        <div class="history" id="history" role="img" aria-label="CPU history, 4.8 percent now"></div>
+        <div class="gpus">
+          <article class="gpu" data-gpu="0" data-selected="false">
+            <div class="gpu-top"><span class="gpu-name">GPU 0</span><span class="gpu-util">0%</span></div>
+            <span class="gpu-model">RTX PRO 4000 Blackwell</span>
+            <span class="gpu-spark spark-gpu" data-spark="gpu0" aria-hidden="true"></span>
+            <div class="gpu-bottom"><span><b>452M</b> / 24G</span><span>36 C &middot; 3.9 W</span></div>
+          </article>
+          <article class="gpu" data-gpu="1" data-selected="true">
+            <div class="gpu-top"><span class="gpu-name">GPU 1</span><span class="gpu-util">0%</span></div>
+            <span class="gpu-model">RTX PRO 6000 Blackwell Max-Q</span>
+            <span class="gpu-spark spark-gpu" data-spark="gpu1" aria-hidden="true"></span>
+            <div class="gpu-bottom"><span><b>64M</b> / 98G</span><span>37 C &middot; 14.1 W</span></div>
+          </article>
+          <article class="gpu" data-gpu="2" data-selected="false">
+            <div class="gpu-top"><span class="gpu-name">GPU 2</span><span class="gpu-util">1%</span></div>
+            <span class="gpu-model">RTX PRO 5000 72GB</span>
+            <span class="gpu-spark spark-gpu" data-spark="gpu2" aria-hidden="true"></span>
+            <div class="gpu-bottom"><span><b>853M</b> / 73G</span><span>37 C &middot; 21.9 W</span></div>
+          </article>
+        </div>
+      </div>
+      <div class="cpu-right">
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">CPU</span>
+            <span class="stat-value hero"><b id="cpu-total">4.8</b><i class="unit">%</i></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Freq</span>
+            <span class="stat-value"><b>3.99</b><i class="unit">GHz</i></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Load</span>
+            <span class="stat-value"><b>96 95 94</b></span>
+          </div>
+        </div>
+        <div class="matrix" id="matrix"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="midrow">
+    <section class="panel mem" aria-labelledby="mem-title">
+      <h2 class="legend" id="mem-title">Mem</h2>
+      <div class="mem-body">
+        <div class="mem-row">
+          <span class="mem-label">Total</span>
+          <span class="mem-val">503<i class="unit">GiB</i></span>
+          <span class="spark spark-total" data-spark="memTotal" aria-hidden="true"></span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-label">Used</span>
+          <span class="mem-val">39.7<i class="unit">GiB</i><span class="pct">8%</span></span>
+          <span class="spark spark-used" data-spark="memUsed" aria-hidden="true"></span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-label">Available</span>
+          <span class="mem-val">463<i class="unit">GiB</i><span class="pct">92%</span></span>
+          <span class="spark spark-avail" data-spark="memAvail" aria-hidden="true"></span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-label">Cached</span>
+          <span class="mem-val">253<i class="unit">GiB</i><span class="pct">50%</span></span>
+          <span class="spark spark-cached" data-spark="memCached" aria-hidden="true"></span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-label">Free</span>
+          <span class="mem-val">184<i class="unit">GiB</i><span class="pct">37%</span></span>
+          <span class="spark spark-free" data-spark="memFree" aria-hidden="true"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel disks" aria-labelledby="disks-title">
+      <h2 class="legend" id="disks-title">Disks</h2>
+      <div class="disks-body">
+        <div class="swap">
+          <div class="swap-head"><span class="swap-name">swap</span><span class="swap-total">128 GiB</span></div>
+          <div class="swap-meta"><span>used 2.9 GiB</span><span>free 98%</span></div>
+          <div class="bar4"><span class="used" style="width:2.3%"></span></div>
+        </div>
+        <div class="mount">
+          <div class="mount-row"><span class="mount-label">/</span><span class="mount-pct">66%</span></div>
+          <div class="bar4"><span class="fill warn" style="width:66%"></span></div>
+        </div>
+        <div class="mount">
+          <div class="mount-row"><span class="mount-label">/home</span><span class="mount-pct">66%</span></div>
+          <div class="bar4"><span class="fill warn" style="width:66%"></span></div>
+        </div>
+        <div class="mount">
+          <div class="mount-row"><span class="mount-label">nas-shared</span><span class="mount-pct">31%</span></div>
+          <div class="bar4"><span class="fill" style="width:31%"></span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel net" aria-labelledby="net-title">
+    <h2 class="legend" id="net-title">Net <span class="legend-sub">eth0</span></h2>
+    <div class="net-body">
+      <div class="net-graph net-down">
+        <div class="net-head">
+          <span class="net-name">Download</span>
+          <span class="net-now"><span class="down">&#9660;</span> 1.07 MiB/s <span class="muted">8.56 Mibps</span></span>
+        </div>
+        <div class="net-sub"><span>Top <b>62.1 Mibps</b></span><span>Total <b>391 GiB</b></span></div>
+        <div class="net-plot" id="net-down" role="img" aria-label="Download history, 1.07 MiB/s now"></div>
+      </div>
+      <div class="net-graph net-up">
+        <div class="net-head">
+          <span class="net-name">Upload</span>
+          <span class="net-now"><span class="up-arrow">&#9650;</span> 940 KiB/s <span class="muted">7.34 Mibps</span></span>
+        </div>
+        <div class="net-sub"><span>Top <b>10.0 Mibps</b></span><span>Total <b>391 GiB</b></span></div>
+        <div class="net-plot" id="net-up" role="img" aria-label="Upload history, 940 KiB/s now"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel proc" aria-labelledby="proc-title">
+    <h2 class="legend" id="proc-title">Proc</h2>
+    <div class="proc-head">
+      <span class="proc-count"><b id="proc-count">22</b> / 249 processes</span>
+      <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+      <span class="chip chip-static"><i class="lamp"></i>read-only</span>
+    </div>
+    <div class="proc-table-wrap">
+      <table class="proc-table">
+        <caption class="sr-only">Processes sorted by CPU descending</caption>
+        <colgroup>
+          <col style="width:70px"><col style="width:130px"><col><col style="width:60px"><col style="width:46px"><col style="width:66px"><col style="width:58px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num" scope="col">Pid</th>
+            <th scope="col">Program</th>
+            <th scope="col">Command</th>
+            <th class="num" scope="col">Threads</th>
+            <th scope="col">User</th>
+            <th class="num" scope="col">MemB</th>
+            <th class="num" scope="col">Cpu%</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel summary" aria-labelledby="summary-title">
+    <h2 class="legend" id="summary-title">Summary</h2>
+    <div class="summary-body">
+      <div class="sum-row"><span class="sum-label">cpu</span><span class="sum-val">4.8% <span class="muted">3.99 GHz &middot; L 96 95 94</span></span></div>
+      <div class="sum-row"><span class="sum-label">mem</span><span class="sum-val">39.7 / 503 GiB <span class="muted">8%</span></span></div>
+      <div class="sum-row"><span class="sum-label">gpu 0</span><span class="sum-val">0% <span class="muted">452M / 24G</span></span></div>
+      <div class="sum-row"><span class="sum-label">gpu 1</span><span class="sum-val">0% <span class="muted">64M / 98G</span></span></div>
+      <div class="sum-row"><span class="sum-label">gpu 2</span><span class="sum-val">1% <span class="muted">853M / 73G</span></span></div>
+      <div class="sum-row"><span class="sum-label">net</span><span class="sum-val">1.07 MiB/s <span class="muted">down &middot; 940 KiB/s up</span></span></div>
+    </div>
+  </section>
+</main>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">theme</span>
+    <div class="cfg-opts" data-group="theme">
+      <button class="opt on" type="button" data-value="default">default</button>
+      <button class="opt" type="button" data-value="gruvbox">gruvbox</button>
+      <button class="opt" type="button" data-value="solarized">solarized</button>
+      <button class="opt" type="button" data-value="everforest">everforest</button>
+      <button class="opt" type="button" data-value="flexoki">flexoki</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">mode</span>
+    <div class="cfg-opts" data-group="mode">
+      <button class="opt on" type="button" data-value="dark">dark</button>
+      <button class="opt" type="button" data-value="light">light</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">gpu</span>
+    <div class="cfg-opts" data-group="gpu">
+      <button class="opt" type="button" data-value="0">0</button>
+      <button class="opt on" type="button" data-value="1">1</button>
+      <button class="opt" type="button" data-value="2">2</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">stream</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  /* ---------- sample arrays: the base page's mock data ---------- */
+  function series(n, fn) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(fn(i));
+    return out;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  var cores = (function () {
+    var base = [5, 4, 6, 3, 7, 5, 4, 6, 3, 5, 8, 4, 6, 2, 7, 5];
+    var tail = [4, 5, 3, 6, 4, 5, 7, 3, 4, 4, 6, 2, 4, 5, 3, 3];
+    return base.concat(base, base, tail);
+  })();
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var memTotal = series(24, function (i) { return 100 + 0.6 * Math.sin(i * 0.7); });
+  var memUsed = series(24, function (i) { return 8 + 0.5 * Math.sin(i * 0.55 + 0.4); });
+  var memAvail = series(24, function (i) { return 92 + 0.5 * Math.sin(i * 0.5 + 2.1); });
+  var memCached = series(24, function (i) { return 50 + 1.2 * Math.sin(i * 0.42 + 1.1); });
+  var memFree = series(24, function (i) { return 37 + 0.9 * Math.sin(i * 0.61 + 0.2); });
+  [memTotal, memUsed, memAvail, memCached, memFree].forEach(function (s, idx) {
+    s[s.length - 1] = [100, 8, 92, 50, 37][idx];
+  });
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[gpu0.length - 1] = 0;
+  gpu1[gpu1.length - 1] = 0;
+  gpu2[gpu2.length - 1] = 1;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+  var netUp = series(64, function (i) {
+    var v = 0.08 + 0.16 * Math.abs(Math.sin(i * 0.41 + 1)) + 0.08 * Math.abs(Math.sin(i * 1.9));
+    [10, 26, 40, 55].forEach(function (b) { v += 0.9 * Math.exp(-Math.pow((i - b) / 1.6, 2)); });
+    return clamp(v, 0, 1.5);
+  });
+  netUp[63] = 0.918;
+
+  /* ---------- PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes ---------- */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return {
+      line: line,
+      area: line + "L" + round2(w) + " " + round2(h) + "L0 " + round2(h) + "Z",
+      endY: y(values[n - 1]),
+      endX: x(n - 1)
+    };
+  }
+
+  function svgMarkup(d, w, h, dot) {
+    return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="area" d="' + d.area + '"/>' +
+      '<path class="line" d="' + d.line + '"/>' +
+      (dot ? '<circle class="dot" cx="' + round2(Math.min(d.endX, w - 2.5)) + '" cy="' + round2(d.endY) + '" r="2"/>' : "") +
+      "</svg>";
+  }
+
+  /* ---------- charts ---------- */
+  var CHARTS = {
+    "history": { data: cpuData, min: 0, max: 25 },
+    "net-down": { data: netDown, min: 0, max: 2.2 },
+    "net-up": { data: netUp, min: 0, max: 1.6 }
+  };
+  var SPARKS = {
+    memTotal: { data: memTotal, auto: true, vb: [60, 22] },
+    memUsed: { data: memUsed, auto: true, vb: [60, 22] },
+    memAvail: { data: memAvail, auto: true, vb: [60, 22] },
+    memCached: { data: memCached, auto: true, vb: [60, 22] },
+    memFree: { data: memFree, auto: true, vb: [60, 22] },
+    gpu0: { data: gpu0, min: 0, max: 4, vb: [120, 14] },
+    gpu1: { data: gpu1, min: 0, max: 4, vb: [120, 14] },
+    gpu2: { data: gpu2, min: 0, max: 4, vb: [120, 14] }
+  };
+
+  /* sparklines scale to their own samples; the three GPUs keep one shared scale */
+  function dataRange(v) {
+    var lo = Math.min.apply(null, v);
+    var hi = Math.max.apply(null, v);
+    var pad = (hi - lo) * 0.25 || 1;
+    return [lo - pad, hi + pad];
+  }
+
+  function drawChart(id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var cfg = CHARTS[id];
+    var w = host.clientWidth;
+    var h = host.clientHeight;
+    if (!w || !h) return;
+    var d = pchipPath(cfg.data, w, h, cfg.min, cfg.max);
+    host.innerHTML = svgMarkup(d, w, h, true);
+  }
+
+  function drawSpark(el) {
+    var cfg = SPARKS[el.getAttribute("data-spark")];
+    if (!cfg) return;
+    var r = cfg.auto ? dataRange(cfg.data) : [cfg.min, cfg.max];
+    var d = pchipPath(cfg.data, cfg.vb[0], cfg.vb[1], r[0], r[1]);
+    el.innerHTML = svgMarkup(d, cfg.vb[0], cfg.vb[1], false);
+  }
+
+  function drawAll() {
+    Object.keys(CHARTS).forEach(drawChart);
+  }
+  /* ---------- core matrix, 8 rows of 8 ---------- */
+  (function renderMatrix() {
+    var host = document.getElementById("matrix");
+    var cells = [];
+    for (var i = 0; i < 64; i++) {
+      var p = cores[i];
+      var cls = p >= 66 ? "crit" : p >= 33 ? "warn" : "";
+      cells.push('<div class="core ' + cls + '"><span class="core-label">C' + i +
+        '</span><span class="core-bar"><i style="width:' + p + '%"></i></span><span class="core-pct">' + p + "</span></div>");
+    }
+    host.innerHTML = cells.join("");
+    var mean = cores.reduce(function (a, b) { return a + b; }, 0) / cores.length;
+    document.getElementById("cpu-total").textContent = mean.toFixed(1);
+  })();
+
+  /* ---------- process table ---------- */
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  var procBody = document.getElementById("proc-body");
+  var procCount = document.getElementById("proc-count");
+  procBody.innerHTML = PROCS.map(function (p) {
+    var cpu = p[6];
+    var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+    return '<tr><td class="num pid">' + p[0] + '</td><td class="prog">' + p[1] + '</td><td class="cmd">' + p[2] +
+      '</td><td class="num threads">' + p[3] + '</td><td class="user">' + p[4] + '</td><td class="num memb">' + p[5] +
+      '</td><td class="num ' + cls + '">' + cpu.toFixed(1) + "</td></tr>";
+  }).join("");
+
+  function countVisible() {
+    var shown = 0;
+    Array.prototype.forEach.call(procBody.rows, function (tr) { if (!tr.hidden) shown++; });
+    procCount.textContent = shown;
+  }
+  countVisible();
+
+  var filter = document.getElementById("filter");
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    Array.prototype.forEach.call(procBody.rows, function (tr) {
+      tr.hidden = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+    });
+    countVisible();
+  });
+  filter.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      filter.value = "";
+      filter.dispatchEvent(new Event("input"));
+    }
+  });
+
+  /* ---------- config popover ---------- */
+  var config = document.getElementById("config");
+  var toggles = Array.prototype.slice.call(document.querySelectorAll(".config-toggle"));
+
+  function setExpanded(open) {
+    toggles.forEach(function (btn) { btn.setAttribute("aria-expanded", String(open)); });
+  }
+  function positionConfig(btn) {
+    var r = btn.getBoundingClientRect();
+    config.style.visibility = "hidden";
+    config.hidden = false;
+    config.style.left = Math.max(8, Math.min(window.innerWidth - config.offsetWidth - 8, r.right - config.offsetWidth)) + "px";
+    config.style.top = (r.bottom + 6) + "px";
+    config.style.visibility = "";
+  }
+  toggles.forEach(function (btn) {
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (config.hidden) positionConfig(btn);
+      else config.hidden = true;
+      setExpanded(!config.hidden);
+    });
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      var value = btn.getAttribute("data-value");
+      if (name === "gpu") {
+        Array.prototype.forEach.call(document.querySelectorAll(".gpu"), function (g) {
+          g.setAttribute("data-selected", String(g.getAttribute("data-gpu") === value));
+        });
+      } else {
+        root.setAttribute("data-" + name, value);
+      }
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  var paused = false;
+  pauseBtn.addEventListener("click", function () {
+    paused = !paused;
+    pauseBtn.classList.toggle("on", paused);
+    pauseBtn.setAttribute("aria-pressed", String(paused));
+    pauseBtn.textContent = paused ? "resume" : "pause";
+    Array.prototype.forEach.call(document.querySelectorAll(".chip-live"), function (chip) {
+      chip.classList.toggle("paused", paused);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".live-word"), function (word) {
+      word.textContent = paused ? "paused" : "live";
+    });
+  });
+
+  /* ---------- first paint and resize ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-spark]"), drawSpark);
+  drawAll();
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) { drawChart(entry.target.id); });
+    });
+    Object.keys(CHARTS).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) ro.observe(el);
+    });
+  }
+  window.addEventListener("resize", drawAll);
+
+})();
+
+</script>
+</body>
+</html>
+<!-- marks:settings trust=84cf4a8936e63ec6cfd106122441f2653d98788f3547051315b1c237231a41fb -->

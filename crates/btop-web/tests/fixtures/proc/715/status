@@ -1,0 +1,59 @@
+Name:	mlflow
+Umask:	0022
+State:	S (sleeping)
+Tgid:	715
+Ngid:	0
+Pid:	715
+PPid:	690
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+FDSize:	256
+Groups:	27 1000 1000 
+NStgid:	715
+NSpid:	715
+NSpgid:	1
+NSsid:	1
+Kthread:	0
+VmPeak:	 3672440 kB
+VmSize:	 3672424 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	  306372 kB
+VmRSS:	  126568 kB
+RssAnon:	   44596 kB
+RssFile:	   81972 kB
+RssShmem:	       0 kB
+VmData:	 2905128 kB
+VmStk:	     136 kB
+VmExe:	    3040 kB
+VmLib:	  252116 kB
+VmPTE:	    1308 kB
+VmSwap:	  177884 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffffff
+Threads:	69
+SigQ:	3/2061092
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000001001000
+SigCgt:	0000000100004002
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread vulnerable
+SpeculationIndirectBranch:	conditional enabled
+Cpus_allowed:	ffffffff,ffffffff
+Cpus_allowed_list:	0-63
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	13
+nonvoluntary_ctxt_switches:	1

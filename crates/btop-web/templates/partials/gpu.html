@@ -1,0 +1,23 @@
+<header class="ph"><h2 id="gpu-title">GPU</h2>{% if snapshot.gpu.available() %}<span class="head-right"><span class="meta" data-p="3" data-field="gpu-count">{{ snapshot.gpu.devices.len() }} devices</span><span class="meta" data-p="3" data-field="gpu-axis-note">0&ndash;100%{% if let Some(window) = snapshot.axis_labels().first() %} &middot; {{ window }}{% endif %}</span></span>{% endif %}</header>
+{% if snapshot.gpu.available() %}
+<div class="net-body">
+  <div class="net-plots">
+    <div class="net-plot gpu-plot" data-chart="gpu" role="img" aria-label="GPU utilisation history">
+      <svg class="chart" viewBox="0 0 {{ crate::chart::GPU_PLOT.width }} {{ crate::chart::GPU_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true">{% for device in snapshot.gpu.devices %}<g class="gpu-series g{{ loop.index0 % 3 }}" data-gpu="{{ loop.index0 }}" data-selected="true">{% if !device.chart.line.is_empty() %}<path class="area" d="{{ device.chart.area }}"></path><path class="line" d="{{ device.chart.line }}"></path>{% endif %}</g>{% endfor %}</svg>
+    </div>
+    <div class="xaxis" data-p="3" data-field="gpu-x-axis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>
+  </div>
+  <aside class="net-legend" aria-label="GPU legend">
+    {% for device in snapshot.gpu.devices %}
+    <div class="legend-item" data-gpu="{{ loop.index0 }}" data-selected="true">
+      <i class="sw sw-gpu-{{ loop.index0 % 3 }}"></i>
+      <span class="legend-name">GPU {{ loop.index0 }} <span class="lg-model" title="{{ device.name }}">{{ device.name }}</span></span>
+      <b class="legend-value">{% if let Some(pct) = device.utilization_pct %}<span data-w="100%">{{ pct|fmt("{:.0}") }}%</span>{% else %}unavailable{% endif %}{% if device.vram_used.is_some() && device.vram_total.is_some() %}<span class="lg-vram">{{ device.vram_label() }}</span>{% endif %}</b>
+      {% if device.temperature_c.is_some() || device.power_w.is_some() %}<span class="legend-meta">{% if device.temperature_c.is_some() %}<span data-w="100°C">{{ device.temperature_label() }}</span>{% endif %}{% if device.temperature_c.is_some() && device.power_w.is_some() %} &middot; {% endif %}{% if device.power_w.is_some() %}{{ device.power_label() }}{% endif %}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </aside>
+</div>
+{% else %}
+<div class="gpu-body"><p class="unavailable">GPU metrics unavailable</p></div>
+{% endif %}

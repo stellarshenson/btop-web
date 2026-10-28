@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web - 05.10 hero series</title>
+<style>
+html[data-theme="default"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #000000;
+  --surface-raised: #040404;
+  --surface-sunken: #040404;
+  --text: #cccccc;
+  --text-strong: #eeeeee;
+  --muted: #757575;
+  --accent: #b54040;
+  --selection-bg: #6a2f2f;
+  --selection-fg: #eeeeee;
+  --border: #5a5a5a;
+  --border-subtle: #2d2d2d;
+  --border-cpu: #556d59;
+  --border-mem: #6c6c4b;
+  --border-net: #5c588d;
+  --border-proc: #805252;
+  --ok: #77ca9b;
+  --warn: #cbc06c;
+  --crit: #dc4c4c;
+  --unavailable: #757575;
+  --meter-track: #5a5a5a;
+  --grid-line: #5a5a5a;
+  --chart-cpu: #77ca9b;
+  --chart-cpu-warn: #cbc06c;
+  --chart-cpu-crit: #dc4c4c;
+  --chart-mem-used: #ff4769;
+  --chart-mem-available: #ffb814;
+  --chart-mem-cached: #26c5ff;
+  --chart-mem-free: #dcff85;
+  --chart-net-down: #b0a9de;
+  --chart-net-up: #dcafde;
+  --chart-proc: #dcd179;
+  --status-ok: #77ca9b;
+  --status-warn: #cbc06c;
+  --status-crit: #dc4c4c;
+  --zebra: #000000;
+  --row-hover: #000000;
+  --net-down-text: #b0a9de;
+  --net-up-text: #dcafde;
+}
+
+html[data-theme="default"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-raised: #fbfbfb;
+  --surface-sunken: #fbfbfb;
+  --text: #333333;
+  --text-strong: #111111;
+  --muted: #767676;
+  --accent: #bf4a4a;
+  --selection-bg: #d09595;
+  --selection-fg: #111111;
+  --border: #949494;
+  --border-subtle: #cacaca;
+  --border-cpu: #849a88;
+  --border-mem: #96967b;
+  --border-net: #7672a7;
+  --border-proc: #ad7f7f;
+  --ok: #358859;
+  --warn: #938834;
+  --crit: #b32323;
+  --unavailable: #767676;
+  --meter-track: #949494;
+  --grid-line: #949494;
+  --chart-cpu: #358859;
+  --chart-cpu-warn: #938834;
+  --chart-cpu-crit: #b32323;
+  --chart-mem-used: #b80022;
+  --chart-mem-available: #c48900;
+  --chart-mem-cached: #009fd9;
+  --chart-mem-free: #577a00;
+  --chart-net-down: #282156;
+  --chart-net-up: #4e2150;
+  --chart-proc: #867b23;
+  --status-ok: #358859;
+  --status-warn: #938834;
+  --status-crit: #b32323;
+  --zebra: #ffffff;
+  --row-hover: #ffffff;
+  --net-down-text: #282156;
+  --net-up-text: #4e2150;
+}
+
+html[data-theme="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #1d2021;
+  --surface-raised: #202223;
+  --surface-sunken: #202223;
+  --text: #a89984;
+  --text-strong: #ebdbb2;
+  --muted: #918573;
+  --accent: #d79921;
+  --selection-bg: #282828;
+  --selection-fg: #fabd2f;
+  --border: #a89984;
+  --border-subtle: #625c52;
+  --border-cpu: #a89984;
+  --border-mem: #a89984;
+  --border-net: #a89984;
+  --border-proc: #a89984;
+  --ok: #b8bb26;
+  --warn: #d79921;
+  --crit: #fb4934;
+  --unavailable: #918573;
+  --meter-track: #6a6a6a;
+  --grid-line: #a89984;
+  --chart-cpu: #b8bb26;
+  --chart-cpu-warn: #d79921;
+  --chart-cpu-crit: #fb4934;
+  --chart-mem-used: #fb4934;
+  --chart-mem-available: #fabd2f;
+  --chart-mem-cached: #83a598;
+  --chart-mem-free: #98971a;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #d3869b;
+  --chart-proc: #d79921;
+  --status-ok: #b8bb26;
+  --status-warn: #d79921;
+  --status-crit: #fb4934;
+  --zebra: #1c1f20;
+  --row-hover: #1b1e1f;
+  --net-down-text: #a3a8f7;
+  --net-up-text: #d3869b;
+}
+
+html[data-theme="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fbf1c7;
+  --surface-raised: #f7edc4;
+  --surface-sunken: #f7edc4;
+  --text: #3c3836;
+  --text-strong: #3c3836;
+  --muted: #736d60;
+  --accent: #cc241d;
+  --selection-bg: #f2e5bc;
+  --selection-fg: #8f3f71;
+  --border: #968976;
+  --border-subtle: #c8bd9e;
+  --border-cpu: #968976;
+  --border-mem: #968976;
+  --border-net: #968976;
+  --border-proc: #968976;
+  --ok: #427b58;
+  --warn: #b5811c;
+  --crit: #cc241d;
+  --unavailable: #736d60;
+  --meter-track: #948a70;
+  --grid-line: #968976;
+  --chart-cpu: #427b58;
+  --chart-cpu-warn: #b5811c;
+  --chart-cpu-crit: #cc241d;
+  --chart-mem-used: #cc241d;
+  --chart-mem-available: #b57614;
+  --chart-mem-cached: #427b58;
+  --chart-mem-free: #427b58;
+  --chart-net-down: #79740e;
+  --chart-net-up: #b57614;
+  --chart-proc: #af3a03;
+  --status-ok: #427b58;
+  --status-warn: #b5811c;
+  --status-crit: #cc241d;
+  --zebra: #fbf1c9;
+  --row-hover: #fbf2cb;
+  --net-down-text: #75700e;
+  --net-up-text: #966211;
+}
+
+html[data-theme="solarized"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #002b36;
+  --surface-raised: #052f39;
+  --surface-sunken: #052f39;
+  --text: #eee8d5;
+  --text-strong: #fdf6e3;
+  --muted: #80918b;
+  --accent: #b58900;
+  --selection-bg: #073642;
+  --selection-fg: #d6a200;
+  --border: #5e737a;
+  --border-subtle: #2f4f58;
+  --border-cpu: #5e737a;
+  --border-mem: #5e737a;
+  --border-net: #5e737a;
+  --border-proc: #5e737a;
+  --ok: #adc700;
+  --warn: #d6a200;
+  --crit: #e65317;
+  --unavailable: #80918b;
+  --meter-track: #55757d;
+  --grid-line: #5f747a;
+  --chart-cpu: #adc700;
+  --chart-cpu-warn: #d6a200;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #edb400;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #bad600;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #f56caf;
+  --chart-proc: #d6a200;
+  --status-ok: #adc700;
+  --status-warn: #d6a200;
+  --status-crit: #e65317;
+  --zebra: #002a34;
+  --row-hover: #002832;
+  --net-down-text: #a3a8f7;
+  --net-up-text: #f56caf;
+}
+
+html[data-theme="solarized"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #586e75;
+  --text-strong: #002b36;
+  --muted: #60747a;
+  --accent: #b48800;
+  --selection-bg: #eee8d5;
+  --selection-fg: #846400;
+  --border: #859191;
+  --border-subtle: #c1c4ba;
+  --border-cpu: #859191;
+  --border-mem: #859191;
+  --border-net: #859191;
+  --border-proc: #859191;
+  --ok: #849800;
+  --warn: #b48800;
+  --crit: #e65317;
+  --unavailable: #60747a;
+  --meter-track: #928e82;
+  --grid-line: #859191;
+  --chart-cpu: #849700;
+  --chart-cpu-warn: #b48800;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #b38800;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #839700;
+  --chart-net-down: #8589c9;
+  --chart-net-up: #e063a0;
+  --chart-proc: #b48800;
+  --status-ok: #849700;
+  --status-warn: #b48800;
+  --status-crit: #e65317;
+  --zebra: #fdf6e4;
+  --row-hover: #fdf7e5;
+  --net-down-text: #6a6da1;
+  --net-up-text: #b24e7f;
+}
+
+html[data-theme="everforest"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #2d353b;
+  --surface-raised: #30383d;
+  --surface-sunken: #30383d;
+  --text: #d3c6aa;
+  --text-strong: #d3c6aa;
+  --muted: #a39c8a;
+  --accent: #e67e80;
+  --selection-bg: #3d484d;
+  --selection-fg: #dbbc7f;
+  --border: #767e81;
+  --border-subtle: #525a5e;
+  --border-cpu: #767e81;
+  --border-mem: #767e81;
+  --border-net: #767e81;
+  --border-proc: #767e81;
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --crit: #f85552;
+  --unavailable: #a39c8a;
+  --meter-track: #797e82;
+  --grid-line: #767e81;
+  --chart-cpu: #a7c080;
+  --chart-cpu-warn: #dbbc7f;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #a7c080;
+  --chart-mem-cached: #a7c080;
+  --chart-mem-free: #a7c080;
+  --chart-net-down: #7fbbb3;
+  --chart-net-up: #e67e80;
+  --chart-proc: #e67e80;
+  --status-ok: #a7c080;
+  --status-warn: #dbbc7f;
+  --status-crit: #f85552;
+  --zebra: #2c3339;
+  --row-hover: #2a3137;
+  --net-down-text: #7fbbb3;
+  --net-up-text: #e67e80;
+}
+
+html[data-theme="everforest"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #5c6a72;
+  --text-strong: #5c6a72;
+  --muted: #67737a;
+  --accent: #d765b3;
+  --selection-bg: #4f585e;
+  --selection-fg: #ecc86b;
+  --border: #4f585e;
+  --border-subtle: #a6a7a0;
+  --border-cpu: #4f585e;
+  --border-mem: #4f585e;
+  --border-net: #4f585e;
+  --border-proc: #4f585e;
+  --ok: #849701;
+  --warn: #b98500;
+  --crit: #f85552;
+  --unavailable: #67737a;
+  --meter-track: #879189;
+  --grid-line: #4f585e;
+  --chart-cpu: #849701;
+  --chart-cpu-warn: #b98500;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #849701;
+  --chart-mem-cached: #849701;
+  --chart-mem-free: #849701;
+  --chart-net-down: #3994c5;
+  --chart-net-up: #d765b3;
+  --chart-proc: #d765b3;
+  --status-ok: #849701;
+  --status-warn: #b98500;
+  --status-crit: #f85552;
+  --zebra: #fdf6e4;
+  --row-hover: #fdf7e5;
+  --net-down-text: #2e78a0;
+  --net-up-text: #ab518f;
+}
+
+html[data-theme="flexoki"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #100f0f;
+  --surface-raised: #141313;
+  --surface-sunken: #141313;
+  --text: #cecdc3;
+  --text-strong: #fffcf0;
+  --muted: #7c7b75;
+  --accent: #da702c;
+  --selection-bg: #403e3c;
+  --selection-fg: #fffcf0;
+  --border: #615f5e;
+  --border-subtle: #383736;
+  --border-cpu: #4385be;
+  --border-mem: #879a39;
+  --border-net: #ce5d97;
+  --border-proc: #3aa99f;
+  --ok: #3aa99f;
+  --warn: #d0a215;
+  --crit: #d14d41;
+  --unavailable: #7c7b75;
+  --meter-track: #61605e;
+  --grid-line: #615f5e;
+  --chart-cpu: #3aa99f;
+  --chart-cpu-warn: #d0a215;
+  --chart-cpu-crit: #d14d41;
+  --chart-mem-used: #d14d41;
+  --chart-mem-available: #da702c;
+  --chart-mem-cached: #3aa99f;
+  --chart-mem-free: #879a39;
+  --chart-net-down: #3aa99f;
+  --chart-net-up: #8b7ec8;
+  --chart-proc: #d0a215;
+  --status-ok: #3aa99f;
+  --status-warn: #d0a215;
+  --status-crit: #d14d41;
+  --zebra: #100f0f;
+  --row-hover: #0f0e0e;
+  --net-down-text: #3aa99f;
+  --net-up-text: #8b7ec8;
+}
+
+html[data-theme="flexoki"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fffcf0;
+  --surface-raised: #fbf8ec;
+  --surface-sunken: #fbf8ec;
+  --text: #343331;
+  --text-strong: #100f0f;
+  --muted: #76746f;
+  --accent: #bc5215;
+  --selection-bg: #e6e4d9;
+  --selection-fg: #100f0f;
+  --border: #93928b;
+  --border-subtle: #c9c7be;
+  --border-cpu: #205ea6;
+  --border-mem: #66800b;
+  --border-net: #a02f6f;
+  --border-proc: #24837b;
+  --ok: #24837b;
+  --warn: #ad8301;
+  --crit: #af3029;
+  --unavailable: #76746f;
+  --meter-track: #93928b;
+  --grid-line: #93928b;
+  --chart-cpu: #24837b;
+  --chart-cpu-warn: #ad8301;
+  --chart-cpu-crit: #af3029;
+  --chart-mem-used: #af3029;
+  --chart-mem-available: #bc5215;
+  --chart-mem-cached: #24837b;
+  --chart-mem-free: #66800b;
+  --chart-net-down: #24837b;
+  --chart-net-up: #5e409d;
+  --chart-proc: #ad8301;
+  --status-ok: #24837b;
+  --status-warn: #ad8301;
+  --status-crit: #af3029;
+  --zebra: #fffcf0;
+  --row-hover: #fffcf1;
+  --net-down-text: #24817a;
+  --net-up-text: #5e409d;
+}
+
+:root {
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, summary { font-family: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* one hero time series across the width, then compact stat, GPU, cores, network and process panels */
+.page {
+  height: 100%;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: 26px 256px 92px 88px 136px minmax(0, 1fr);
+  gap: 8px;
+}
+.panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.ph {
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ph h1, .ph h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.ph .right { margin-left: auto; display: flex; align-items: baseline; gap: 6px; min-width: 0; flex: 0 0 auto; }
+.val { font-size: 15px; font-weight: 600; line-height: 1; color: var(--text-strong); }
+.unit { font-size: 10px; color: var(--muted); }
+.meta { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.age { font-size: 10px; color: var(--muted); margin-left: -2px; }
+.arrow { font-size: 9px; }
+.arrow-down { color: var(--net-down-text); }
+.arrow-up { color: var(--net-up-text); }
+
+/* house chip: 1px border, 2px radius, uppercase, 12% tint */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--border));
+}
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); color: var(--text-strong); }
+.chip-readonly { --chip-hue: var(--warn); border-color: var(--warn); color: var(--text-strong); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); color: var(--text-strong); cursor: pointer; }
+.lamp { width: 4px; height: 4px; flex: 0 0 auto; background: var(--ok); }
+.chip-readonly .lamp { background: var(--warn); }
+
+/* header bar */
+.bar { grid-column: 1 / -1; grid-row: 1; }
+.bar .ph { flex: 1 1 auto; border-bottom: 0; padding: 0 10px; gap: 10px; }
+.page-label { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-strong); white-space: nowrap; }
+
+/* hero time-series panel: title and interval in the head, a summary strip above the plot */
+.hero { grid-column: 1 / -1; grid-row: 2; }
+.hero .ph { flex-basis: 28px; gap: 10px; }
+.summary-strip { flex: 0 0 auto; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0 6px; padding: 4px 0 5px; border-bottom: 1px solid var(--border-subtle); }
+.sum-cell { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 0 10px; border-left: 1px solid var(--border-subtle); }
+.sum-cell:first-child { border-left: 0; padding-left: 2px; }
+.sum-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.sum-line { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
+.sum-val { font-size: 16px; font-weight: 600; line-height: 1.1; color: var(--text-strong); }
+.sum-unit { font-size: 10px; color: var(--muted); }
+.sum-sub { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trend { display: inline-flex; align-items: baseline; gap: 2px; font-size: 9px; color: var(--muted); }
+.hero-body { flex: 1 1 auto; min-height: 0; padding: 6px; display: flex; }
+.hero-body .plot { flex: 1 1 auto; }
+
+/* compact stat cards */
+.card { grid-column: span 2; grid-row: 3; }
+.card .ph { flex-basis: 20px; padding: 0 7px; }
+.stat-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 6px; }
+.stat-value { font-size: 20px; font-weight: 600; line-height: 1; color: var(--text-strong); white-space: nowrap; }
+.stat-value small { font-size: 10px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.stat-sub { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-body .bar-track { margin-top: auto; }
+
+.bar-track { height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; }
+.bar-track i { display: block; height: 100%; background: var(--chart-mem-cached); }
+.disks-mini { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: space-around; gap: 2px; padding: 3px 8px 5px; }
+.disk { display: flex; flex-direction: column; gap: 2px; }
+.disk-line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 10px; }
+.disk-line span { color: var(--text); }
+.disk-line b { font-weight: 500; color: var(--text-strong); }
+
+/* compact GPU cards */
+.gpu-card { grid-column: span 4; grid-row: 4; }
+.gpu-card .ph { flex-basis: 22px; gap: 6px; }
+.gpu-model { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gpu-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 3px; padding: 4px 8px 5px; }
+.gpu-body .plot { flex: 1 1 auto; min-height: 0; }
+.gpu-foot { flex: 0 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.gpu-foot span { overflow: hidden; text-overflow: ellipsis; }
+
+/* plots */
+.plot { position: relative; min-width: 0; min-height: 0; border: 1px solid var(--border-subtle); border-radius: 2px; overflow: hidden; }
+.chart { display: block; width: 100%; height: 100%; }
+.chart .grid { stroke: var(--grid-line); stroke-opacity: 0.18; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart .area { fill: var(--plot, var(--chart-cpu)); opacity: 0.13; }
+.chart .line { fill: none; stroke: var(--plot, var(--chart-cpu)); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.hero .chart .line { stroke-width: 2; }
+
+/* core matrix */
+#cores-panel { grid-column: span 8; grid-row: 5; }
+.cores-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 5px 8px;
+  display: grid;
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 3px 5px;
+  overflow: hidden;
+}
+.core {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ok) calc(6% + var(--v, 0) * 1%), transparent);
+  font-size: 9px;
+  line-height: 1;
+  overflow: hidden;
+}
+.core .cl { color: var(--muted); }
+.core .cv { color: var(--text); font-size: 10px; }
+.core-warn { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) calc(6% + var(--v, 0) * 1%), transparent); }
+.core-crit { border-color: color-mix(in srgb, var(--crit) 45%, transparent); background: color-mix(in srgb, var(--crit) calc(6% + var(--v, 0) * 1%), transparent); }
+
+/* network panel: two compact histories, readouts above each plot */
+#net-panel { grid-column: span 4; grid-row: 5; }
+.net-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 5px 7px 6px; }
+.net-sec { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
+.net-line { flex: 0 0 15px; display: flex; align-items: baseline; gap: 6px; font-size: 10px; white-space: nowrap; overflow: hidden; }
+.net-tag { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.net-rate { font-size: 11px; font-weight: 600; color: var(--text-strong); }
+.net-meta { margin-left: auto; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.net-sec .plot { flex: 1 1 auto; min-height: 0; }
+
+/* process table */
+#proc-panel { grid-column: 1 / -1; grid-row: 6; }
+.proc-meta { font-size: 10px; color: var(--muted); }
+.filter {
+  width: 132px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+}
+.filter::placeholder { color: var(--muted); }
+.proc-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) var(--surface); }
+.ptable { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+.ptable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 20px;
+  padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.ptable td {
+  height: 24px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ptable tbody tr:nth-child(even) { background: var(--zebra); }
+.ptable tbody tr:hover { background: var(--row-hover); }
+.ptable .num { text-align: right; }
+.mono { font-family: var(--mono); }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--muted); }
+.proc-foot { flex: 0 0 16px; display: flex; align-items: center; padding: 0 8px; border-top: 1px solid var(--border-subtle); font-size: 10px; color: var(--muted); }
+
+/* closed config popover: theme and mode live here, never in the dashboard body */
+.config { position: relative; }
+.config > summary { list-style: none; }
+.config > summary::-webkit-details-marker { display: none; }
+.config:not([open]) > .config-body { display: none; }
+.config-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: 248px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.cfg-row { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label { font-size: 9px; line-height: 18px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.cfg-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--accent); }
+.opt.on { border-color: var(--accent); color: var(--text-strong); }
+.opt.on::before { opacity: 0.12; }
+</style>
+</head>
+<body>
+<main class="page">
+
+  <section class="panel bar" aria-labelledby="page-title">
+    <header class="ph">
+      <h1 class="page-label" id="page-title">05.10 &middot; HERO SERIES</h1>
+      <span class="right">
+        <span class="chip chip-live"><i class="lamp"></i>LIVE</span>
+        <span class="age">0.4 s</span>
+        <span class="chip chip-readonly"><i class="lamp"></i>READ-ONLY</span>
+        <span class="meta">06:12</span>
+        <span class="meta">2000 ms</span>
+        <details class="config" id="config">
+          <summary class="chip chip-config">CONFIG</summary>
+          <div class="config-body" role="dialog" aria-label="Config">
+            <div class="cfg-row">
+              <span class="cfg-label">theme</span>
+              <div class="cfg-group" data-group="theme">
+                <button class="opt on" type="button" data-value="default">default</button>
+                <button class="opt" type="button" data-value="gruvbox">gruvbox</button>
+                <button class="opt" type="button" data-value="solarized">solarized</button>
+                <button class="opt" type="button" data-value="everforest">everforest</button>
+                <button class="opt" type="button" data-value="flexoki">flexoki</button>
+              </div>
+            </div>
+            <div class="cfg-row">
+              <span class="cfg-label">mode</span>
+              <div class="cfg-group" data-group="mode">
+                <button class="opt on" type="button" data-value="dark">dark</button>
+                <button class="opt" type="button" data-value="light">light</button>
+              </div>
+            </div>
+          </div>
+        </details>
+      </span>
+    </header>
+  </section>
+
+  <section class="panel hero" aria-labelledby="hero-title">
+    <header class="ph">
+      <h2 id="hero-title">CPU history</h2>
+      <span class="right"><span class="meta">2000 ms</span></span>
+    </header>
+    <div class="summary-strip" role="list" aria-label="Current metrics">
+      <div class="sum-cell" role="listitem">
+        <span class="sum-label">CPU</span>
+        <span class="sum-line"><span class="sum-val">4.8</span><span class="sum-unit">%</span><span class="trend"><span class="arrow arrow-up">&#9650;</span>1.0</span></span>
+        <span class="sum-sub">3.99 GHz &middot; load 96 95 94</span>
+      </div>
+      <div class="sum-cell" role="listitem">
+        <span class="sum-label">Memory</span>
+        <span class="sum-line"><span class="sum-val">39.7</span><span class="sum-unit">GiB</span><span class="trend"><span class="arrow arrow-up">&#9650;</span>0.1</span></span>
+        <span class="sum-sub">8% of 503 GiB</span>
+      </div>
+      <div class="sum-cell" role="listitem">
+        <span class="sum-label">Swap</span>
+        <span class="sum-line"><span class="sum-val">2.9</span><span class="sum-unit">GiB</span><span class="trend"><span class="arrow arrow-down">&#9660;</span>0.1</span></span>
+        <span class="sum-sub">2.3% of 128 GiB</span>
+      </div>
+      <div class="sum-cell" role="listitem">
+        <span class="sum-label">Net in</span>
+        <span class="sum-line"><span class="sum-val">1.07</span><span class="sum-unit">MiB/s</span><span class="trend"><span class="arrow arrow-up">&#9650;</span>0.70</span></span>
+        <span class="sum-sub">8.56 Mibps &middot; top 62.1</span>
+      </div>
+      <div class="sum-cell" role="listitem">
+        <span class="sum-label">Net out</span>
+        <span class="sum-line"><span class="sum-val">940</span><span class="sum-unit">KiB/s</span><span class="trend"><span class="arrow arrow-up">&#9650;</span>607</span></span>
+        <span class="sum-sub">7.34 Mibps &middot; top 10.0</span>
+      </div>
+    </div>
+    <div class="hero-body">
+      <div class="plot" data-chart="cpu" style="--plot:var(--chart-cpu)" role="img" aria-label="CPU history, 4.8 percent now"><svg class="chart" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" y1="25" x2="1000" y2="25"/><line class="grid" x1="0" y1="50" x2="1000" y2="50"/><line class="grid" x1="0" y1="75" x2="1000" y2="75"/><path class="area" d="M0 74.22C2.8 73.13 5.6 73.13 8.4 73.13C11.2 73.13 14.01 76.9 16.81 76.9C19.61 76.9 22.41 75.58 25.21 75.58C28.01 75.58 30.81 76.15 33.61 76.51C36.41 76.88 39.22 77.83 42.02 77.83C44.82 77.83 47.62 72.86 50.42 72.09C53.22 71.32 56.02 70.65 58.82 70.65C61.62 70.65 64.43 73.91 67.23 74.07C70.03 74.22 72.83 74.16 75.63 74.32C78.43 74.48 81.23 77.45 84.03 79.27C86.83 81.09 89.64 85.35 92.44 85.35C95.24 85.35 98.04 83.46 100.84 83.01C103.64 82.56 106.44 82.05 109.24 82.05C112.04 82.05 114.85 82.74 117.65 82.74C120.45 82.74 123.25 78.96 126.05 78.96C128.85 78.96 131.65 79.98 134.45 80.91C137.25 81.85 140.06 85.85 142.86 85.85C145.66 85.85 148.46 84.24 151.26 83.87C154.06 83.5 156.86 83.41 159.66 83.09C162.46 82.77 165.27 82.55 168.07 81.84C170.87 81.12 173.67 75.3 176.47 74.13C179.27 72.96 182.07 71.87 184.87 71.87C187.68 71.87 190.48 74.23 193.28 74.23C196.08 74.23 198.88 72.95 201.68 72.95C204.48 72.95 207.28 74.84 210.08 75.84C212.89 76.84 215.69 78.95 218.49 78.95C221.29 78.95 224.09 75 226.89 74.36C229.69 73.72 232.49 73.14 235.29 73.14C238.1 73.14 240.9 74.98 243.7 74.98C246.5 74.98 249.3 73.7 252.1 73.7C254.9 73.7 257.7 76.76 260.5 78.66C263.31 80.56 266.11 85.38 268.91 85.38C271.71 85.38 274.51 84.43 277.31 84.43C280.11 84.43 282.91 84.79 285.71 84.79C288.52 84.79 291.32 84.77 294.12 84.73C296.92 84.69 299.72 79.08 302.52 79.08C305.32 79.08 308.12 79.22 310.92 79.44C313.73 79.65 316.53 83.07 319.33 83.07C322.13 83.07 324.93 81.43 327.73 81.43C330.53 81.43 333.33 82.53 336.13 82.53C338.94 82.53 341.74 82.47 344.54 82.36C347.34 82.25 350.14 76.18 352.94 74.79C355.74 73.39 358.54 71.9 361.34 71.9C364.15 71.9 366.95 72.55 369.75 72.55C372.55 72.55 375.35 70.47 378.15 70.47C380.95 70.47 383.75 73.05 386.55 74.5C389.36 75.94 392.16 79.19 394.96 79.19C397.76 79.19 400.56 76.43 403.36 76.38C406.16 76.32 408.96 76.29 411.76 76.29C414.57 76.29 417.37 77.08 420.17 77.08C422.97 77.08 425.77 74.09 428.57 74.09C431.37 74.09 434.17 76.48 436.97 78.12C439.78 79.77 442.58 84.42 445.38 84.46C448.18 84.5 450.98 84.48 453.78 84.52C456.58 84.56 459.38 86.56 462.18 86.62C464.99 86.67 467.79 86.7 470.59 86.7C473.39 86.7 476.19 80.68 478.99 80C481.79 79.32 484.59 78.8 487.39 78.8C490.2 78.8 493 80.41 495.8 80.41C498.6 80.41 501.4 78.27 504.2 78.27C507 78.27 509.8 80.22 512.61 80.78C515.41 81.34 518.21 82.04 521.01 82.04C523.81 82.04 526.61 76.85 529.41 75.62C532.21 74.39 535.01 73.46 537.82 73.03C540.62 72.61 543.42 72.64 546.22 72.19C549.02 71.74 551.82 68.81 554.62 68.81C557.42 68.81 560.22 71.4 563.03 72.99C565.83 74.57 568.63 78.54 571.43 78.54C574.23 78.54 577.03 77.62 579.83 77.62C582.63 77.62 585.43 79.12 588.24 79.4C591.04 79.69 593.84 79.97 596.64 79.97C599.44 79.97 602.24 75.62 605.04 75.62C607.84 75.62 610.64 77.09 613.45 78.22C616.25 79.35 619.05 82.96 621.85 83.13C624.65 83.31 627.45 83.24 630.25 83.41C633.05 83.59 635.85 87.03 638.66 87.11C641.46 87.19 644.26 87.24 647.06 87.24C649.86 87.24 652.66 82.34 655.46 81.28C658.26 80.21 661.06 79.42 663.87 79.09C666.67 78.77 669.47 78.82 672.27 78.47C675.07 78.12 677.87 75.07 680.67 75.07C683.47 75.07 686.27 77.27 689.08 78.18C691.88 79.1 694.68 80.65 697.48 80.65C700.28 80.65 703.08 76.73 705.88 76.05C708.68 75.38 711.48 75.24 714.29 74.76C717.09 74.28 719.89 73.94 722.69 73.13C725.49 72.33 728.29 68.45 731.09 68.45C733.89 68.45 736.69 70.54 739.5 71.95C742.3 73.37 745.1 77.03 747.9 77.36C750.7 77.68 753.5 77.58 756.3 77.89C759.1 78.21 761.9 81.22 764.71 81.82C767.51 82.42 770.31 82.98 773.11 82.98C775.91 82.98 778.71 78.03 781.51 78.03C784.31 78.03 787.11 78.56 789.92 78.94C792.72 79.32 795.52 80.41 798.32 80.41C801.12 80.41 803.92 77.33 806.72 75.49C809.52 73.64 812.32 72.25 815.13 69.14C817.93 66.02 820.73 58.35 823.53 51.45C826.33 44.55 829.13 32.08 831.93 26.51C834.73 20.94 837.54 13.94 840.34 13.94C843.14 13.94 845.94 18.35 848.74 21.79C851.54 25.22 854.34 30.86 857.14 36.74C859.94 42.62 862.75 52.59 865.55 58.25C868.35 63.91 871.15 71.21 873.95 72.27C876.75 73.34 879.55 73.44 882.35 74.08C885.15 74.72 887.96 76.13 890.76 76.13C893.56 76.13 896.36 75.59 899.16 74.94C901.96 74.29 904.76 69.5 907.56 69.5C910.36 69.5 913.17 70.91 915.97 71.95C918.77 72.98 921.57 75.62 924.37 76.21C927.17 76.81 929.97 76.71 932.77 77.34C935.57 77.96 938.38 82.05 941.18 83.14C943.98 84.24 946.78 85.43 949.58 85.43C952.38 85.43 955.18 80.89 957.98 80.89C960.78 80.89 963.59 81.09 966.39 81.2C969.19 81.31 971.99 81.58 974.79 81.58C977.59 81.58 980.39 79.57 983.19 79.57C985.99 79.57 988.8 84.27 991.6 84.27C994.4 84.27 997.2 83.01 1000 80.18L1000 100L0 100Z"/><path class="line" d="M0 74.22C2.8 73.13 5.6 73.13 8.4 73.13C11.2 73.13 14.01 76.9 16.81 76.9C19.61 76.9 22.41 75.58 25.21 75.58C28.01 75.58 30.81 76.15 33.61 76.51C36.41 76.88 39.22 77.83 42.02 77.83C44.82 77.83 47.62 72.86 50.42 72.09C53.22 71.32 56.02 70.65 58.82 70.65C61.62 70.65 64.43 73.91 67.23 74.07C70.03 74.22 72.83 74.16 75.63 74.32C78.43 74.48 81.23 77.45 84.03 79.27C86.83 81.09 89.64 85.35 92.44 85.35C95.24 85.35 98.04 83.46 100.84 83.01C103.64 82.56 106.44 82.05 109.24 82.05C112.04 82.05 114.85 82.74 117.65 82.74C120.45 82.74 123.25 78.96 126.05 78.96C128.85 78.96 131.65 79.98 134.45 80.91C137.25 81.85 140.06 85.85 142.86 85.85C145.66 85.85 148.46 84.24 151.26 83.87C154.06 83.5 156.86 83.41 159.66 83.09C162.46 82.77 165.27 82.55 168.07 81.84C170.87 81.12 173.67 75.3 176.47 74.13C179.27 72.96 182.07 71.87 184.87 71.87C187.68 71.87 190.48 74.23 193.28 74.23C196.08 74.23 198.88 72.95 201.68 72.95C204.48 72.95 207.28 74.84 210.08 75.84C212.89 76.84 215.69 78.95 218.49 78.95C221.29 78.95 224.09 75 226.89 74.36C229.69 73.72 232.49 73.14 235.29 73.14C238.1 73.14 240.9 74.98 243.7 74.98C246.5 74.98 249.3 73.7 252.1 73.7C254.9 73.7 257.7 76.76 260.5 78.66C263.31 80.56 266.11 85.38 268.91 85.38C271.71 85.38 274.51 84.43 277.31 84.43C280.11 84.43 282.91 84.79 285.71 84.79C288.52 84.79 291.32 84.77 294.12 84.73C296.92 84.69 299.72 79.08 302.52 79.08C305.32 79.08 308.12 79.22 310.92 79.44C313.73 79.65 316.53 83.07 319.33 83.07C322.13 83.07 324.93 81.43 327.73 81.43C330.53 81.43 333.33 82.53 336.13 82.53C338.94 82.53 341.74 82.47 344.54 82.36C347.34 82.25 350.14 76.18 352.94 74.79C355.74 73.39 358.54 71.9 361.34 71.9C364.15 71.9 366.95 72.55 369.75 72.55C372.55 72.55 375.35 70.47 378.15 70.47C380.95 70.47 383.75 73.05 386.55 74.5C389.36 75.94 392.16 79.19 394.96 79.19C397.76 79.19 400.56 76.43 403.36 76.38C406.16 76.32 408.96 76.29 411.76 76.29C414.57 76.29 417.37 77.08 420.17 77.08C422.97 77.08 425.77 74.09 428.57 74.09C431.37 74.09 434.17 76.48 436.97 78.12C439.78 79.77 442.58 84.42 445.38 84.46C448.18 84.5 450.98 84.48 453.78 84.52C456.58 84.56 459.38 86.56 462.18 86.62C464.99 86.67 467.79 86.7 470.59 86.7C473.39 86.7 476.19 80.68 478.99 80C481.79 79.32 484.59 78.8 487.39 78.8C490.2 78.8 493 80.41 495.8 80.41C498.6 80.41 501.4 78.27 504.2 78.27C507 78.27 509.8 80.22 512.61 80.78C515.41 81.34 518.21 82.04 521.01 82.04C523.81 82.04 526.61 76.85 529.41 75.62C532.21 74.39 535.01 73.46 537.82 73.03C540.62 72.61 543.42 72.64 546.22 72.19C549.02 71.74 551.82 68.81 554.62 68.81C557.42 68.81 560.22 71.4 563.03 72.99C565.83 74.57 568.63 78.54 571.43 78.54C574.23 78.54 577.03 77.62 579.83 77.62C582.63 77.62 585.43 79.12 588.24 79.4C591.04 79.69 593.84 79.97 596.64 79.97C599.44 79.97 602.24 75.62 605.04 75.62C607.84 75.62 610.64 77.09 613.45 78.22C616.25 79.35 619.05 82.96 621.85 83.13C624.65 83.31 627.45 83.24 630.25 83.41C633.05 83.59 635.85 87.03 638.66 87.11C641.46 87.19 644.26 87.24 647.06 87.24C649.86 87.24 652.66 82.34 655.46 81.28C658.26 80.21 661.06 79.42 663.87 79.09C666.67 78.77 669.47 78.82 672.27 78.47C675.07 78.12 677.87 75.07 680.67 75.07C683.47 75.07 686.27 77.27 689.08 78.18C691.88 79.1 694.68 80.65 697.48 80.65C700.28 80.65 703.08 76.73 705.88 76.05C708.68 75.38 711.48 75.24 714.29 74.76C717.09 74.28 719.89 73.94 722.69 73.13C725.49 72.33 728.29 68.45 731.09 68.45C733.89 68.45 736.69 70.54 739.5 71.95C742.3 73.37 745.1 77.03 747.9 77.36C750.7 77.68 753.5 77.58 756.3 77.89C759.1 78.21 761.9 81.22 764.71 81.82C767.51 82.42 770.31 82.98 773.11 82.98C775.91 82.98 778.71 78.03 781.51 78.03C784.31 78.03 787.11 78.56 789.92 78.94C792.72 79.32 795.52 80.41 798.32 80.41C801.12 80.41 803.92 77.33 806.72 75.49C809.52 73.64 812.32 72.25 815.13 69.14C817.93 66.02 820.73 58.35 823.53 51.45C826.33 44.55 829.13 32.08 831.93 26.51C834.73 20.94 837.54 13.94 840.34 13.94C843.14 13.94 845.94 18.35 848.74 21.79C851.54 25.22 854.34 30.86 857.14 36.74C859.94 42.62 862.75 52.59 865.55 58.25C868.35 63.91 871.15 71.21 873.95 72.27C876.75 73.34 879.55 73.44 882.35 74.08C885.15 74.72 887.96 76.13 890.76 76.13C893.56 76.13 896.36 75.59 899.16 74.94C901.96 74.29 904.76 69.5 907.56 69.5C910.36 69.5 913.17 70.91 915.97 71.95C918.77 72.98 921.57 75.62 924.37 76.21C927.17 76.81 929.97 76.71 932.77 77.34C935.57 77.96 938.38 82.05 941.18 83.14C943.98 84.24 946.78 85.43 949.58 85.43C952.38 85.43 955.18 80.89 957.98 80.89C960.78 80.89 963.59 81.09 966.39 81.2C969.19 81.31 971.99 81.58 974.79 81.58C977.59 81.58 980.39 79.57 983.19 79.57C985.99 79.57 988.8 84.27 991.6 84.27C994.4 84.27 997.2 83.01 1000 80.18"/></svg></div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-labelledby="mem-title">
+    <header class="ph"><h2 id="mem-title">Memory</h2><span class="right meta">of 503 GiB</span></header>
+    <div class="stat-body">
+      <div class="stat-value">39.7<small>GiB</small></div>
+      <div class="stat-sub">8% used &middot; available 463 (92%)</div>
+      <div class="stat-sub">cached 253 (50%) &middot; free 184 (37%)</div>
+      <div class="bar-track"><i style="width:8%"></i></div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-labelledby="swap-title">
+    <header class="ph"><h2 id="swap-title">Swap</h2><span class="right meta">of 128 GiB</span></header>
+    <div class="stat-body">
+      <div class="stat-value">2.9<small>GiB</small></div>
+      <div class="stat-sub">2.3% used &middot; 98% free</div>
+      <div class="stat-sub">used 2.9 &middot; free 125 GiB</div>
+      <div class="bar-track"><i style="width:2.3%"></i></div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-labelledby="net-down-title">
+    <header class="ph"><h2 id="net-down-title">Network in</h2><span class="right"><span class="arrow arrow-down">&#9660;</span><span class="meta">eth0</span></span></header>
+    <div class="stat-body">
+      <div class="stat-value">1.07<small>MiB/s</small></div>
+      <div class="stat-sub">8.56 Mibps</div>
+      <div class="stat-sub">top 62.1 &middot; total 391 GiB</div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-labelledby="net-up-title">
+    <header class="ph"><h2 id="net-up-title">Network out</h2><span class="right"><span class="arrow arrow-up">&#9650;</span><span class="meta">eth0</span></span></header>
+    <div class="stat-body">
+      <div class="stat-value">940<small>KiB/s</small></div>
+      <div class="stat-sub">7.34 Mibps</div>
+      <div class="stat-sub">top 10.0 &middot; total 391 GiB</div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-labelledby="disks-title">
+    <header class="ph"><h2 id="disks-title">Disks</h2><span class="right meta">used</span></header>
+    <div class="disks-mini">
+      <div class="disk"><div class="disk-line"><span>/</span><b>66%</b></div><div class="bar-track"><i style="width:66%"></i></div></div>
+      <div class="disk"><div class="disk-line"><span>/home</span><b>66%</b></div><div class="bar-track"><i style="width:66%"></i></div></div>
+      <div class="disk"><div class="disk-line"><span>nas-shared</span><b>31%</b></div><div class="bar-track"><i style="width:31%"></i></div></div>
+    </div>
+  </section>
+
+  <section class="panel card" aria-labelledby="proc-stat-title">
+    <header class="ph"><h2 id="proc-stat-title">Processes</h2></header>
+    <div class="stat-body">
+      <div class="stat-value">249</div>
+      <div class="stat-sub">0 / 249 shown</div>
+    </div>
+  </section>
+
+  <article class="panel gpu-card" aria-labelledby="gpu0-title">
+    <header class="ph">
+      <h2 id="gpu0-title">GPU 0</h2>
+      <span class="gpu-model">RTX PRO 4000 Blackwell</span>
+      <span class="right"><span class="val">0</span><span class="unit">%</span></span>
+    </header>
+    <div class="gpu-body">
+      <div class="plot" data-chart="gpu0" style="--plot:var(--chart-cpu)" role="img" aria-label="GPU 0 utilization history, 0 percent now"><svg class="chart" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" y1="25" x2="1000" y2="25"/><line class="grid" x1="0" y1="50" x2="1000" y2="50"/><line class="grid" x1="0" y1="75" x2="1000" y2="75"/><path class="area" d="M0 98.51C10.75 98.51 21.51 98.51 32.26 98.51C43.01 98.51 53.76 98.51 64.52 98.51C75.27 98.51 86.02 98.51 96.77 98.51C107.53 98.51 118.28 98.51 129.03 98.51C139.78 98.51 150.54 98.51 161.29 98.51C172.04 98.51 182.8 98.51 193.55 98.51C204.3 98.51 215.05 98.51 225.81 98.51C236.56 98.51 247.31 98.51 258.06 98.51C268.82 98.51 279.57 98.51 290.32 98.51C301.08 98.51 311.83 98.51 322.58 98.51C333.33 98.51 344.09 98.51 354.84 98.51C365.59 98.51 376.34 98.51 387.1 98.51C397.85 98.51 408.6 98.51 419.35 98.51C430.11 98.51 440.86 98.51 451.61 98.51C462.37 98.51 473.12 98.51 483.87 98.51C494.62 98.51 505.38 98.49 516.13 98.47C526.88 98.44 537.63 98.11 548.39 97.57C559.14 97.03 569.89 93.73 580.65 89.81C591.4 85.9 602.15 72.51 612.9 65.52C623.66 58.53 634.41 47.06 645.16 47.06C655.91 47.06 666.67 58.53 677.42 65.52C688.17 72.51 698.92 85.9 709.68 89.81C720.43 93.73 731.18 97.03 741.94 97.57C752.69 98.11 763.44 98.44 774.19 98.47C784.95 98.49 795.7 98.51 806.45 98.51C817.2 98.51 827.96 98.51 838.71 98.51C849.46 98.51 860.22 98.51 870.97 98.51C881.72 98.51 892.47 98.51 903.23 98.51C913.98 98.51 924.73 98.51 935.48 98.51C946.24 98.51 956.99 98.51 967.74 98.51C978.49 98.51 989.25 98.76 1000 99L1000 100L0 100Z"/><path class="line" d="M0 98.51C10.75 98.51 21.51 98.51 32.26 98.51C43.01 98.51 53.76 98.51 64.52 98.51C75.27 98.51 86.02 98.51 96.77 98.51C107.53 98.51 118.28 98.51 129.03 98.51C139.78 98.51 150.54 98.51 161.29 98.51C172.04 98.51 182.8 98.51 193.55 98.51C204.3 98.51 215.05 98.51 225.81 98.51C236.56 98.51 247.31 98.51 258.06 98.51C268.82 98.51 279.57 98.51 290.32 98.51C301.08 98.51 311.83 98.51 322.58 98.51C333.33 98.51 344.09 98.51 354.84 98.51C365.59 98.51 376.34 98.51 387.1 98.51C397.85 98.51 408.6 98.51 419.35 98.51C430.11 98.51 440.86 98.51 451.61 98.51C462.37 98.51 473.12 98.51 483.87 98.51C494.62 98.51 505.38 98.49 516.13 98.47C526.88 98.44 537.63 98.11 548.39 97.57C559.14 97.03 569.89 93.73 580.65 89.81C591.4 85.9 602.15 72.51 612.9 65.52C623.66 58.53 634.41 47.06 645.16 47.06C655.91 47.06 666.67 58.53 677.42 65.52C688.17 72.51 698.92 85.9 709.68 89.81C720.43 93.73 731.18 97.03 741.94 97.57C752.69 98.11 763.44 98.44 774.19 98.47C784.95 98.49 795.7 98.51 806.45 98.51C817.2 98.51 827.96 98.51 838.71 98.51C849.46 98.51 860.22 98.51 870.97 98.51C881.72 98.51 892.47 98.51 903.23 98.51C913.98 98.51 924.73 98.51 935.48 98.51C946.24 98.51 956.99 98.51 967.74 98.51C978.49 98.51 989.25 98.76 1000 99"/></svg></div>
+      <div class="gpu-foot"><span>452M / 24G</span><span>36 C &middot; 3.9 W</span></div>
+    </div>
+  </article>
+
+  <article class="panel gpu-card" aria-labelledby="gpu1-title">
+    <header class="ph">
+      <h2 id="gpu1-title">GPU 1</h2>
+      <span class="gpu-model">RTX PRO 6000 Blackwell Max-Q</span>
+      <span class="right"><span class="val">0</span><span class="unit">%</span></span>
+    </header>
+    <div class="gpu-body">
+      <div class="plot" data-chart="gpu1" style="--plot:var(--chart-cpu)" role="img" aria-label="GPU 1 utilization history, 0 percent now"><svg class="chart" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" y1="25" x2="1000" y2="25"/><line class="grid" x1="0" y1="50" x2="1000" y2="50"/><line class="grid" x1="0" y1="75" x2="1000" y2="75"/><path class="area" d="M0 98.51C10.75 98.51 21.51 98.51 32.26 98.51C43.01 98.51 53.76 98.51 64.52 98.51C75.27 98.51 86.02 98.51 96.77 98.51C107.53 98.51 118.28 98.51 129.03 98.51C139.78 98.51 150.54 98.51 161.29 98.51C172.04 98.51 182.8 98.51 193.55 98.51C204.3 98.51 215.05 98.51 225.81 98.51C236.56 98.51 247.31 98.46 258.06 98.38C268.82 98.3 279.57 97.32 290.32 95.98C301.08 94.64 311.83 87.67 322.58 83.6C333.33 79.53 344.09 71.56 354.84 71.56C365.59 71.56 376.34 79.53 387.1 83.6C397.85 87.67 408.6 94.64 419.35 95.98C430.11 97.32 440.86 98.3 451.61 98.38C462.37 98.46 473.12 98.51 483.87 98.51C494.62 98.51 505.38 98.51 516.13 98.51C526.88 98.51 537.63 98.51 548.39 98.51C559.14 98.51 569.89 98.51 580.65 98.51C591.4 98.51 602.15 98.51 612.9 98.51C623.66 98.51 634.41 98.51 645.16 98.51C655.91 98.51 666.67 98.51 677.42 98.51C688.17 98.51 698.92 98.51 709.68 98.51C720.43 98.51 731.18 98.51 741.94 98.51C752.69 98.51 763.44 98.51 774.19 98.51C784.95 98.51 795.7 98.51 806.45 98.51C817.2 98.51 827.96 98.51 838.71 98.51C849.46 98.51 860.22 98.51 870.97 98.51C881.72 98.51 892.47 98.51 903.23 98.51C913.98 98.51 924.73 98.51 935.48 98.51C946.24 98.51 956.99 98.51 967.74 98.51C978.49 98.51 989.25 98.76 1000 99L1000 100L0 100Z"/><path class="line" d="M0 98.51C10.75 98.51 21.51 98.51 32.26 98.51C43.01 98.51 53.76 98.51 64.52 98.51C75.27 98.51 86.02 98.51 96.77 98.51C107.53 98.51 118.28 98.51 129.03 98.51C139.78 98.51 150.54 98.51 161.29 98.51C172.04 98.51 182.8 98.51 193.55 98.51C204.3 98.51 215.05 98.51 225.81 98.51C236.56 98.51 247.31 98.46 258.06 98.38C268.82 98.3 279.57 97.32 290.32 95.98C301.08 94.64 311.83 87.67 322.58 83.6C333.33 79.53 344.09 71.56 354.84 71.56C365.59 71.56 376.34 79.53 387.1 83.6C397.85 87.67 408.6 94.64 419.35 95.98C430.11 97.32 440.86 98.3 451.61 98.38C462.37 98.46 473.12 98.51 483.87 98.51C494.62 98.51 505.38 98.51 516.13 98.51C526.88 98.51 537.63 98.51 548.39 98.51C559.14 98.51 569.89 98.51 580.65 98.51C591.4 98.51 602.15 98.51 612.9 98.51C623.66 98.51 634.41 98.51 645.16 98.51C655.91 98.51 666.67 98.51 677.42 98.51C688.17 98.51 698.92 98.51 709.68 98.51C720.43 98.51 731.18 98.51 741.94 98.51C752.69 98.51 763.44 98.51 774.19 98.51C784.95 98.51 795.7 98.51 806.45 98.51C817.2 98.51 827.96 98.51 838.71 98.51C849.46 98.51 860.22 98.51 870.97 98.51C881.72 98.51 892.47 98.51 903.23 98.51C913.98 98.51 924.73 98.51 935.48 98.51C946.24 98.51 956.99 98.51 967.74 98.51C978.49 98.51 989.25 98.76 1000 99"/></svg></div>
+      <div class="gpu-foot"><span>64M / 98G</span><span>37 C &middot; 14.1 W</span></div>
+    </div>
+  </article>
+
+  <article class="panel gpu-card" aria-labelledby="gpu2-title">
+    <header class="ph">
+      <h2 id="gpu2-title">GPU 2</h2>
+      <span class="gpu-model">RTX PRO 5000 72GB Blackwell</span>
+      <span class="right"><span class="val">1</span><span class="unit">%</span></span>
+    </header>
+    <div class="gpu-body">
+      <div class="plot" data-chart="gpu2" style="--plot:var(--chart-cpu)" role="img" aria-label="GPU 2 utilization history, 1 percent now"><svg class="chart" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" y1="25" x2="1000" y2="25"/><line class="grid" x1="0" y1="50" x2="1000" y2="50"/><line class="grid" x1="0" y1="75" x2="1000" y2="75"/><path class="area" d="M0 81.85C10.75 79.2 21.51 76.84 32.26 76.09C43.01 75.34 53.76 74.69 64.52 74.69C75.27 74.69 86.02 77.06 96.77 78.71C107.53 80.35 118.28 83.48 129.03 85.1C139.78 86.73 150.54 89.03 161.29 89.03C172.04 89.03 182.8 88.33 193.55 87.53C204.3 86.73 215.05 83.65 225.81 81.73C236.56 79.81 247.31 76.72 258.06 76.02C268.82 75.31 279.57 74.72 290.32 74.72C301.08 74.72 311.83 77.16 322.58 78.82C333.33 80.49 344.09 83.61 354.84 85.21C365.59 86.81 376.34 89.06 387.1 89.06C397.85 89.06 408.6 88.29 419.35 87.45C430.11 86.61 440.86 83.52 451.61 81.6C462.37 79.69 473.12 76.6 483.87 75.94C494.62 75.29 505.38 74.75 516.13 74.75C526.88 74.75 537.63 77.25 548.39 78.93C559.14 80.62 569.89 83.75 580.65 85.32C591.4 86.9 602.15 89.08 612.9 89.08C623.66 89.08 634.41 88.23 645.16 87.26C655.91 86.28 666.67 83.16 677.42 79.73C688.17 76.31 698.92 70.43 709.68 63.54C720.43 56.66 731.18 41.48 741.94 35C752.69 28.52 763.44 20.25 774.19 20.25C784.95 20.25 795.7 36.32 806.45 45.64C817.2 54.97 827.96 72.22 838.71 76.78C849.46 81.34 860.22 85.54 870.97 85.54C881.72 85.54 892.47 82.84 903.23 81.24C913.98 79.64 924.73 76.35 935.48 75.8C946.24 75.24 956.99 74.98 967.74 74.82C978.49 74.66 989.25 74.5 1000 74.5L1000 100L0 100Z"/><path class="line" d="M0 81.85C10.75 79.2 21.51 76.84 32.26 76.09C43.01 75.34 53.76 74.69 64.52 74.69C75.27 74.69 86.02 77.06 96.77 78.71C107.53 80.35 118.28 83.48 129.03 85.1C139.78 86.73 150.54 89.03 161.29 89.03C172.04 89.03 182.8 88.33 193.55 87.53C204.3 86.73 215.05 83.65 225.81 81.73C236.56 79.81 247.31 76.72 258.06 76.02C268.82 75.31 279.57 74.72 290.32 74.72C301.08 74.72 311.83 77.16 322.58 78.82C333.33 80.49 344.09 83.61 354.84 85.21C365.59 86.81 376.34 89.06 387.1 89.06C397.85 89.06 408.6 88.29 419.35 87.45C430.11 86.61 440.86 83.52 451.61 81.6C462.37 79.69 473.12 76.6 483.87 75.94C494.62 75.29 505.38 74.75 516.13 74.75C526.88 74.75 537.63 77.25 548.39 78.93C559.14 80.62 569.89 83.75 580.65 85.32C591.4 86.9 602.15 89.08 612.9 89.08C623.66 89.08 634.41 88.23 645.16 87.26C655.91 86.28 666.67 83.16 677.42 79.73C688.17 76.31 698.92 70.43 709.68 63.54C720.43 56.66 731.18 41.48 741.94 35C752.69 28.52 763.44 20.25 774.19 20.25C784.95 20.25 795.7 36.32 806.45 45.64C817.2 54.97 827.96 72.22 838.71 76.78C849.46 81.34 860.22 85.54 870.97 85.54C881.72 85.54 892.47 82.84 903.23 81.24C913.98 79.64 924.73 76.35 935.48 75.8C946.24 75.24 956.99 74.98 967.74 74.82C978.49 74.66 989.25 74.5 1000 74.5"/></svg></div>
+      <div class="gpu-foot"><span>853M / 73G</span><span>37 C &middot; 21.9 W</span></div>
+    </div>
+  </article>
+
+  <section class="panel" id="cores-panel" aria-labelledby="cores-title">
+    <header class="ph"><h2 id="cores-title">Cores</h2><span class="right meta">64 &middot; 0-100%</span></header>
+    <div class="cores-body"><span class="core" style="--v:5"><span class="cl">C0</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C1</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C2</span><span class="cv">6</span></span><span class="core" style="--v:3"><span class="cl">C3</span><span class="cv">3</span></span><span class="core" style="--v:7"><span class="cl">C4</span><span class="cv">7</span></span><span class="core" style="--v:5"><span class="cl">C5</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C6</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C7</span><span class="cv">6</span></span><span class="core" style="--v:3"><span class="cl">C8</span><span class="cv">3</span></span><span class="core" style="--v:5"><span class="cl">C9</span><span class="cv">5</span></span><span class="core" style="--v:8"><span class="cl">C10</span><span class="cv">8</span></span><span class="core" style="--v:4"><span class="cl">C11</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C12</span><span class="cv">6</span></span><span class="core" style="--v:2"><span class="cl">C13</span><span class="cv">2</span></span><span class="core" style="--v:7"><span class="cl">C14</span><span class="cv">7</span></span><span class="core" style="--v:5"><span class="cl">C15</span><span class="cv">5</span></span><span class="core" style="--v:5"><span class="cl">C16</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C17</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C18</span><span class="cv">6</span></span><span class="core" style="--v:3"><span class="cl">C19</span><span class="cv">3</span></span><span class="core" style="--v:7"><span class="cl">C20</span><span class="cv">7</span></span><span class="core" style="--v:5"><span class="cl">C21</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C22</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C23</span><span class="cv">6</span></span><span class="core" style="--v:3"><span class="cl">C24</span><span class="cv">3</span></span><span class="core" style="--v:5"><span class="cl">C25</span><span class="cv">5</span></span><span class="core" style="--v:8"><span class="cl">C26</span><span class="cv">8</span></span><span class="core" style="--v:4"><span class="cl">C27</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C28</span><span class="cv">6</span></span><span class="core" style="--v:2"><span class="cl">C29</span><span class="cv">2</span></span><span class="core" style="--v:7"><span class="cl">C30</span><span class="cv">7</span></span><span class="core" style="--v:5"><span class="cl">C31</span><span class="cv">5</span></span><span class="core" style="--v:5"><span class="cl">C32</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C33</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C34</span><span class="cv">6</span></span><span class="core" style="--v:3"><span class="cl">C35</span><span class="cv">3</span></span><span class="core" style="--v:7"><span class="cl">C36</span><span class="cv">7</span></span><span class="core" style="--v:5"><span class="cl">C37</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C38</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C39</span><span class="cv">6</span></span><span class="core" style="--v:3"><span class="cl">C40</span><span class="cv">3</span></span><span class="core" style="--v:5"><span class="cl">C41</span><span class="cv">5</span></span><span class="core" style="--v:8"><span class="cl">C42</span><span class="cv">8</span></span><span class="core" style="--v:4"><span class="cl">C43</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C44</span><span class="cv">6</span></span><span class="core" style="--v:2"><span class="cl">C45</span><span class="cv">2</span></span><span class="core" style="--v:7"><span class="cl">C46</span><span class="cv">7</span></span><span class="core" style="--v:5"><span class="cl">C47</span><span class="cv">5</span></span><span class="core" style="--v:4"><span class="cl">C48</span><span class="cv">4</span></span><span class="core" style="--v:5"><span class="cl">C49</span><span class="cv">5</span></span><span class="core" style="--v:3"><span class="cl">C50</span><span class="cv">3</span></span><span class="core" style="--v:6"><span class="cl">C51</span><span class="cv">6</span></span><span class="core" style="--v:4"><span class="cl">C52</span><span class="cv">4</span></span><span class="core" style="--v:5"><span class="cl">C53</span><span class="cv">5</span></span><span class="core" style="--v:7"><span class="cl">C54</span><span class="cv">7</span></span><span class="core" style="--v:3"><span class="cl">C55</span><span class="cv">3</span></span><span class="core" style="--v:4"><span class="cl">C56</span><span class="cv">4</span></span><span class="core" style="--v:4"><span class="cl">C57</span><span class="cv">4</span></span><span class="core" style="--v:6"><span class="cl">C58</span><span class="cv">6</span></span><span class="core" style="--v:2"><span class="cl">C59</span><span class="cv">2</span></span><span class="core" style="--v:4"><span class="cl">C60</span><span class="cv">4</span></span><span class="core" style="--v:5"><span class="cl">C61</span><span class="cv">5</span></span><span class="core" style="--v:3"><span class="cl">C62</span><span class="cv">3</span></span><span class="core" style="--v:3"><span class="cl">C63</span><span class="cv">3</span></span></div>
+  </section>
+
+  <section class="panel" id="net-panel" aria-labelledby="net-title">
+    <header class="ph"><h2 id="net-title">Network</h2><span class="right meta">eth0</span></header>
+    <div class="net-body">
+      <div class="net-sec">
+        <div class="net-line">
+          <span class="net-tag">download</span>
+          <span class="net-rate"><span class="arrow arrow-down">&#9660;</span> 1.07 MiB/s</span>
+          <span class="net-meta">8.56 Mibps &middot; top 62.1 &middot; total 391 GiB</span>
+        </div>
+        <div class="plot" data-chart="down" style="--plot:var(--chart-net-down)" role="img" aria-label="Download history, 1.07 mebibytes per second now"><svg class="chart" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" y1="25" x2="1000" y2="25"/><line class="grid" x1="0" y1="50" x2="1000" y2="50"/><line class="grid" x1="0" y1="75" x2="1000" y2="75"/><path class="area" d="M0 91.06C5.29 90.24 10.58 89.17 15.87 87.95C21.16 86.74 26.46 83.64 31.75 83.55C37.04 83.46 42.33 83.5 47.62 83.41C52.91 83.31 58.2 81.13 63.49 79.35C68.78 77.56 74.07 75.54 79.37 71.51C84.66 67.47 89.95 50.76 95.24 44.95C100.53 39.13 105.82 31.96 111.11 31.96C116.4 31.96 121.69 37.35 126.98 42.47C132.28 47.58 137.57 66.99 142.86 70.97C148.15 74.95 153.44 75.98 158.73 78.53C164.02 81.07 169.31 86.23 174.6 86.23C179.89 86.23 185.19 84.74 190.48 84.74C195.77 84.74 201.06 92.57 206.35 92.57C211.64 92.57 216.93 87.63 222.22 87.54C227.51 87.45 232.8 87.49 238.1 87.4C243.39 87.31 248.68 81.83 253.97 81.83C259.26 81.83 264.55 84.01 269.84 84.01C275.13 84.01 280.42 82.03 285.71 80.44C291.01 78.85 296.3 77.01 301.59 73.29C306.88 69.58 312.17 55.3 317.46 47.9C322.75 40.49 328.04 28.16 333.33 28.16C338.62 28.16 343.92 35.47 349.21 41.34C354.5 47.21 359.79 62.32 365.08 67.88C370.37 73.45 375.66 77.86 380.95 80.06C386.24 82.27 391.53 83.17 396.83 84.59C402.12 86.02 407.41 88 412.7 88.63C417.99 89.27 423.28 89.88 428.57 89.88C433.86 89.88 439.15 88.22 444.44 87.11C449.74 85.99 455.03 82.9 460.32 82.9C465.61 82.9 470.9 83.64 476.19 83.64C481.48 83.64 486.77 82.36 492.06 82.36C497.35 82.36 502.65 87.28 507.94 87.28C513.23 87.28 518.52 86.68 523.81 85.85C529.1 85.02 534.39 81.15 539.68 76.07C544.97 71 550.26 48.88 555.56 41.59C560.85 34.3 566.14 25.58 571.43 25.58C576.72 25.58 582.01 32.42 587.3 38.7C592.59 44.97 597.88 66.48 603.17 72C608.47 77.51 613.76 79.46 619.05 83.01C624.34 86.55 629.63 93.3 634.92 93.3C640.21 93.3 645.5 86.52 650.79 86.52C656.08 86.52 661.38 86.54 666.67 86.54C671.96 86.54 677.25 81.57 682.54 81.57C687.83 81.57 693.12 84.11 698.41 84.11C703.7 84.11 708.99 82.55 714.29 81.17C719.58 79.79 724.87 77.88 730.16 74.18C735.45 70.49 740.74 54.99 746.03 47.3C751.32 39.61 756.61 27.09 761.9 27.09C767.2 27.09 772.49 34.75 777.78 40.8C783.07 46.85 788.36 61.85 793.65 67.65C798.94 73.45 804.23 78.2 809.52 80.52C814.81 82.85 820.11 83.77 825.4 85.31C830.69 86.85 835.98 89.78 841.27 89.78C846.56 89.78 851.85 89.22 857.14 88.73C862.43 88.24 867.72 87.33 873.02 86.34C878.31 85.34 883.6 82.37 888.89 82.37C894.18 82.37 899.47 83.78 904.76 83.78C910.05 83.78 915.34 82.84 920.63 82.84C925.93 82.84 931.22 87.94 936.51 88.53C941.8 89.12 947.09 89.31 952.38 89.58C957.67 89.84 962.96 90.22 968.25 90.22C973.54 90.22 978.84 87.12 984.13 83.35C989.42 79.58 994.71 66.2 1000 51.34L1000 100L0 100Z"/><path class="line" d="M0 91.06C5.29 90.24 10.58 89.17 15.87 87.95C21.16 86.74 26.46 83.64 31.75 83.55C37.04 83.46 42.33 83.5 47.62 83.41C52.91 83.31 58.2 81.13 63.49 79.35C68.78 77.56 74.07 75.54 79.37 71.51C84.66 67.47 89.95 50.76 95.24 44.95C100.53 39.13 105.82 31.96 111.11 31.96C116.4 31.96 121.69 37.35 126.98 42.47C132.28 47.58 137.57 66.99 142.86 70.97C148.15 74.95 153.44 75.98 158.73 78.53C164.02 81.07 169.31 86.23 174.6 86.23C179.89 86.23 185.19 84.74 190.48 84.74C195.77 84.74 201.06 92.57 206.35 92.57C211.64 92.57 216.93 87.63 222.22 87.54C227.51 87.45 232.8 87.49 238.1 87.4C243.39 87.31 248.68 81.83 253.97 81.83C259.26 81.83 264.55 84.01 269.84 84.01C275.13 84.01 280.42 82.03 285.71 80.44C291.01 78.85 296.3 77.01 301.59 73.29C306.88 69.58 312.17 55.3 317.46 47.9C322.75 40.49 328.04 28.16 333.33 28.16C338.62 28.16 343.92 35.47 349.21 41.34C354.5 47.21 359.79 62.32 365.08 67.88C370.37 73.45 375.66 77.86 380.95 80.06C386.24 82.27 391.53 83.17 396.83 84.59C402.12 86.02 407.41 88 412.7 88.63C417.99 89.27 423.28 89.88 428.57 89.88C433.86 89.88 439.15 88.22 444.44 87.11C449.74 85.99 455.03 82.9 460.32 82.9C465.61 82.9 470.9 83.64 476.19 83.64C481.48 83.64 486.77 82.36 492.06 82.36C497.35 82.36 502.65 87.28 507.94 87.28C513.23 87.28 518.52 86.68 523.81 85.85C529.1 85.02 534.39 81.15 539.68 76.07C544.97 71 550.26 48.88 555.56 41.59C560.85 34.3 566.14 25.58 571.43 25.58C576.72 25.58 582.01 32.42 587.3 38.7C592.59 44.97 597.88 66.48 603.17 72C608.47 77.51 613.76 79.46 619.05 83.01C624.34 86.55 629.63 93.3 634.92 93.3C640.21 93.3 645.5 86.52 650.79 86.52C656.08 86.52 661.38 86.54 666.67 86.54C671.96 86.54 677.25 81.57 682.54 81.57C687.83 81.57 693.12 84.11 698.41 84.11C703.7 84.11 708.99 82.55 714.29 81.17C719.58 79.79 724.87 77.88 730.16 74.18C735.45 70.49 740.74 54.99 746.03 47.3C751.32 39.61 756.61 27.09 761.9 27.09C767.2 27.09 772.49 34.75 777.78 40.8C783.07 46.85 788.36 61.85 793.65 67.65C798.94 73.45 804.23 78.2 809.52 80.52C814.81 82.85 820.11 83.77 825.4 85.31C830.69 86.85 835.98 89.78 841.27 89.78C846.56 89.78 851.85 89.22 857.14 88.73C862.43 88.24 867.72 87.33 873.02 86.34C878.31 85.34 883.6 82.37 888.89 82.37C894.18 82.37 899.47 83.78 904.76 83.78C910.05 83.78 915.34 82.84 920.63 82.84C925.93 82.84 931.22 87.94 936.51 88.53C941.8 89.12 947.09 89.31 952.38 89.58C957.67 89.84 962.96 90.22 968.25 90.22C973.54 90.22 978.84 87.12 984.13 83.35C989.42 79.58 994.71 66.2 1000 51.34"/></svg></div>
+      </div>
+      <div class="net-sec">
+        <div class="net-line">
+          <span class="net-tag">upload</span>
+          <span class="net-rate"><span class="arrow arrow-up">&#9650;</span> 940 KiB/s</span>
+          <span class="net-meta">7.34 Mibps &middot; top 10.0 &middot; total 391 GiB</span>
+        </div>
+        <div class="plot" data-chart="up" style="--plot:var(--chart-net-up)" role="img" aria-label="Upload history, 940 kibibytes per second now"><svg class="chart" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" y1="25" x2="1000" y2="25"/><line class="grid" x1="0" y1="50" x2="1000" y2="50"/><line class="grid" x1="0" y1="75" x2="1000" y2="75"/><path class="area" d="M0 87.31C5.29 84.35 10.58 81.92 15.87 81.92C21.16 81.92 26.46 82.97 31.75 83.54C37.04 84.11 42.33 84.96 47.62 85.36C52.91 85.76 58.2 85.72 63.49 86.24C68.78 86.76 74.07 93.52 79.37 93.52C84.66 93.52 89.95 89.22 95.24 87.82C100.53 86.41 105.82 86.15 111.11 84.47C116.4 82.8 121.69 79.2 126.98 74.35C132.28 69.49 137.57 53.82 142.86 48.49C148.15 43.17 153.44 36.93 158.73 36.93C164.02 36.93 169.31 45.25 174.6 51.54C179.89 57.83 185.19 72.36 190.48 78.13C195.77 83.9 201.06 90.95 206.35 90.95C211.64 90.95 216.93 86.38 222.22 86.38C227.51 86.38 232.8 87.03 238.1 87.03C243.39 87.03 248.68 82.6 253.97 82.6C259.26 82.6 264.55 82.61 269.84 82.62C275.13 82.64 280.42 85.59 285.71 85.59C291.01 85.59 296.3 85.12 301.59 85.12C306.88 85.12 312.17 91.41 317.46 91.41C322.75 91.41 328.04 90.33 333.33 89.52C338.62 88.71 343.92 86.79 349.21 86.1C354.5 85.41 359.79 85.51 365.08 84.62C370.37 83.73 375.66 76.71 380.95 71.42C386.24 66.12 391.53 57.38 396.83 51.46C402.12 45.54 407.41 35.47 412.7 35.47C417.99 35.47 423.28 46.15 428.57 53.6C433.86 61.05 439.15 80.71 444.44 82.73C449.74 84.74 455.03 85.7 460.32 86.09C465.61 86.49 470.9 86.82 476.19 86.82C481.48 86.82 486.77 84.32 492.06 83.62C497.35 82.91 502.65 82.03 507.94 82.03C513.23 82.03 518.52 86.02 523.81 86.02C529.1 86.02 534.39 84.32 539.68 84.32C544.97 84.32 550.26 88.5 555.56 89.4C560.85 90.3 566.14 91.24 571.43 91.24C576.72 91.24 582.01 87.53 587.3 85.27C592.59 83.01 597.88 81.55 603.17 77.46C608.47 73.37 613.76 55.33 619.05 48.94C624.34 42.56 629.63 34.53 634.92 34.53C640.21 34.53 645.5 44.81 650.79 51.38C656.08 57.95 661.38 68.7 666.67 75.1C671.96 81.49 677.25 91.21 682.54 91.21C687.83 91.21 693.12 89.5 698.41 88.81C703.7 88.12 708.99 87.63 714.29 86.99C719.58 86.35 724.87 85.76 730.16 84.93C735.45 84.11 740.74 81.8 746.03 81.8C751.32 81.8 756.61 85.82 761.9 85.82C767.2 85.82 772.49 83.84 777.78 83.84C783.07 83.84 788.36 86.24 793.65 87.56C798.94 88.88 804.23 91.8 809.52 91.8C814.81 91.8 820.11 88.33 825.4 86.07C830.69 83.82 835.98 82.04 841.27 77.77C846.56 73.5 851.85 56.51 857.14 49.72C862.43 42.93 867.72 33.73 873.02 33.73C878.31 33.73 883.6 45.07 888.89 51.71C894.18 58.34 899.47 68.01 904.76 74.02C910.05 80.02 915.34 88.35 920.63 89.12C925.93 89.9 931.22 90.39 936.51 90.39C941.8 90.39 947.09 87.72 952.38 87.3C957.67 86.87 962.96 86.95 968.25 86.5C973.54 86.04 978.84 84.6 984.13 81.93C989.42 79.25 994.71 64.71 1000 49.02L1000 100L0 100Z"/><path class="line" d="M0 87.31C5.29 84.35 10.58 81.92 15.87 81.92C21.16 81.92 26.46 82.97 31.75 83.54C37.04 84.11 42.33 84.96 47.62 85.36C52.91 85.76 58.2 85.72 63.49 86.24C68.78 86.76 74.07 93.52 79.37 93.52C84.66 93.52 89.95 89.22 95.24 87.82C100.53 86.41 105.82 86.15 111.11 84.47C116.4 82.8 121.69 79.2 126.98 74.35C132.28 69.49 137.57 53.82 142.86 48.49C148.15 43.17 153.44 36.93 158.73 36.93C164.02 36.93 169.31 45.25 174.6 51.54C179.89 57.83 185.19 72.36 190.48 78.13C195.77 83.9 201.06 90.95 206.35 90.95C211.64 90.95 216.93 86.38 222.22 86.38C227.51 86.38 232.8 87.03 238.1 87.03C243.39 87.03 248.68 82.6 253.97 82.6C259.26 82.6 264.55 82.61 269.84 82.62C275.13 82.64 280.42 85.59 285.71 85.59C291.01 85.59 296.3 85.12 301.59 85.12C306.88 85.12 312.17 91.41 317.46 91.41C322.75 91.41 328.04 90.33 333.33 89.52C338.62 88.71 343.92 86.79 349.21 86.1C354.5 85.41 359.79 85.51 365.08 84.62C370.37 83.73 375.66 76.71 380.95 71.42C386.24 66.12 391.53 57.38 396.83 51.46C402.12 45.54 407.41 35.47 412.7 35.47C417.99 35.47 423.28 46.15 428.57 53.6C433.86 61.05 439.15 80.71 444.44 82.73C449.74 84.74 455.03 85.7 460.32 86.09C465.61 86.49 470.9 86.82 476.19 86.82C481.48 86.82 486.77 84.32 492.06 83.62C497.35 82.91 502.65 82.03 507.94 82.03C513.23 82.03 518.52 86.02 523.81 86.02C529.1 86.02 534.39 84.32 539.68 84.32C544.97 84.32 550.26 88.5 555.56 89.4C560.85 90.3 566.14 91.24 571.43 91.24C576.72 91.24 582.01 87.53 587.3 85.27C592.59 83.01 597.88 81.55 603.17 77.46C608.47 73.37 613.76 55.33 619.05 48.94C624.34 42.56 629.63 34.53 634.92 34.53C640.21 34.53 645.5 44.81 650.79 51.38C656.08 57.95 661.38 68.7 666.67 75.1C671.96 81.49 677.25 91.21 682.54 91.21C687.83 91.21 693.12 89.5 698.41 88.81C703.7 88.12 708.99 87.63 714.29 86.99C719.58 86.35 724.87 85.76 730.16 84.93C735.45 84.11 740.74 81.8 746.03 81.8C751.32 81.8 756.61 85.82 761.9 85.82C767.2 85.82 772.49 83.84 777.78 83.84C783.07 83.84 788.36 86.24 793.65 87.56C798.94 88.88 804.23 91.8 809.52 91.8C814.81 91.8 820.11 88.33 825.4 86.07C830.69 83.82 835.98 82.04 841.27 77.77C846.56 73.5 851.85 56.51 857.14 49.72C862.43 42.93 867.72 33.73 873.02 33.73C878.31 33.73 883.6 45.07 888.89 51.71C894.18 58.34 899.47 68.01 904.76 74.02C910.05 80.02 915.34 88.35 920.63 89.12C925.93 89.9 931.22 90.39 936.51 90.39C941.8 90.39 947.09 87.72 952.38 87.3C957.67 86.87 962.96 86.95 968.25 86.5C973.54 86.04 978.84 84.6 984.13 81.93C989.42 79.25 994.71 64.71 1000 49.02"/></svg></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="proc-panel" aria-labelledby="proc-title">
+    <header class="ph">
+      <h2 id="proc-title">Processes</h2>
+      <span class="proc-meta">0 / 249</span>
+      <span class="right"><input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false"></span>
+    </header>
+    <div class="proc-wrap">
+      <table class="ptable">
+        <caption class="sr-only">Processes sorted by CPU share of all 64 cores, descending</caption>
+        <colgroup>
+          <col style="width:76px"><col style="width:150px"><col><col style="width:62px"><col style="width:58px"><col style="width:72px"><col style="width:64px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num" scope="col">Pid</th>
+            <th scope="col">Program</th>
+            <th scope="col">Command</th>
+            <th class="num" scope="col">Threads</th>
+            <th scope="col">User</th>
+            <th class="num" scope="col">MemB</th>
+            <th class="num" scope="col">Cpu%</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body">
+          <tr><td class="num mono">1270400</td><td>hf</td><td class="mono">/opt/conda/bin/python</td><td class="num">39</td><td>lab</td><td class="num">2.0G</td><td class="num cpu-ok">1.7</td></tr>
+          <tr><td class="num mono">1591033</td><td>chrome-headless</td><td class="mono">/galaxalab/ms-playw</td><td class="num">42</td><td>lab</td><td class="num">301M</td><td class="num cpu-ok">1.4</td></tr>
+          <tr><td class="num mono">1106598</td><td>claude</td><td class="mono">claude --dangerousl</td><td class="num">36</td><td>lab</td><td class="num">751M</td><td class="num cpu-ok">1.0</td></tr>
+          <tr><td class="num mono">1581557</td><td>chrome-headless</td><td class="mono">/galaxalab/ms-playw</td><td class="num">27</td><td>lab</td><td class="num">113M</td><td class="num cpu-ok">0.4</td></tr>
+          <tr><td class="num mono">1581204</td><td>jupyter-lab</td><td class="mono">/opt/conda/bin/pyth</td><td class="num">81</td><td>lab</td><td class="num">250M</td><td class="num cpu-ok">0.4</td></tr>
+          <tr><td class="num mono">1581587</td><td>chrome-headless</td><td class="mono">/galaxalab/ms-playw</td><td class="num">27</td><td>lab</td><td class="num">71M</td><td class="num cpu-ok">0.3</td></tr>
+          <tr><td class="num mono">1581524</td><td>node-MainThread</td><td class="mono">/opt/conda/bin/node</td><td class="num">11</td><td>lab</td><td class="num">314M</td><td class="num cpu-ok">0.1</td></tr>
+          <tr><td class="num mono">1581589</td><td>chrome-headless</td><td class="mono">/galaxalab/ms-playw</td><td class="num">11</td><td>lab</td><td class="num">103M</td><td class="num cpu-ok">0.1</td></tr>
+          <tr><td class="num mono">3911896</td><td>claude</td><td class="mono">claude --dangerousl</td><td class="num">52</td><td>lab</td><td class="num">502M</td><td class="num cpu-ok">0.1</td></tr>
+          <tr><td class="num mono">1065272</td><td>btop-web</td><td class="mono">.target/debug/btop-web</td><td class="num">65</td><td>lab</td><td class="num">8.2M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">1</td><td>tini</td><td class="mono">tini -- /opt/conda/</td><td class="num">1</td><td>lab</td><td class="num">1.1M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">459</td><td>jupyterhub-sing</td><td class="mono">/opt/conda/bin/python</td><td class="num">49</td><td>lab</td><td class="num">401M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">152</td><td>tensorboard</td><td class="mono">/opt/conda/bin/python</td><td class="num">82</td><td>lab</td><td class="num">39M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">158</td><td>pulseaudio</td><td class="mono">pulseaudio --daemon</td><td class="num">3</td><td>lab</td><td class="num">5.8M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">276</td><td>server</td><td class="mono">/opt/conda/lib/python</td><td class="num">131</td><td>lab</td><td class="num">6.7M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">457</td><td>python3</td><td class="mono">/opt/conda/bin/python</td><td class="num">1</td><td>lab</td><td class="num">8.8M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">669</td><td>conda</td><td class="mono">/opt/conda/bin/python</td><td class="num">1</td><td>lab</td><td class="num">38M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">690</td><td>bash</td><td class="mono">/usr/bin/bash /tmp/</td><td class="num">1</td><td>lab</td><td class="num">3.2M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">715</td><td>mlflow</td><td class="mono">/opt/conda/bin/python</td><td class="num">69</td><td>lab</td><td class="num">122M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">870</td><td>python</td><td class="mono">/opt/conda/bin/python</td><td class="num">2</td><td>lab</td><td class="num">22M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">871</td><td>python</td><td class="mono">/opt/conda/bin/python</td><td class="num">76</td><td>lab</td><td class="num">151M</td><td class="num cpu-zero">0.0</td></tr>
+          <tr><td class="num mono">879</td><td>python</td><td class="mono">/opt/conda/bin/python</td><td class="num">68</td><td>lab</td><td class="num">151M</td><td class="num cpu-zero">0.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="proc-foot">read-only - refuses signals and priority changes</div>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var root = document.documentElement;
+  var config = document.getElementById("config");
+  Array.prototype.forEach.call(document.querySelectorAll(".cfg-group"), function (group) {
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      root.setAttribute("data-" + group.getAttribute("data-group"), btn.getAttribute("data-value"));
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+  document.addEventListener("click", function (ev) {
+    if (config && config.open && !config.contains(ev.target)) config.open = false;
+  });
+  var filter = document.getElementById("filter");
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    Array.prototype.forEach.call(document.querySelectorAll("#proc-body tr"), function (tr) {
+      tr.hidden = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+    });
+  });
+})();
+</script>
+</body>
+</html>
+<!-- marks:settings trust=5f4cf58d2fd09a1b5cc22de7539bb8ffbcf1b81402f5052d71cc179f1470729d -->

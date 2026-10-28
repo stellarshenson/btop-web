@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web bands</title>
+<style>
+html[data-theme="default"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #000000;
+  --surface-raised: #040404;
+  --surface-sunken: #040404;
+  --text: #cccccc;
+  --text-strong: #eeeeee;
+  --muted: #757575;
+  --accent: #b54040;
+  --selection-bg: #6a2f2f;
+  --selection-fg: #eeeeee;
+  --border: #5a5a5a;
+  --border-subtle: #2d2d2d;
+  --border-cpu: #556d59;
+  --border-mem: #6c6c4b;
+  --border-net: #5c588d;
+  --border-proc: #805252;
+  --ok: #77ca9b;
+  --warn: #cbc06c;
+  --crit: #dc4c4c;
+  --meter-track: #5a5a5a;
+  --chart-cpu: #77ca9b;
+  --chart-cpu-warn: #cbc06c;
+  --chart-cpu-crit: #dc4c4c;
+  --chart-mem-used: #ff4769;
+  --chart-mem-available: #ffb814;
+  --chart-mem-cached: #26c5ff;
+  --chart-mem-free: #dcff85;
+  --chart-net-down: #b0a9de;
+  --chart-net-up: #dcafde;
+  --chart-proc: #dcd179;
+}
+html[data-theme="default"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-raised: #fbfbfb;
+  --surface-sunken: #fbfbfb;
+  --text: #333333;
+  --text-strong: #111111;
+  --muted: #767676;
+  --accent: #bf4a4a;
+  --selection-bg: #d09595;
+  --selection-fg: #111111;
+  --border: #949494;
+  --border-subtle: #cacaca;
+  --border-cpu: #849a88;
+  --border-mem: #96967b;
+  --border-net: #7672a7;
+  --border-proc: #ad7f7f;
+  --ok: #358859;
+  --warn: #938834;
+  --crit: #b32323;
+  --meter-track: #949494;
+  --chart-cpu: #358859;
+  --chart-cpu-warn: #938834;
+  --chart-cpu-crit: #b32323;
+  --chart-mem-used: #b80022;
+  --chart-mem-available: #c48900;
+  --chart-mem-cached: #009fd9;
+  --chart-mem-free: #577a00;
+  --chart-net-down: #282156;
+  --chart-net-up: #4e2150;
+  --chart-proc: #867b23;
+}
+html[data-theme="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #1d2021;
+  --surface-raised: #202223;
+  --surface-sunken: #202223;
+  --text: #a89984;
+  --text-strong: #ebdbb2;
+  --muted: #918573;
+  --accent: #d79921;
+  --selection-bg: #282828;
+  --selection-fg: #fabd2f;
+  --border: #a89984;
+  --border-subtle: #625c52;
+  --border-cpu: #a89984;
+  --border-mem: #a89984;
+  --border-net: #a89984;
+  --border-proc: #a89984;
+  --ok: #b8bb26;
+  --warn: #d79921;
+  --crit: #fb4934;
+  --meter-track: #6a6a6a;
+  --chart-cpu: #b8bb26;
+  --chart-cpu-warn: #d79921;
+  --chart-cpu-crit: #fb4934;
+  --chart-mem-used: #fb4934;
+  --chart-mem-available: #fabd2f;
+  --chart-mem-cached: #83a598;
+  --chart-mem-free: #98971a;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #d3869b;
+  --chart-proc: #d79921;
+}
+html[data-theme="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fbf1c7;
+  --surface-raised: #f7edc4;
+  --surface-sunken: #f7edc4;
+  --text: #3c3836;
+  --text-strong: #3c3836;
+  --muted: #736d60;
+  --accent: #cc241d;
+  --selection-bg: #f2e5bc;
+  --selection-fg: #8f3f71;
+  --border: #968976;
+  --border-subtle: #c8bd9e;
+  --border-cpu: #968976;
+  --border-mem: #968976;
+  --border-net: #968976;
+  --border-proc: #968976;
+  --ok: #427b58;
+  --warn: #b5811c;
+  --crit: #cc241d;
+  --meter-track: #948a70;
+  --chart-cpu: #427b58;
+  --chart-cpu-warn: #b5811c;
+  --chart-cpu-crit: #cc241d;
+  --chart-mem-used: #cc241d;
+  --chart-mem-available: #b57614;
+  --chart-mem-cached: #427b58;
+  --chart-mem-free: #427b58;
+  --chart-net-down: #79740e;
+  --chart-net-up: #b57614;
+  --chart-proc: #af3a03;
+}
+html[data-theme="solarized"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #002b36;
+  --surface-raised: #052f39;
+  --surface-sunken: #052f39;
+  --text: #eee8d5;
+  --text-strong: #fdf6e3;
+  --muted: #80918b;
+  --accent: #b58900;
+  --selection-bg: #073642;
+  --selection-fg: #d6a200;
+  --border: #5e737a;
+  --border-subtle: #2f4f58;
+  --border-cpu: #5e737a;
+  --border-mem: #5e737a;
+  --border-net: #5e737a;
+  --border-proc: #5e737a;
+  --ok: #adc700;
+  --warn: #d6a200;
+  --crit: #e65317;
+  --meter-track: #55757d;
+  --chart-cpu: #adc700;
+  --chart-cpu-warn: #d6a200;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #edb400;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #bad600;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #f56caf;
+  --chart-proc: #d6a200;
+}
+html[data-theme="solarized"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #586e75;
+  --text-strong: #002b36;
+  --muted: #60747a;
+  --accent: #b48800;
+  --selection-bg: #eee8d5;
+  --selection-fg: #846400;
+  --border: #859191;
+  --border-subtle: #c1c4ba;
+  --border-cpu: #859191;
+  --border-mem: #859191;
+  --border-net: #859191;
+  --border-proc: #859191;
+  --ok: #849800;
+  --warn: #b48800;
+  --crit: #e65317;
+  --meter-track: #928e82;
+  --chart-cpu: #849700;
+  --chart-cpu-warn: #b48800;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #b38800;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #839700;
+  --chart-net-down: #8589c9;
+  --chart-net-up: #e063a0;
+  --chart-proc: #b48800;
+}
+html[data-theme="everforest"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #2d353b;
+  --surface-raised: #30383d;
+  --surface-sunken: #30383d;
+  --text: #d3c6aa;
+  --text-strong: #d3c6aa;
+  --muted: #a39c8a;
+  --accent: #e67e80;
+  --selection-bg: #3d484d;
+  --selection-fg: #dbbc7f;
+  --border: #767e81;
+  --border-subtle: #525a5e;
+  --border-cpu: #767e81;
+  --border-mem: #767e81;
+  --border-net: #767e81;
+  --border-proc: #767e81;
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --crit: #f85552;
+  --meter-track: #797e82;
+  --chart-cpu: #a7c080;
+  --chart-cpu-warn: #dbbc7f;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #a7c080;
+  --chart-mem-cached: #a7c080;
+  --chart-mem-free: #a7c080;
+  --chart-net-down: #7fbbb3;
+  --chart-net-up: #e67e80;
+  --chart-proc: #e67e80;
+}
+html[data-theme="everforest"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #5c6a72;
+  --text-strong: #5c6a72;
+  --muted: #67737a;
+  --accent: #d765b3;
+  --selection-bg: #4f585e;
+  --selection-fg: #ecc86b;
+  --border: #4f585e;
+  --border-subtle: #a6a7a0;
+  --border-cpu: #4f585e;
+  --border-mem: #4f585e;
+  --border-net: #4f585e;
+  --border-proc: #4f585e;
+  --ok: #849701;
+  --warn: #b98500;
+  --crit: #f85552;
+  --meter-track: #879189;
+  --chart-cpu: #849701;
+  --chart-cpu-warn: #b98500;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #849701;
+  --chart-mem-cached: #849701;
+  --chart-mem-free: #849701;
+  --chart-net-down: #3994c5;
+  --chart-net-up: #d765b3;
+  --chart-proc: #d765b3;
+}
+html[data-theme="flexoki"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #100f0f;
+  --surface-raised: #141313;
+  --surface-sunken: #141313;
+  --text: #cecdc3;
+  --text-strong: #fffcf0;
+  --muted: #7c7b75;
+  --accent: #da702c;
+  --selection-bg: #403e3c;
+  --selection-fg: #fffcf0;
+  --border: #615f5e;
+  --border-subtle: #383736;
+  --border-cpu: #4385be;
+  --border-mem: #879a39;
+  --border-net: #ce5d97;
+  --border-proc: #3aa99f;
+  --ok: #3aa99f;
+  --warn: #d0a215;
+  --crit: #d14d41;
+  --meter-track: #61605e;
+  --chart-cpu: #3aa99f;
+  --chart-cpu-warn: #d0a215;
+  --chart-cpu-crit: #d14d41;
+  --chart-mem-used: #d14d41;
+  --chart-mem-available: #da702c;
+  --chart-mem-cached: #3aa99f;
+  --chart-mem-free: #879a39;
+  --chart-net-down: #3aa99f;
+  --chart-net-up: #8b7ec8;
+  --chart-proc: #d0a215;
+}
+html[data-theme="flexoki"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fffcf0;
+  --surface-raised: #fbf8ec;
+  --surface-sunken: #fbf8ec;
+  --text: #343331;
+  --text-strong: #100f0f;
+  --muted: #76746f;
+  --accent: #bc5215;
+  --selection-bg: #e6e4d9;
+  --selection-fg: #100f0f;
+  --border: #93928b;
+  --border-subtle: #c9c7be;
+  --border-cpu: #205ea6;
+  --border-mem: #66800b;
+  --border-net: #a02f6f;
+  --border-proc: #24837b;
+  --ok: #24837b;
+  --warn: #ad8301;
+  --crit: #af3029;
+  --meter-track: #93928b;
+  --chart-cpu: #24837b;
+  --chart-cpu-warn: #ad8301;
+  --chart-cpu-crit: #af3029;
+  --chart-mem-used: #af3029;
+  --chart-mem-available: #bc5215;
+  --chart-mem-cached: #24837b;
+  --chart-mem-free: #66800b;
+  --chart-net-down: #24837b;
+  --chart-net-up: #5e409d;
+  --chart-proc: #ad8301;
+}
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+button, input { font-family: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+b { font-weight: 400; }
+
+.app {
+  height: 100%;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* status strip */
+.topbar {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+}
+.brand {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.brand span { color: var(--muted); }
+.top-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* house chips */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--border));
+}
+.chip b { font-family: var(--mono); text-transform: none; letter-spacing: 0; color: var(--text); }
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); color: var(--text-strong); }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.lamp { width: 5px; height: 5px; background: var(--ok); }
+.chip-live.paused .lamp { background: var(--warn); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); color: var(--text-strong); cursor: pointer; }
+
+/* bands */
+.bands {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 118px 76px 82px 82px minmax(0, 1fr);
+  gap: 6px;
+}
+.band {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--band-hue, var(--border));
+  border-radius: 2px;
+}
+.band-cpu { --band-hue: var(--border-cpu); }
+.band-mem { --band-hue: var(--border-mem); }
+.band-net { --band-hue: var(--border-net); }
+.band-gpu { --band-hue: var(--chart-cpu); }
+.band-proc { --band-hue: var(--border-proc); }
+.band-summary { --band-hue: var(--accent); display: none; }
+
+.band-head {
+  flex: 0 0 24px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.band-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.hero {
+  font-family: var(--mono);
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.hero .unit { margin-left: 2px; font-size: 12px; letter-spacing: 0; color: var(--muted); }
+.kv { display: inline-flex; align-items: baseline; gap: 5px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.kv b { font-family: var(--mono); font-size: 11px; color: var(--text); }
+.band-note {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.arrow-down { color: var(--chart-net-down); }
+.arrow-up { color: var(--chart-net-up); }
+
+/* cpu band */
+.cpu-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 5px 8px 6px; }
+.history { flex: 1 1 auto; min-height: 0; border-bottom: 1px solid var(--border-subtle); }
+.heatstrip { flex: 0 0 20px; display: grid; grid-template-columns: repeat(64, minmax(0, 1fr)); gap: 2px; }
+.cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-strong);
+}
+
+/* mem band */
+.mem-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 4px 8px 5px; }
+.stack { flex: 0 0 8px; display: flex; background: var(--border-subtle); }
+.stack span { height: 100%; }
+.stack .used { background: var(--chart-mem-used); }
+.stack .cached { background: var(--chart-mem-cached); }
+.stack .free { background: var(--chart-mem-free); }
+.figs { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; }
+.fig {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 9px;
+  border-left: 1px solid var(--border-subtle);
+}
+.fig:first-child { border-left: 0; padding-left: 0; }
+.fig.disk { flex: 0 0 112px; }
+.fig-k { font-size: 9px; line-height: 1; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.fig-v { font-family: var(--mono); font-size: 12px; line-height: 1.1; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fig-v small { margin-left: 4px; font-size: 9px; color: var(--muted); }
+.mini { flex: 0 0 3px; height: 3px; margin-top: 1px; background: var(--border-subtle); position: relative; }
+.mini i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--chart-mem-used); }
+/* net band */
+.net-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.net-cell { min-width: 0; display: flex; flex-direction: column; padding: 4px 8px 5px; }
+.net-cell + .net-cell { border-left: 1px solid var(--border-subtle); }
+.net-line { flex: 0 0 16px; display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.net-line b { font-family: var(--mono); font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--text-strong); }
+.net-line .sub { margin-left: auto; font-family: var(--mono); font-size: 10px; letter-spacing: 0; text-transform: none; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.net-graph { flex: 1 1 auto; min-height: 0; }
+
+/* gpu band */
+.gpu-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.gpu { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 4px 10px; }
+.gpu + .gpu { border-left: 1px solid var(--border-subtle); }
+.gpu[data-selected="true"] { outline: 1px solid var(--accent); outline-offset: -2px; }
+.gpu-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.gpu-name { font-size: 10px; letter-spacing: 0.06em; color: var(--text-strong); white-space: nowrap; }
+.gpu-model { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gpu-temp, .gpu-power { font-family: var(--mono); font-size: 10px; color: var(--text); white-space: nowrap; }
+.gpu-mid { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gpu-util { flex: 0 0 34px; font-family: var(--mono); font-size: 16px; line-height: 1; color: var(--text-strong); }
+.gpu-spark { flex: 1 1 auto; min-width: 0; height: 16px; display: block; }
+.gpu-vram { font-family: var(--mono); font-size: 11px; color: var(--text); white-space: nowrap; }
+.gpu-vram span { color: var(--muted); }
+
+/* process band */
+.band-proc .band-head { gap: 8px; }
+.proc-count { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.filter {
+  width: 120px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.filter::placeholder { color: var(--muted); }
+.proc-note { margin-left: auto; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.proc-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) var(--surface); }
+.proc-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.proc-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 20px;
+  padding: 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.proc-table td {
+  height: 24px;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proc-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.proc-table tbody tr:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.proc-table .num { text-align: right; font-family: var(--mono); }
+.proc-table .prog { color: var(--text-strong); }
+.proc-table .cmd, .proc-table .user { color: var(--muted); }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--muted); }
+.proc-foot {
+  flex: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* summary band, phone only */
+.summary-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.sum-row { flex: 0 0 28px; display: flex; align-items: center; gap: 10px; padding: 0 8px; border-bottom: 1px solid var(--border-subtle); }
+.sum-row:last-child { border-bottom: 0; }
+.sum-k { flex: 0 0 52px; font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.sum-v { font-family: var(--mono); font-size: 12px; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-v small { color: var(--muted); font-size: 10px; }
+
+/* charts */
+.chart { display: block; width: 100%; height: 100%; }
+.chart .area { opacity: 0.14; }
+.chart .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.history .area { fill: var(--chart-cpu); }
+.history .line { stroke: var(--chart-cpu); }
+.net-down .area { fill: var(--chart-net-down); }
+.net-down .line { stroke: var(--chart-net-down); }
+.net-up .area { fill: var(--chart-net-up); }
+.net-up .line { stroke: var(--chart-net-up); }
+.spark-gpu .area { fill: var(--chart-cpu); }
+.spark-gpu .line { stroke: var(--chart-cpu); }
+
+/* config popover */
+.config {
+  position: fixed;
+  z-index: 40;
+  width: 248px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 11px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label { font-size: 9px; line-height: 18px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--accent); }
+.opt.on { border-color: var(--accent); color: var(--text-strong); }
+.opt.on::before { opacity: 0.12; }
+
+@media (max-width: 760px) {
+  .bands { grid-template-rows: auto minmax(0, 1fr); }
+  .band-cpu, .band-mem, .band-net, .band-gpu { display: none; }
+  .band-summary { display: flex; }
+  .band-proc .band-head { gap: 6px; }
+  .proc-note { display: none; }
+  .filter { width: 86px; }
+  .proc-table { table-layout: auto; }
+  .proc-table th:nth-child(3), .proc-table td:nth-child(3),
+  .proc-table th:nth-child(4), .proc-table td:nth-child(4),
+  .proc-table th:nth-child(5), .proc-table td:nth-child(5) { display: none; }
+  .proc-table td, .proc-table th { padding: 0 6px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <span class="brand">btop-web <span>/ bands</span></span>
+    <span class="top-meta">
+      <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word">live</span><b id="sample-age">0.4 s</b></span>
+      <span class="chip"><span>interval</span><b>2000 ms</b></span>
+      <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config" aria-label="Config">config</button>
+    </span>
+  </header>
+
+  <main class="bands">
+    <section class="band band-cpu" aria-labelledby="cpu-title">
+      <header class="band-head">
+        <h2 class="band-title" id="cpu-title">cpu</h2>
+        <span class="hero"><b id="cpu-total">4.8</b><span class="unit">%</span></span>
+        <span class="kv"><span>clock</span><b>3.99 GHz</b></span>
+        <span class="kv"><span>load</span><b>96 95 94</b></span>
+        <span class="band-note">64 cores</span>
+      </header>
+      <div class="cpu-body">
+        <div class="history" id="history" role="img" aria-label="CPU history, 4.8 percent now"></div>
+        <div class="heatstrip" id="heatstrip" role="img" aria-label="Per-core load, 64 cores"></div>
+      </div>
+    </section>
+
+    <section class="band band-mem" aria-labelledby="mem-title">
+      <header class="band-head">
+        <h2 class="band-title" id="mem-title">mem</h2>
+        <span class="hero">39.7<span class="unit">/ 503 GiB</span></span>
+        <span class="kv"><span>used</span><b>8%</b></span>
+        <span class="kv"><span>swap</span><b>2.9 / 128 GiB</b></span>
+        <span class="band-note">3 disks</span>
+      </header>
+      <div class="mem-body">
+        <div class="stack" aria-hidden="true"><span class="used" style="width:8%"></span><span class="cached" style="width:50%"></span><span class="free" style="width:37%"></span></div>
+        <div class="figs">
+          <div class="fig"><span class="fig-k">used</span><span class="fig-v">39.7 GiB <small>8%</small></span></div>
+          <div class="fig"><span class="fig-k">cached</span><span class="fig-v">253 GiB <small>50%</small></span></div>
+          <div class="fig"><span class="fig-k">free</span><span class="fig-v">184 GiB <small>37%</small></span></div>
+          <div class="fig"><span class="fig-k">available</span><span class="fig-v">463 GiB <small>92%</small></span></div>
+          <div class="fig"><span class="fig-k">swap</span><span class="fig-v">2.9 / 128 GiB <small>free 98%</small></span></div>
+          <div class="fig disk"><span class="fig-k">/</span><span class="fig-v">66%</span><span class="mini"><i style="width:66%"></i></span></div>
+          <div class="fig disk"><span class="fig-k">/home</span><span class="fig-v">66%</span><span class="mini"><i style="width:66%"></i></span></div>
+          <div class="fig disk"><span class="fig-k">nas-shared</span><span class="fig-v">31%</span><span class="mini"><i style="width:31%"></i></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band-net" aria-labelledby="net-title">
+      <header class="band-head">
+        <h2 class="band-title" id="net-title">net</h2>
+        <span class="kv"><span>iface</span><b>eth0</b></span>
+        <span class="kv"><span>down</span><b><span class="arrow-down">&#9660;</span> 1.07 MiB/s</b></span>
+        <span class="kv"><span>up</span><b><span class="arrow-up">&#9650;</span> 940 KiB/s</b></span>
+      </header>
+      <div class="net-body">
+        <div class="net-cell">
+          <div class="net-line"><span>download</span><b>8.56 Mibps</b><span class="sub">top 62.1 Mibps &middot; total 391 GiB</span></div>
+          <div class="net-graph net-down" id="net-down" role="img" aria-label="Download history"></div>
+        </div>
+        <div class="net-cell">
+          <div class="net-line"><span>upload</span><b>7.34 Mibps</b><span class="sub">top 10.0 Mibps &middot; total 391 GiB</span></div>
+          <div class="net-graph net-up" id="net-up" role="img" aria-label="Upload history"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band-gpu" aria-labelledby="gpu-title">
+      <header class="band-head">
+        <h2 class="band-title" id="gpu-title">gpu</h2>
+        <span class="band-note">3 devices</span>
+      </header>
+      <div class="gpu-body">
+        <article class="gpu" data-gpu="0" data-selected="false">
+          <div class="gpu-top"><span class="gpu-name">GPU 0</span><span class="gpu-model">RTX PRO 4000 Blackwell</span><span class="gpu-temp">36 C</span><span class="gpu-power">3.9 W</span></div>
+          <div class="gpu-mid"><span class="gpu-util">0%</span><span class="gpu-spark spark-gpu" data-spark="gpu0" aria-hidden="true"></span><span class="gpu-vram">452M <span>/ 24G</span></span></div>
+        </article>
+        <article class="gpu" data-gpu="1" data-selected="true">
+          <div class="gpu-top"><span class="gpu-name">GPU 1</span><span class="gpu-model">RTX PRO 6000 Blackwell Max-Q</span><span class="gpu-temp">37 C</span><span class="gpu-power">14.1 W</span></div>
+          <div class="gpu-mid"><span class="gpu-util">0%</span><span class="gpu-spark spark-gpu" data-spark="gpu1" aria-hidden="true"></span><span class="gpu-vram">64M <span>/ 98G</span></span></div>
+        </article>
+        <article class="gpu" data-gpu="2" data-selected="false">
+          <div class="gpu-top"><span class="gpu-name">GPU 2</span><span class="gpu-model">RTX PRO 5000 72GB</span><span class="gpu-temp">37 C</span><span class="gpu-power">21.9 W</span></div>
+          <div class="gpu-mid"><span class="gpu-util">1%</span><span class="gpu-spark spark-gpu" data-spark="gpu2" aria-hidden="true"></span><span class="gpu-vram">853M <span>/ 73G</span></span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="band band-summary" aria-labelledby="sum-title">
+      <header class="band-head"><h2 class="band-title" id="sum-title">summary</h2></header>
+      <div class="summary-body">
+        <div class="sum-row"><span class="sum-k">cpu</span><span class="sum-v">4.8% <small>3.99 GHz &middot; L 96 95 94</small></span></div>
+        <div class="sum-row"><span class="sum-k">mem</span><span class="sum-v">39.7 / 503 GiB <small>8%</small></span></div>
+        <div class="sum-row"><span class="sum-k">gpu 0</span><span class="sum-v">0% <small>452M / 24G</small></span></div>
+        <div class="sum-row"><span class="sum-k">gpu 1</span><span class="sum-v">0% <small>64M / 98G</small></span></div>
+        <div class="sum-row"><span class="sum-k">gpu 2</span><span class="sum-v">1% <small>853M / 73G</small></span></div>
+        <div class="sum-row"><span class="sum-k">net</span><span class="sum-v">1.07 MiB/s <small>down &middot; 940 KiB/s up</small></span></div>
+      </div>
+    </section>
+
+    <section class="band band-proc" aria-labelledby="proc-title">
+      <header class="band-head">
+        <h2 class="band-title" id="proc-title">proc</h2>
+        <span class="proc-count" id="proc-count">22/249</span>
+        <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+        <span class="proc-note">sorted cpu</span>
+      </header>
+      <div class="proc-table-wrap">
+        <table class="proc-table">
+          <caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">Processes sorted by CPU descending</caption>
+          <colgroup>
+            <col style="width:82px"><col style="width:152px"><col><col style="width:64px"><col style="width:58px"><col style="width:68px"><col style="width:58px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="num" scope="col">Pid</th>
+              <th scope="col">Program</th>
+              <th scope="col">Command</th>
+              <th class="num" scope="col">Threads</th>
+              <th scope="col">User</th>
+              <th class="num" scope="col">MemB</th>
+              <th class="num" scope="col">Cpu%</th>
+            </tr>
+          </thead>
+          <tbody id="proc-body"></tbody>
+        </table>
+      </div>
+      <div class="proc-foot"><span>read-only</span><span>cpu direct &middot; reverse</span></div>
+    </section>
+  </main>
+</div>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">theme</span>
+    <div class="cfg-opts" data-group="theme">
+      <button class="opt on" type="button" data-value="default">default</button>
+      <button class="opt" type="button" data-value="gruvbox">gruvbox</button>
+      <button class="opt" type="button" data-value="solarized">solarized</button>
+      <button class="opt" type="button" data-value="everforest">everforest</button>
+      <button class="opt" type="button" data-value="flexoki">flexoki</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">mode</span>
+    <div class="cfg-opts" data-group="mode">
+      <button class="opt on" type="button" data-value="dark">dark</button>
+      <button class="opt" type="button" data-value="light">light</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">gpu</span>
+    <div class="cfg-opts" data-group="gpu">
+      <button class="opt" type="button" data-value="0">0</button>
+      <button class="opt on" type="button" data-value="1">1</button>
+      <button class="opt" type="button" data-value="2">2</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">pause</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  function series(n, fn) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(fn(i));
+    return out;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  var cores = (function () {
+    var base = [5, 4, 6, 3, 7, 5, 4, 6, 3, 5, 8, 4, 6, 2, 7, 5];
+    var tail = [4, 5, 3, 6, 4, 5, 7, 3, 4, 4, 6, 2, 4, 5, 3, 3];
+    return base.concat(base, base, tail);
+  })();
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[gpu0.length - 1] = 0;
+  gpu1[gpu1.length - 1] = 0;
+  gpu2[gpu2.length - 1] = 1;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+  var netUp = series(64, function (i) {
+    var v = 0.08 + 0.16 * Math.abs(Math.sin(i * 0.41 + 1)) + 0.08 * Math.abs(Math.sin(i * 1.9));
+    [10, 26, 40, 55].forEach(function (b) { v += 0.9 * Math.exp(-Math.pow((i - b) / 1.6, 2)); });
+    return clamp(v, 0, 1.5);
+  });
+  netUp[63] = 0.918;
+
+  /* PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return { line: line, area: line + "L" + round2(w) + " " + round2(h) + "L0 " + round2(h) + "Z" };
+  }
+
+  function svgMarkup(d, w, h) {
+    return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="area" d="' + d.area + '"/>' +
+      '<path class="line" d="' + d.line + '"/></svg>';
+  }
+
+  var CHARTS = {
+    "history": { data: cpuData, min: 0, max: 25 },
+    "net-down": { data: netDown, min: 0, max: 2.2 },
+    "net-up": { data: netUp, min: 0, max: 1.6 }
+  };
+  var SPARKS = {
+    gpu0: { data: gpu0, min: 0, max: 4, vb: [120, 16] },
+    gpu1: { data: gpu1, min: 0, max: 4, vb: [120, 16] },
+    gpu2: { data: gpu2, min: 0, max: 4, vb: [120, 16] }
+  };
+
+  function drawChart(id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var cfg = CHARTS[id];
+    var w = host.clientWidth;
+    var h = host.clientHeight;
+    if (!w || !h) return;
+    var d = pchipPath(cfg.data, w, h, cfg.min, cfg.max);
+    var old = host.querySelector("svg.chart");
+    if (old) old.remove();
+    host.insertAdjacentHTML("afterbegin", svgMarkup(d, w, h));
+  }
+
+  function drawSpark(el) {
+    var cfg = SPARKS[el.getAttribute("data-spark")];
+    if (!cfg) return;
+    var d = pchipPath(cfg.data, cfg.vb[0], cfg.vb[1], cfg.min, cfg.max);
+    el.innerHTML = svgMarkup(d, cfg.vb[0], cfg.vb[1]);
+  }
+
+  function drawAll() {
+    Object.keys(CHARTS).forEach(drawChart);
+  }
+  /* 64-core heatstrip: the printed value is the data, the tint is reinforcement */
+  (function renderHeatstrip() {
+    var host = document.getElementById("heatstrip");
+    var cells = [];
+    for (var i = 0; i < 64; i++) {
+      var p = cores[i];
+      var tint = 10 + p * 5;
+      cells.push('<span class="cell" title="C' + i + " " + p + '%" aria-hidden="true" style="background:color-mix(in srgb, var(--chart-cpu) ' + tint + '%, var(--surface))">' + p + "</span>");
+    }
+    host.innerHTML = cells.join("");
+    var mean = cores.reduce(function (a, b) { return a + b; }, 0) / cores.length;
+    document.getElementById("cpu-total").textContent = mean.toFixed(1);
+  })();
+
+  /* process table */
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  var procCount = document.getElementById("proc-count");
+
+  (function renderProcs() {
+    var body = document.getElementById("proc-body");
+    body.innerHTML = PROCS.map(function (p) {
+      var cpu = p[6];
+      var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+      return '<tr><td class="num">' + p[0] + '</td><td class="prog">' + p[1] + '</td><td class="cmd">' + p[2] +
+        '</td><td class="num">' + p[3] + '</td><td class="user">' + p[4] + '</td><td class="num">' + p[5] +
+        '</td><td class="num ' + cls + '">' + cpu.toFixed(1) + "</td></tr>";
+    }).join("");
+    procCount.textContent = PROCS.length + "/249";
+  })();
+
+  var filter = document.getElementById("filter");
+  function applyFilter() {
+    var q = filter.value.trim().toLowerCase();
+    var shown = 0;
+    Array.prototype.forEach.call(document.getElementById("proc-body").rows, function (tr) {
+      var hide = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+      tr.hidden = hide;
+      if (!hide) shown++;
+    });
+    procCount.textContent = shown + "/249";
+  }
+  filter.addEventListener("input", applyFilter);
+  filter.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      filter.value = "";
+      applyFilter();
+    }
+  });
+
+  /* config popover */
+  var config = document.getElementById("config");
+  var toggles = Array.prototype.slice.call(document.querySelectorAll(".config-toggle"));
+
+  function setExpanded(open) {
+    toggles.forEach(function (btn) { btn.setAttribute("aria-expanded", String(open)); });
+  }
+  function positionConfig(btn) {
+    var r = btn.getBoundingClientRect();
+    config.style.visibility = "hidden";
+    config.hidden = false;
+    var left = Math.max(6, Math.min(window.innerWidth - config.offsetWidth - 6, r.right - config.offsetWidth));
+    config.style.left = left + "px";
+    config.style.top = (r.bottom + 4) + "px";
+    config.style.visibility = "";
+  }
+  toggles.forEach(function (btn) {
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (config.hidden) positionConfig(btn);
+      else config.hidden = true;
+      setExpanded(!config.hidden);
+    });
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+
+  var state = { theme: "default", mode: "dark", gpu: "1", paused: false };
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      var value = btn.getAttribute("data-value");
+      if (name === "gpu") {
+        state.gpu = value;
+        Array.prototype.forEach.call(document.querySelectorAll(".gpu"), function (g) {
+          g.setAttribute("data-selected", String(g.getAttribute("data-gpu") === value));
+        });
+      } else {
+        state[name] = value;
+        root.setAttribute("data-" + name, value);
+      }
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  pauseBtn.addEventListener("click", function () {
+    state.paused = !state.paused;
+    pauseBtn.classList.toggle("on", state.paused);
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "resume" : "pause";
+    Array.prototype.forEach.call(document.querySelectorAll(".chip-live"), function (chip) {
+      chip.classList.toggle("paused", state.paused);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".live-word"), function (word) {
+      word.textContent = state.paused ? "paused" : "live";
+    });
+  });
+
+  /* first paint and resize */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-spark]"), drawSpark);
+  drawAll();
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) { drawChart(entry.target.id); });
+    });
+    Object.keys(CHARTS).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) ro.observe(el);
+    });
+  }
+  window.addEventListener("resize", drawAll);
+})();
+</script>
+</body>
+</html>
+<!-- marks:settings trust=0eb5261af98d2444e08523bae06804dcdba1b314e97dca7394b004fd5c6c3e58 -->

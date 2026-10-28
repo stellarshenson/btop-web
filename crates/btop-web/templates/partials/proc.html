@@ -1,0 +1,22 @@
+<table class="ptable">
+  <caption class="sr-only">Processes</caption>
+  <colgroup>
+    <col style="width:76px"><col style="width:150px"><col data-p="3" data-field="proc-command"><col data-p="3" data-field="proc-threads" style="width:70px"><col data-p="3" data-field="proc-user" style="width:72px"><col style="width:72px"><col style="width:106px">
+  </colgroup>
+  <thead>
+    <tr>
+      <th class="num" scope="col"><button type="button">Pid</button></th>
+      <th scope="col"><button type="button">Program</button></th>
+      <th data-p="3" data-field="proc-command" scope="col"><button type="button">Command</button></th>
+      <th class="num" data-p="3" data-field="proc-threads" scope="col"><button type="button">Threads</button></th>
+      <th data-p="3" data-field="proc-user" scope="col"><button type="button">User</button></th>
+      <th class="num" scope="col"><button type="button">MemB</button></th>
+      <th class="num" scope="col"><button type="button">Cpu%</button></th>
+    </tr>
+  </thead>
+  <tbody id="proc-body">
+    {%- for process in snapshot.proc.entries %}
+<tr data-raw="{{ process.depth }} {% if let Some(cpu) = process.cpu_pct %}{{ cpu }}{% else %}-{% endif %} {% if let Some(mem) = process.mem_bytes %}{{ mem }}{% else %}-{% endif %} {% if let Some(threads) = process.threads %}{{ threads }}{% else %}-{% endif %}"{% if let Some(sum) = process.sum %} data-sum="{{ sum.labels() }}"{% endif %}><td class="num mono">{{ process.pid }}</td><td>{% if let Some(name) = process.name %}{{ name }}{% endif %}</td><td class="mono">{{ process.command }}</td><td class="num">{% if process.threads.is_some() %}{{ process.threads_label() }}{% endif %}</td><td>{% if let Some(user) = process.user %}{{ user }}{% endif %}</td><td class="num">{% if process.mem_bytes.is_some() %}{{ process.mem_label() }}{% endif %}</td><td class="num{% if process.cpu_pct.is_some() %} {{ process.cpu_tone() }}{% endif %}">{% if !process.graph.line.is_empty() %}<svg data-chart="proc" viewBox="0 0 {{ crate::chart::PROC_GRAPH.width }} {{ crate::chart::PROC_GRAPH.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ process.graph.line }}"></path></svg>{% endif %}{% if let Some(sum) = process.sum %}{% if !sum.graph.line.is_empty() %}<svg class="sum" data-chart="proc" viewBox="0 0 {{ crate::chart::PROC_GRAPH.width }} {{ crate::chart::PROC_GRAPH.height }}" preserveAspectRatio="none" aria-hidden="true"><path d="{{ sum.graph.line }}"></path></svg>{% endif %}{% endif %}{% if process.cpu_pct.is_some() %}{{ process.cpu_label() }}{% endif %}</td></tr>
+    {%- endfor %}
+  </tbody>
+</table>

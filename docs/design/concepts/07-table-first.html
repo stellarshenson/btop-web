@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>btop-web - ops console</title>
+<style>
+html[data-theme="default"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #000000;
+  --surface-raised: #040404;
+  --surface-sunken: #040404;
+  --text: #cccccc;
+  --text-strong: #eeeeee;
+  --muted: #757575;
+  --accent: #b54040;
+  --selection-bg: #6a2f2f;
+  --selection-fg: #eeeeee;
+  --border: #5a5a5a;
+  --border-subtle: #2d2d2d;
+  --border-cpu: #556d59;
+  --border-mem: #6c6c4b;
+  --border-net: #5c588d;
+  --border-proc: #805252;
+  --ok: #77ca9b;
+  --warn: #cbc06c;
+  --crit: #dc4c4c;
+  --unavailable: #757575;
+  --meter-track: #5a5a5a;
+  --grid-line: #5a5a5a;
+  --chart-cpu: #77ca9b;
+  --chart-cpu-warn: #cbc06c;
+  --chart-cpu-crit: #dc4c4c;
+  --chart-mem-used: #ff4769;
+  --chart-mem-available: #ffb814;
+  --chart-mem-cached: #26c5ff;
+  --chart-mem-free: #dcff85;
+  --chart-net-down: #b0a9de;
+  --chart-net-up: #dcafde;
+  --chart-proc: #dcd179;
+  --status-ok: #77ca9b;
+  --status-warn: #cbc06c;
+  --status-crit: #dc4c4c;
+}
+
+html[data-theme="default"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-raised: #fbfbfb;
+  --surface-sunken: #fbfbfb;
+  --text: #333333;
+  --text-strong: #111111;
+  --muted: #767676;
+  --accent: #bf4a4a;
+  --selection-bg: #d09595;
+  --selection-fg: #111111;
+  --border: #949494;
+  --border-subtle: #cacaca;
+  --border-cpu: #849a88;
+  --border-mem: #96967b;
+  --border-net: #7672a7;
+  --border-proc: #ad7f7f;
+  --ok: #358859;
+  --warn: #938834;
+  --crit: #b32323;
+  --unavailable: #767676;
+  --meter-track: #949494;
+  --grid-line: #949494;
+  --chart-cpu: #358859;
+  --chart-cpu-warn: #938834;
+  --chart-cpu-crit: #b32323;
+  --chart-mem-used: #b80022;
+  --chart-mem-available: #c48900;
+  --chart-mem-cached: #009fd9;
+  --chart-mem-free: #577a00;
+  --chart-net-down: #282156;
+  --chart-net-up: #4e2150;
+  --chart-proc: #867b23;
+  --status-ok: #358859;
+  --status-warn: #938834;
+  --status-crit: #b32323;
+}
+
+html[data-theme="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #1d2021;
+  --surface-raised: #202223;
+  --surface-sunken: #202223;
+  --text: #a89984;
+  --text-strong: #ebdbb2;
+  --muted: #918573;
+  --accent: #d79921;
+  --selection-bg: #282828;
+  --selection-fg: #fabd2f;
+  --border: #a89984;
+  --border-subtle: #625c52;
+  --border-cpu: #a89984;
+  --border-mem: #a89984;
+  --border-net: #a89984;
+  --border-proc: #a89984;
+  --ok: #b8bb26;
+  --warn: #d79921;
+  --crit: #fb4934;
+  --unavailable: #918573;
+  --meter-track: #6a6a6a;
+  --grid-line: #a89984;
+  --chart-cpu: #b8bb26;
+  --chart-cpu-warn: #d79921;
+  --chart-cpu-crit: #fb4934;
+  --chart-mem-used: #fb4934;
+  --chart-mem-available: #fabd2f;
+  --chart-mem-cached: #83a598;
+  --chart-mem-free: #98971a;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #d3869b;
+  --chart-proc: #d79921;
+  --status-ok: #b8bb26;
+  --status-warn: #d79921;
+  --status-crit: #fb4934;
+}
+
+html[data-theme="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fbf1c7;
+  --surface-raised: #f7edc4;
+  --surface-sunken: #f7edc4;
+  --text: #3c3836;
+  --text-strong: #3c3836;
+  --muted: #736d60;
+  --accent: #cc241d;
+  --selection-bg: #f2e5bc;
+  --selection-fg: #8f3f71;
+  --border: #968976;
+  --border-subtle: #c8bd9e;
+  --border-cpu: #968976;
+  --border-mem: #968976;
+  --border-net: #968976;
+  --border-proc: #968976;
+  --ok: #427b58;
+  --warn: #b5811c;
+  --crit: #cc241d;
+  --unavailable: #736d60;
+  --meter-track: #948a70;
+  --grid-line: #968976;
+  --chart-cpu: #427b58;
+  --chart-cpu-warn: #b5811c;
+  --chart-cpu-crit: #cc241d;
+  --chart-mem-used: #cc241d;
+  --chart-mem-available: #b57614;
+  --chart-mem-cached: #427b58;
+  --chart-mem-free: #427b58;
+  --chart-net-down: #79740e;
+  --chart-net-up: #b57614;
+  --chart-proc: #af3a03;
+  --status-ok: #427b58;
+  --status-warn: #b5811c;
+  --status-crit: #cc241d;
+}
+
+html[data-theme="solarized"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #002b36;
+  --surface-raised: #052f39;
+  --surface-sunken: #052f39;
+  --text: #eee8d5;
+  --text-strong: #fdf6e3;
+  --muted: #80918b;
+  --accent: #b58900;
+  --selection-bg: #073642;
+  --selection-fg: #d6a200;
+  --border: #5e737a;
+  --border-subtle: #2f4f58;
+  --border-cpu: #5e737a;
+  --border-mem: #5e737a;
+  --border-net: #5e737a;
+  --border-proc: #5e737a;
+  --ok: #adc700;
+  --warn: #d6a200;
+  --crit: #e65317;
+  --unavailable: #80918b;
+  --meter-track: #55757d;
+  --grid-line: #5f747a;
+  --chart-cpu: #adc700;
+  --chart-cpu-warn: #d6a200;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #edb400;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #bad600;
+  --chart-net-down: #a3a8f7;
+  --chart-net-up: #f56caf;
+  --chart-proc: #d6a200;
+  --status-ok: #adc700;
+  --status-warn: #d6a200;
+  --status-crit: #e65317;
+}
+
+html[data-theme="solarized"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #586e75;
+  --text-strong: #002b36;
+  --muted: #60747a;
+  --accent: #b48800;
+  --selection-bg: #eee8d5;
+  --selection-fg: #846400;
+  --border: #859191;
+  --border-subtle: #c1c4ba;
+  --border-cpu: #859191;
+  --border-mem: #859191;
+  --border-net: #859191;
+  --border-proc: #859191;
+  --ok: #849800;
+  --warn: #b48800;
+  --crit: #e65317;
+  --unavailable: #60747a;
+  --meter-track: #928e82;
+  --grid-line: #859191;
+  --chart-cpu: #849700;
+  --chart-cpu-warn: #b48800;
+  --chart-cpu-crit: #e65317;
+  --chart-mem-used: #e02f30;
+  --chart-mem-available: #b38800;
+  --chart-mem-cached: #268bd2;
+  --chart-mem-free: #839700;
+  --chart-net-down: #8589c9;
+  --chart-net-up: #e063a0;
+  --chart-proc: #b48800;
+  --status-ok: #849700;
+  --status-warn: #b48800;
+  --status-crit: #e65317;
+}
+
+html[data-theme="everforest"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #2d353b;
+  --surface-raised: #30383d;
+  --surface-sunken: #30383d;
+  --text: #d3c6aa;
+  --text-strong: #d3c6aa;
+  --muted: #a39c8a;
+  --accent: #e67e80;
+  --selection-bg: #3d484d;
+  --selection-fg: #dbbc7f;
+  --border: #767e81;
+  --border-subtle: #525a5e;
+  --border-cpu: #767e81;
+  --border-mem: #767e81;
+  --border-net: #767e81;
+  --border-proc: #767e81;
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --crit: #f85552;
+  --unavailable: #a39c8a;
+  --meter-track: #797e82;
+  --grid-line: #767e81;
+  --chart-cpu: #a7c080;
+  --chart-cpu-warn: #dbbc7f;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #a7c080;
+  --chart-mem-cached: #a7c080;
+  --chart-mem-free: #a7c080;
+  --chart-net-down: #7fbbb3;
+  --chart-net-up: #e67e80;
+  --chart-proc: #e67e80;
+  --status-ok: #a7c080;
+  --status-warn: #dbbc7f;
+  --status-crit: #f85552;
+}
+
+html[data-theme="everforest"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fdf6e3;
+  --surface-raised: #faf3e1;
+  --surface-sunken: #faf3e1;
+  --text: #5c6a72;
+  --text-strong: #5c6a72;
+  --muted: #67737a;
+  --accent: #d765b3;
+  --selection-bg: #4f585e;
+  --selection-fg: #ecc86b;
+  --border: #4f585e;
+  --border-subtle: #a6a7a0;
+  --border-cpu: #4f585e;
+  --border-mem: #4f585e;
+  --border-net: #4f585e;
+  --border-proc: #4f585e;
+  --ok: #849701;
+  --warn: #b98500;
+  --crit: #f85552;
+  --unavailable: #67737a;
+  --meter-track: #879189;
+  --grid-line: #4f585e;
+  --chart-cpu: #849701;
+  --chart-cpu-warn: #b98500;
+  --chart-cpu-crit: #f85552;
+  --chart-mem-used: #f85552;
+  --chart-mem-available: #849701;
+  --chart-mem-cached: #849701;
+  --chart-mem-free: #849701;
+  --chart-net-down: #3994c5;
+  --chart-net-up: #d765b3;
+  --chart-proc: #d765b3;
+  --status-ok: #849701;
+  --status-warn: #b98500;
+  --status-crit: #f85552;
+}
+
+html[data-theme="flexoki"][data-mode="dark"] {
+  color-scheme: dark;
+  --surface: #100f0f;
+  --surface-raised: #141313;
+  --surface-sunken: #141313;
+  --text: #cecdc3;
+  --text-strong: #fffcf0;
+  --muted: #7c7b75;
+  --accent: #da702c;
+  --selection-bg: #403e3c;
+  --selection-fg: #fffcf0;
+  --border: #615f5e;
+  --border-subtle: #383736;
+  --border-cpu: #4385be;
+  --border-mem: #879a39;
+  --border-net: #ce5d97;
+  --border-proc: #3aa99f;
+  --ok: #3aa99f;
+  --warn: #d0a215;
+  --crit: #d14d41;
+  --unavailable: #7c7b75;
+  --meter-track: #61605e;
+  --grid-line: #615f5e;
+  --chart-cpu: #3aa99f;
+  --chart-cpu-warn: #d0a215;
+  --chart-cpu-crit: #d14d41;
+  --chart-mem-used: #d14d41;
+  --chart-mem-available: #da702c;
+  --chart-mem-cached: #3aa99f;
+  --chart-mem-free: #879a39;
+  --chart-net-down: #3aa99f;
+  --chart-net-up: #8b7ec8;
+  --chart-proc: #d0a215;
+  --status-ok: #3aa99f;
+  --status-warn: #d0a215;
+  --status-crit: #d14d41;
+}
+
+html[data-theme="flexoki"][data-mode="light"] {
+  color-scheme: light;
+  --surface: #fffcf0;
+  --surface-raised: #fbf8ec;
+  --surface-sunken: #fbf8ec;
+  --text: #343331;
+  --text-strong: #100f0f;
+  --muted: #76746f;
+  --accent: #bc5215;
+  --selection-bg: #e6e4d9;
+  --selection-fg: #100f0f;
+  --border: #93928b;
+  --border-subtle: #c9c7be;
+  --border-cpu: #205ea6;
+  --border-mem: #66800b;
+  --border-net: #a02f6f;
+  --border-proc: #24837b;
+  --ok: #24837b;
+  --warn: #ad8301;
+  --crit: #af3029;
+  --unavailable: #76746f;
+  --meter-track: #93928b;
+  --grid-line: #93928b;
+  --chart-cpu: #24837b;
+  --chart-cpu-warn: #ad8301;
+  --chart-cpu-crit: #af3029;
+  --chart-mem-used: #af3029;
+  --chart-mem-available: #bc5215;
+  --chart-mem-cached: #24837b;
+  --chart-mem-free: #66800b;
+  --chart-net-down: #24837b;
+  --chart-net-up: #5e409d;
+  --chart-proc: #ad8301;
+  --status-ok: #24837b;
+  --status-warn: #ad8301;
+  --status-crit: #af3029;
+}
+
+html[data-theme="default"][data-mode="dark"] {
+  --surface: #060606;
+  --surface-raised: #0b0b0b;
+  --border-subtle: #262626;
+}
+
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --gap: 6px;
+  --strip-h: 64px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.app {
+  height: 100%;
+  padding: 8px;
+  display: grid;
+  gap: var(--gap);
+  grid-template-rows: var(--strip-h) minmax(0, 0.9fr) 50px minmax(0, 2.2fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.strip, .cpu-hist, .heat { border-color: var(--border-cpu); }
+.net-hist { border-color: var(--border-net); }
+.proc { border-color: var(--border-proc); }
+
+/* house chip: 1 px border, 2 px radius, uppercase, tint */
+.chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 9px;
+  line-height: 14px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.12;
+  background: var(--chip-hue, var(--border));
+}
+.chip-live { --chip-hue: var(--ok); border-color: var(--ok); color: var(--text-strong); }
+.chip-live.paused { --chip-hue: var(--warn); border-color: var(--warn); }
+.chip-config { --chip-hue: var(--accent); border-color: var(--accent); color: var(--text-strong); cursor: pointer; }
+.lamp { width: 4px; height: 4px; background: var(--ok); }
+.chip-live.paused .lamp { background: var(--warn); }
+
+/* summary strip */
+.strip {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.1fr) repeat(3, minmax(0, 0.92fr));
+  background: var(--surface);
+  border: 1px solid var(--border-cpu);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.cell {
+  min-width: 0;
+  padding: 5px 9px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  border-right: 1px solid var(--border-subtle);
+}
+.cell:last-child { border-right: 0; }
+.cell-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cell-value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 19px;
+  line-height: 1.05;
+  color: var(--text-strong);
+}
+.cell-value small { font-family: var(--sans); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.cell-value .spark { margin-left: auto; align-self: center; }
+.cell-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cell-sub b { font-weight: 400; color: var(--text); }
+.cell.model { font-size: 9px; }
+.spark { width: 52px; height: 18px; display: block; flex: 0 0 auto; }
+.spark-narrow { width: 38px; }
+.status-cell { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-strong);
+}
+.status-line { display: flex; align-items: center; gap: 6px; }
+.clock { font-family: var(--mono); font-size: 12px; color: var(--text-strong); }
+.interval { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+.num-ok { color: var(--ok); }
+.num-warn { color: var(--warn); }
+
+/* trend band */
+.trend {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--gap);
+}
+.p-head {
+  flex: 0 0 21px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.p-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+.p-sub { font-size: 9.5px; color: var(--muted); font-family: var(--mono); }
+.p-right { margin-left: auto; display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; color: var(--text); }
+.p-right .muted { color: var(--muted); font-size: 9.5px; }
+.hist-body { position: relative; flex: 1 1 auto; min-height: 0; }
+.hist-body .chart-host { position: absolute; inset: 0; }
+.rule { position: absolute; left: 0; right: 0; z-index: 1; border-top: 1px solid var(--border-subtle); pointer-events: none; }
+.rule span { position: absolute; left: 6px; top: -12px; font-size: 8.5px; color: var(--muted); font-family: var(--mono); }
+.rule.r1 { top: 50%; }
+.axis-zero { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--border); z-index: 1; pointer-events: none; }
+
+.net-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: 1fr 1fr; gap: 4px; padding: 4px 6px 6px; }
+.net-row { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 2px; }
+.net-meta { display: flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 10px; white-space: nowrap; overflow: hidden; }
+.net-meta .tag { font-family: var(--sans); font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.net-meta b { font-weight: 400; color: var(--text-strong); }
+.net-meta .more { margin-left: auto; color: var(--muted); font-size: 9px; }
+.down { color: var(--chart-net-down); }
+.up { color: var(--chart-net-up); }
+.net-graph { position: relative; min-height: 0; border: 1px solid var(--border-subtle); overflow: hidden; }
+
+/* core heatstrip */
+.heat { overflow: hidden; }
+.heat-head { flex: 0 0 17px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 1px solid var(--border-subtle); }
+.heat-head .p-sub { font-size: 9px; }
+.heat-head .scale { margin-left: auto; display: flex; align-items: center; gap: 2px; font-family: var(--mono); font-size: 8.5px; color: var(--muted); }
+.heat-head .scale i { width: 8px; height: 8px; display: block; border: 1px solid var(--border-subtle); }
+.heat-head .scale i.s1 { background: color-mix(in srgb, var(--chart-cpu) 12%, transparent); }
+.heat-head .scale i.s2 { background: color-mix(in srgb, var(--chart-cpu) 26%, transparent); }
+.heat-head .scale i.s3 { background: color-mix(in srgb, var(--chart-cpu) 42%, transparent); }
+.heat-cells {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(64, minmax(0, 1fr));
+  gap: 1px;
+  padding: 3px 4px;
+}
+.hcell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--chart-cpu) var(--a, 10%), transparent);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  line-height: 1;
+  color: var(--text);
+}
+.hcell.hot { background: color-mix(in srgb, var(--warn) var(--a, 20%), transparent); }
+
+/* process table */
+.proc-head { flex: 0 0 30px; display: flex; align-items: center; gap: 8px; padding: 0 9px; border-bottom: 1px solid var(--border-subtle); }
+.proc-count { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.proc-count b { font-weight: 400; color: var(--text-strong); }
+.filter {
+  width: 148px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.filter::placeholder { color: var(--muted); }
+.proc-controls { margin-left: auto; display: flex; gap: 10px; font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+.proc-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) var(--surface); }
+.proc-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.proc-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 20px;
+  padding: 0 7px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+.proc-table th.num, .proc-table td.num { text-align: right; }
+.proc-table td {
+  height: 25px;
+  padding: 0 7px;
+  border: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.proc-table td.mono, .proc-table th.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.proc-table td.name { color: var(--text-strong); }
+.proc-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.proc-table tbody tr:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.proc-table tr.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.cpu-ok { color: var(--ok); }
+.cpu-warn { color: var(--warn); }
+.cpu-crit { color: var(--crit); }
+.cpu-zero { color: var(--muted); }
+.proc-foot {
+  flex: 0 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+}
+.proc-foot .right { margin-left: auto; }
+
+/* charts */
+.chart { display: block; width: 100%; height: 100%; }
+.chart .area { opacity: 0.14; }
+.chart .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.history .area { fill: var(--chart-cpu); }
+.history .line { stroke: var(--chart-cpu); }
+.net-down .area { fill: var(--chart-net-down); }
+.net-down .line { stroke: var(--chart-net-down); }
+.net-up .area { fill: var(--chart-net-up); }
+.net-up .line { stroke: var(--chart-net-up); }
+.spark-total .area { fill: var(--text); }
+.spark-total .line { stroke: var(--text); }
+.spark-used .area { fill: var(--chart-mem-used); }
+.spark-used .line { stroke: var(--chart-mem-used); }
+.spark-avail .area { fill: var(--chart-mem-available); }
+.spark-avail .line { stroke: var(--chart-mem-available); }
+.spark-cached .area { fill: var(--chart-mem-cached); }
+.spark-cached .line { stroke: var(--chart-mem-cached); }
+.spark-free .area { fill: var(--chart-mem-free); }
+.spark-free .line { stroke: var(--chart-mem-free); }
+.spark-gpu .area { fill: var(--chart-cpu); }
+.spark-gpu .line { stroke: var(--chart-cpu); }
+.spark-net-down .area { fill: var(--chart-net-down); }
+.spark-net-down .line { stroke: var(--chart-net-down); }
+.spark-net-up .area { fill: var(--chart-net-up); }
+.spark-net-up .line { stroke: var(--chart-net-up); }
+
+/* config popover */
+.config {
+  position: fixed;
+  z-index: 40;
+  width: 248px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 11px;
+}
+.config[hidden] { display: none; }
+.cfg-row { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cfg-label { font-size: 9px; line-height: 18px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.cfg-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: none;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.opt::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; background: var(--accent); }
+.opt.on { border-color: var(--accent); color: var(--text-strong); }
+.opt.on::before { opacity: 0.12; }
+
+/* phone: strip stacks, table takes the rest */
+@media (max-width: 720px) {
+  .app { grid-template-rows: auto minmax(0, 1fr); }
+  .trend, .heat { display: none; }
+  .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto auto auto; }
+  .status-cell { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; padding: 6px 9px; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .status-line { margin-left: auto; }
+  .cell { padding: 5px 7px; border-bottom: 1px solid var(--border-subtle); }
+  .cell:nth-child(3n + 1) { border-right: 0; }
+  .cell-value { font-size: 17px; }
+  .spark { width: 34px; height: 15px; }
+  .cell-sub { font-size: 8.5px; }
+  .proc-head { flex-wrap: nowrap; gap: 6px; }
+  .proc-controls { display: none; }
+  .filter { width: 92px; }
+  .proc-table th:nth-child(3), .proc-table td:nth-child(3),
+  .proc-table th:nth-child(4), .proc-table td:nth-child(4),
+  .proc-table th:nth-child(5), .proc-table td:nth-child(5) { display: none; }
+  .proc-table col { width: auto !important; }
+  .proc-table th:nth-child(1), .proc-table td:nth-child(1) { width: 62px; }
+  .proc-table th:nth-child(6), .proc-table td:nth-child(6) { width: 50px; }
+  .proc-table th:nth-child(7), .proc-table td:nth-child(7) { width: 52px; }
+  .cell .spark { display: none; }
+  .proc-table { table-layout: auto; font-size: 11px; }
+  .proc-table td { height: 24px; }
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="strip" aria-label="Host summary">
+    <div class="cell status-cell">
+      <div class="wordmark">btop-web <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word">live</span></span></div>
+      <div class="status-line">
+        <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config">config</button>
+        <span class="clock">06:12</span>
+        <span class="interval">2000 ms</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">cpu</div>
+      <div class="cell-value">4.8% <span class="spark spark-total" data-spark="cpuTotal" aria-hidden="true"></span></div>
+      <div class="cell-sub">3.99 GHz &middot; L <b>96 95 94</b></div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">mem</div>
+      <div class="cell-value">39.7 <small>/ 503 GiB</small><span class="spark spark-used" data-spark="memUsed" aria-hidden="true"></span></div>
+      <div class="cell-sub">8% used &middot; swap <b>2.9 / 128 GiB</b></div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">net <span>eth0</span></div>
+      <div class="cell-value">1.07 <small>MiB/s <span class="down">&#9660;</span></small><span class="spark spark-net-down" data-spark="netDownSpark" aria-hidden="true"></span></div>
+      <div class="cell-sub">940 KiB/s <span class="up">&#9650;</span> &middot; total <b>391 GiB</b></div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">gpu 0</div>
+      <div class="cell-value">0% <span class="spark spark-gpu" data-spark="gpu0" aria-hidden="true"></span></div>
+      <div class="cell-sub model">RTX PRO 4000 Blackwell</div>
+      <div class="cell-sub">452M / 24G &middot; <b>36 C</b> &middot; 3.9 W</div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">gpu 1</div>
+      <div class="cell-value">0% <span class="spark spark-gpu" data-spark="gpu1" aria-hidden="true"></span></div>
+      <div class="cell-sub model">RTX PRO 6000 Blackwell Max-Q</div>
+      <div class="cell-sub">64M / 98G &middot; <b>37 C</b> &middot; 14.1 W</div>
+    </div>
+    <div class="cell">
+      <div class="cell-label">gpu 2</div>
+      <div class="cell-value">1% <span class="spark spark-gpu" data-spark="gpu2" aria-hidden="true"></span></div>
+      <div class="cell-sub model">RTX PRO 5000 72GB</div>
+      <div class="cell-sub">853M / 73G &middot; <b>37 C</b> &middot; 21.9 W</div>
+    </div>
+  </section>
+
+  <div class="trend">
+    <section class="panel cpu-hist" aria-labelledby="cpu-title">
+      <header class="p-head">
+        <h2 class="p-title" id="cpu-title">cpu</h2>
+        <span class="p-sub">history &middot; 120 samples</span>
+        <span class="p-right"><span class="muted">load</span> 96 95 94 <span class="muted">3.99 GHz</span></span>
+      </header>
+      <div class="hist-body">
+        <div class="rule r1"><span>12.5%</span></div>
+        <div class="axis-zero"></div>
+        <div class="chart-host history" id="history" role="img" aria-label="CPU history, 4.8 percent now"></div>
+      </div>
+    </section>
+
+    <section class="panel net-hist" aria-labelledby="net-title">
+      <header class="p-head">
+        <h2 class="p-title" id="net-title">net</h2>
+        <span class="p-sub">eth0</span>
+        <span class="p-right"><span class="muted">total</span> 391 GiB</span>
+      </header>
+      <div class="net-body">
+        <div class="net-row">
+          <div class="net-meta"><span class="tag">down</span><span class="down">&#9660;</span><b>1.07 MiB/s</b><span class="muted">8.56 Mibps</span><span class="more">top 62.1 Mibps</span></div>
+          <div class="net-graph net-down" id="net-down" role="img" aria-label="Download history"></div>
+        </div>
+        <div class="net-row">
+          <div class="net-meta"><span class="tag">up</span><span class="up">&#9650;</span><b>940 KiB/s</b><span class="muted">7.34 Mibps</span><span class="more">top 10.0 Mibps</span></div>
+          <div class="net-graph net-up" id="net-up" role="img" aria-label="Upload history"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel heat" aria-labelledby="heat-title">
+    <div class="heat-head">
+      <h2 class="p-title" id="heat-title">cores</h2>
+      <span class="p-sub" id="heat-summary">64 cores &middot; mean 4.8% &middot; C0 - C63</span>
+      <span class="scale"><i class="s1"></i><i class="s2"></i><i class="s3"></i>2-8%</span>
+    </div>
+    <div class="heat-cells" id="matrix" role="img" aria-label="64 core utilisation values, 2 to 8 percent"></div>
+  </section>
+
+  <section class="panel proc" aria-labelledby="proc-title">
+    <header class="proc-head">
+      <h2 class="p-title" id="proc-title">proc</h2>
+      <span class="proc-count"><b id="proc-shown">22</b>/249</span>
+      <input class="filter" id="filter" type="text" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false">
+      <span class="proc-controls"><span>per-core</span><span>reverse</span><span>tree</span><span>cpu direct</span></span>
+    </header>
+    <div class="proc-table-wrap">
+      <table class="proc-table">
+        <caption class="sr-only">Processes sorted by CPU descending</caption>
+        <colgroup>
+          <col style="width:68px"><col style="width:142px"><col><col style="width:56px"><col style="width:50px"><col style="width:66px"><col style="width:72px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num mono" scope="col">PID</th>
+            <th scope="col">Program</th>
+            <th scope="col">Command</th>
+            <th class="num" scope="col">Threads</th>
+            <th scope="col">User</th>
+            <th class="num mono" scope="col">MemB</th>
+            <th class="num mono" scope="col">CPU% &#8595;</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body"></tbody>
+      </table>
+    </div>
+    <div class="proc-foot"><span>read-only</span><span>sort cpu desc</span><span class="right" id="proc-foot-count">22 of 22 rows</span></div>
+  </section>
+</main>
+
+<div class="config" id="config" role="dialog" aria-label="Config" hidden>
+  <div class="cfg-row">
+    <span class="cfg-label">theme</span>
+    <div class="cfg-opts" data-group="theme">
+      <button class="opt on" type="button" data-value="default">default</button>
+      <button class="opt" type="button" data-value="gruvbox">gruvbox</button>
+      <button class="opt" type="button" data-value="solarized">solarized</button>
+      <button class="opt" type="button" data-value="everforest">everforest</button>
+      <button class="opt" type="button" data-value="flexoki">flexoki</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">mode</span>
+    <div class="cfg-opts" data-group="mode">
+      <button class="opt on" type="button" data-value="dark">dark</button>
+      <button class="opt" type="button" data-value="light">light</button>
+    </div>
+  </div>
+  <div class="cfg-row">
+    <span class="cfg-label">pause</span>
+    <div class="cfg-opts">
+      <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+
+  function series(n, fn) {
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(fn(i));
+    return out;
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  var cores = (function () {
+    var base = [5, 4, 6, 3, 7, 5, 4, 6, 3, 5, 8, 4, 6, 2, 7, 5];
+    var tail = [4, 5, 3, 6, 4, 5, 7, 3, 4, 4, 6, 2, 4, 5, 3, 3];
+    return base.concat(base, base, tail);
+  })();
+
+  var cpuData = series(120, function (i) {
+    var v = 5.2 + 1.3 * Math.sin(i * 0.31) + 0.9 * Math.sin(i * 0.87 + 1.2) + 0.5 * Math.sin(i * 2.1 + 0.6);
+    v = clamp(v, 3, 8);
+    var d = (i - 100) / 2.6;
+    return clamp(v + 16.5 * Math.exp(-d * d), 0, 25);
+  });
+  cpuData[100] = 21.7;
+  cpuData[119] = 4.8;
+
+  var memTotal = series(24, function (i) { return 100 + 0.6 * Math.sin(i * 0.7); });
+  var memUsed = series(24, function (i) { return 8 + 0.5 * Math.sin(i * 0.55 + 0.4); });
+  var memAvail = series(24, function (i) { return 92 + 0.5 * Math.sin(i * 0.5 + 2.1); });
+  var memCached = series(24, function (i) { return 50 + 1.2 * Math.sin(i * 0.42 + 1.1); });
+  var memFree = series(24, function (i) { return 37 + 0.9 * Math.sin(i * 0.61 + 0.2); });
+  [memTotal, memUsed, memAvail, memCached, memFree].forEach(function (s, idx) {
+    s[s.length - 1] = [100, 8, 92, 50, 37][idx];
+  });
+
+  var gpu0 = series(32, function (i) { return 0.02 + 2.1 * Math.exp(-Math.pow((i - 20) / 1.5, 2)); });
+  var gpu1 = series(32, function (i) { return 0.02 + 1.1 * Math.exp(-Math.pow((i - 11) / 1.3, 2)); });
+  var gpu2 = series(32, function (i) {
+    return clamp(0.7 + 0.3 * Math.sin(i * 0.9) + 2.4 * Math.exp(-Math.pow((i - 24) / 1.6, 2)), 0, 4);
+  });
+  gpu0[gpu0.length - 1] = 0;
+  gpu1[gpu1.length - 1] = 0;
+  gpu2[gpu2.length - 1] = 1;
+
+  var netDown = series(64, function (i) {
+    var v = 0.10 + 0.20 * Math.abs(Math.sin(i * 0.47)) + 0.10 * Math.abs(Math.sin(i * 1.63 + 0.9));
+    [7, 21, 36, 48].forEach(function (b) { v += 1.35 * Math.exp(-Math.pow((i - b) / 1.7, 2)); });
+    return clamp(v, 0, 2.1);
+  });
+  netDown[63] = 1.07;
+  var netUp = series(64, function (i) {
+    var v = 0.08 + 0.16 * Math.abs(Math.sin(i * 0.41 + 1)) + 0.08 * Math.abs(Math.sin(i * 1.9));
+    [10, 26, 40, 55].forEach(function (b) { v += 0.9 * Math.exp(-Math.pow((i - b) / 1.6, 2)); });
+    return clamp(v, 0, 1.5);
+  });
+  netUp[63] = 0.918;
+
+  /* PCHIP: monotone cubic Hermite, Fritsch-Carlson slopes */
+  function slopes(v) {
+    var n = v.length;
+    if (n === 2) return [v[1] - v[0], v[1] - v[0]];
+    var d = [];
+    for (var i = 0; i < n - 1; i++) d.push(v[i + 1] - v[i]);
+    var m = new Array(n);
+    m[0] = (3 * d[0] - d[1]) / 2;
+    m[n - 1] = (3 * d[n - 2] - d[n - 3]) / 2;
+    for (i = 1; i < n - 1; i++) {
+      if (d[i - 1] * d[i] <= 0) { m[i] = 0; continue; }
+      m[i] = 2 * d[i - 1] * d[i] / (d[i - 1] + d[i]);
+    }
+    if (m[0] * d[0] <= 0) m[0] = 0;
+    else if (d[0] * d[1] < 0 && Math.abs(m[0]) > 3 * Math.abs(d[0])) m[0] = 3 * d[0];
+    if (m[n - 1] * d[n - 2] <= 0) m[n - 1] = 0;
+    else if (d[n - 2] * d[n - 3] < 0 && Math.abs(m[n - 1]) > 3 * Math.abs(d[n - 2])) m[n - 1] = 3 * d[n - 2];
+    return m;
+  }
+
+  function round2(v) { return Math.round(v * 100) / 100; }
+
+  function pchipPath(values, w, h, vMin, vMax) {
+    var n = values.length;
+    var m = slopes(values);
+    var dx = w / (n - 1);
+    var k = (h - 2) / (vMax - vMin);
+    function x(i) { return i * dx; }
+    function y(v) { return h - 1 - clamp((v - vMin) / (vMax - vMin), 0, 1) * (h - 2); }
+    var line = "M" + round2(x(0)) + " " + round2(y(values[0]));
+    for (var i = 0; i < n - 1; i++) {
+      var c1x = x(i) + dx / 3;
+      var c1y = y(values[i]) - m[i] * k / 3;
+      var c2x = x(i + 1) - dx / 3;
+      var c2y = y(values[i + 1]) + m[i + 1] * k / 3;
+      var end = round2(x(i + 1)) + " " + round2(y(values[i + 1]));
+      line += "C" + round2(c1x) + " " + round2(c1y) + " " + round2(c2x) + " " + round2(c2y) + " " + end;
+    }
+    return { line: line, area: line + "L" + round2(w) + " " + round2(h) + "L0 " + round2(h) + "Z" };
+  }
+
+  function svgMarkup(d, w, h) {
+    return '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="area" d="' + d.area + '"/>' +
+      '<path class="line" d="' + d.line + '"/></svg>';
+  }
+
+  var CHARTS = {
+    "history": { data: cpuData, min: 0, max: 25 },
+    "net-down": { data: netDown, min: 0, max: 2.2 },
+    "net-up": { data: netUp, min: 0, max: 1.6 }
+  };
+  var SPARKS = {
+    cpuTotal: { data: cpuData.slice(-40), min: 0, max: 25, vb: [52, 18] },
+    memUsed: { data: memUsed, min: 0, max: 10, vb: [52, 18] },
+    netDownSpark: { data: netDown.slice(-32), min: 0, max: 2.2, vb: [52, 18] },
+    gpu0: { data: gpu0, min: 0, max: 4, vb: [52, 18] },
+    gpu1: { data: gpu1, min: 0, max: 4, vb: [52, 18] },
+    gpu2: { data: gpu2, min: 0, max: 4, vb: [52, 18] }
+  };
+
+  function drawChart(id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var cfg = CHARTS[id];
+    var w = host.clientWidth;
+    var h = host.clientHeight;
+    if (!w || !h) return;
+    var d = pchipPath(cfg.data, w, h, cfg.min, cfg.max);
+    var old = host.querySelector("svg.chart");
+    if (old) old.remove();
+    host.insertAdjacentHTML("afterbegin", svgMarkup(d, w, h));
+  }
+
+  function drawSpark(el) {
+    var cfg = SPARKS[el.getAttribute("data-spark")];
+    if (!cfg) return;
+    var d = pchipPath(cfg.data, cfg.vb[0], cfg.vb[1], cfg.min, cfg.max);
+    el.innerHTML = svgMarkup(d, cfg.vb[0], cfg.vb[1]);
+  }
+
+  function drawAll() {
+    Object.keys(CHARTS).forEach(drawChart);
+  }
+
+  /* core heatstrip */
+  (function renderHeat() {
+    var host = document.getElementById("matrix");
+    var cells = [];
+    for (var i = 0; i < 64; i++) {
+      var p = cores[i];
+      var alpha = Math.round(8 + p * 3.6);
+      var cls = p >= 33 ? " hot" : "";
+      cells.push('<span class="hcell' + cls + '" title="C' + i + " " + p + '%" style="--a:' + alpha + '%">' + p + "</span>");
+    }
+    host.innerHTML = cells.join("");
+  })();
+
+  /* process table */
+  var PROCS = [
+    [1270400, "hf", "/opt/conda/bin/python", 39, "lab", "2.0G", 1.7],
+    [1591033, "chrome-headless", "/galaxalab/ms-playw", 42, "lab", "301M", 1.4],
+    [1106598, "claude", "claude --dangerousl", 36, "lab", "751M", 1.0],
+    [1581557, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "113M", 0.4],
+    [1581204, "jupyter-lab", "/opt/conda/bin/pyth", 81, "lab", "250M", 0.4],
+    [1581587, "chrome-headless", "/galaxalab/ms-playw", 27, "lab", "71M", 0.3],
+    [1581524, "node-MainThread", "/opt/conda/bin/node", 11, "lab", "314M", 0.1],
+    [1581589, "chrome-headless", "/galaxalab/ms-playw", 11, "lab", "103M", 0.1],
+    [3911896, "claude", "claude --dangerousl", 52, "lab", "502M", 0.1],
+    [1065272, "btop-web", ".target/debug/btop-web", 65, "lab", "8.2M", 0.0],
+    [1, "tini", "tini -- /opt/conda/", 1, "lab", "1.1M", 0.0],
+    [459, "jupyterhub-sing", "/opt/conda/bin/python", 49, "lab", "401M", 0.0],
+    [152, "tensorboard", "/opt/conda/bin/python", 82, "lab", "39M", 0.0],
+    [158, "pulseaudio", "pulseaudio --daemon", 3, "lab", "5.8M", 0.0],
+    [276, "server", "/opt/conda/lib/python", 131, "lab", "6.7M", 0.0],
+    [457, "python3", "/opt/conda/bin/python", 1, "lab", "8.8M", 0.0],
+    [669, "conda", "/opt/conda/bin/python", 1, "lab", "38M", 0.0],
+    [690, "bash", "/usr/bin/bash /tmp/", 1, "lab", "3.2M", 0.0],
+    [715, "mlflow", "/opt/conda/bin/python", 69, "lab", "122M", 0.0],
+    [870, "python", "/opt/conda/bin/python", 2, "lab", "22M", 0.0],
+    [871, "python", "/opt/conda/bin/python", 76, "lab", "151M", 0.0],
+    [879, "python", "/opt/conda/bin/python", 68, "lab", "151M", 0.0]
+  ];
+
+  (function renderProcs() {
+    var body = document.getElementById("proc-body");
+    body.innerHTML = PROCS.map(function (p) {
+      var cpu = p[6];
+      var cls = cpu >= 66 ? "cpu-crit" : cpu >= 33 ? "cpu-warn" : cpu > 0 ? "cpu-ok" : "cpu-zero";
+      return '<tr><td class="num mono">' + p[0] + '</td><td class="name">' + p[1] + '</td><td class="mono">' + p[2] +
+        '</td><td class="num mono">' + p[3] + '</td><td>' + p[4] + '</td><td class="num mono">' + p[5] +
+        '</td><td class="num mono ' + cls + '">' + cpu.toFixed(1) + "</td></tr>";
+    }).join("");
+  })();
+
+  var filter = document.getElementById("filter");
+  var procShown = document.getElementById("proc-shown");
+  var procFoot = document.getElementById("proc-foot-count");
+  filter.addEventListener("input", function () {
+    var q = filter.value.trim().toLowerCase();
+    var shown = 0;
+    Array.prototype.forEach.call(document.getElementById("proc-body").rows, function (tr) {
+      var hide = q.length > 0 && tr.textContent.toLowerCase().indexOf(q) === -1;
+      tr.hidden = hide;
+      if (!hide) shown++;
+    });
+    procShown.textContent = String(shown);
+    procFoot.textContent = shown + " of " + PROCS.length + " rows";
+  });
+  filter.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      filter.value = "";
+      filter.dispatchEvent(new Event("input"));
+    }
+  });
+
+  /* config popover */
+  var config = document.getElementById("config");
+  var toggles = Array.prototype.slice.call(document.querySelectorAll(".config-toggle"));
+
+  function setExpanded(open) {
+    toggles.forEach(function (btn) { btn.setAttribute("aria-expanded", String(open)); });
+  }
+  function positionConfig(btn) {
+    var r = btn.getBoundingClientRect();
+    config.style.visibility = "hidden";
+    config.hidden = false;
+    var left = Math.max(6, Math.min(window.innerWidth - config.offsetWidth - 6, r.left));
+    config.style.left = left + "px";
+    config.style.top = (r.bottom + 4) + "px";
+    config.style.visibility = "";
+  }
+  toggles.forEach(function (btn) {
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (config.hidden) positionConfig(btn);
+      else config.hidden = true;
+      setExpanded(!config.hidden);
+    });
+  });
+  document.addEventListener("click", function (ev) {
+    if (!config.hidden && !config.contains(ev.target)) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !config.hidden) {
+      config.hidden = true;
+      setExpanded(false);
+    }
+  });
+
+  var state = { theme: "default", mode: "dark", paused: false };
+
+  Array.prototype.forEach.call(config.querySelectorAll("[data-group]"), function (group) {
+    var name = group.getAttribute("data-group");
+    group.addEventListener("click", function (ev) {
+      var btn = ev.target.closest(".opt");
+      if (!btn) return;
+      var value = btn.getAttribute("data-value");
+      state[name] = value;
+      root.setAttribute("data-" + name, value);
+      Array.prototype.forEach.call(group.querySelectorAll(".opt"), function (b) {
+        b.classList.toggle("on", b === btn);
+      });
+    });
+  });
+
+  var pauseBtn = document.getElementById("pause-btn");
+  pauseBtn.addEventListener("click", function () {
+    state.paused = !state.paused;
+    pauseBtn.classList.toggle("on", state.paused);
+    pauseBtn.setAttribute("aria-pressed", String(state.paused));
+    pauseBtn.textContent = state.paused ? "resume" : "pause";
+    Array.prototype.forEach.call(document.querySelectorAll(".chip-live"), function (chip) {
+      chip.classList.toggle("paused", state.paused);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".live-word"), function (word) {
+      word.textContent = state.paused ? "paused" : "live";
+    });
+  });
+
+  /* first paint and resize */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-spark]"), drawSpark);
+  drawAll();
+
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) { drawChart(entry.target.id); });
+    });
+    Object.keys(CHARTS).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) ro.observe(el);
+    });
+  }
+  window.addEventListener("resize", drawAll);
+})();
+</script>
+</body>
+</html>
+<!-- marks:settings trust=c674764a15a9b0ca770a0388ace2ed4eb33fba2f85c750fec962d12781c6a511 -->

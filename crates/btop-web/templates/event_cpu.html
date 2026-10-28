@@ -1,0 +1,4 @@
+<div id="p-cpu-stat" hx-swap-oob="innerHTML">{% include "partials/cpu_stat.html" %}</div>
+<div id="p-cpu-gauge" hx-swap-oob="innerHTML">{% include "partials/cpu_gauge.html" %}</div>
+<div id="p-cores" hx-swap-oob="innerHTML">{% include "partials/cores.html" %}</div>
+<span id="update-interval" hx-swap-oob="true" class="u-meta u-int" data-update-ms="{{ snapshot.update_ms }}" title="sampling interval">{{ snapshot.update_ms }} ms</span>
