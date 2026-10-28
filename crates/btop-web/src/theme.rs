@@ -10,8 +10,8 @@
 
 use std::collections::BTreeMap;
 
-use palette::color_difference::Wcag21RelativeContrast;
-use palette::{FromColor, Hsl, Mix, Srgb};
+use palette::color_difference::{Ciede2000, Wcag21RelativeContrast};
+use palette::{FromColor, Hsl, Lab, Mix, Srgb};
 use rust_embed::RustEmbed;
 
 type Rgb = [u8; 3];
@@ -290,11 +290,29 @@ impl Palette {
         } else {
             [0, 0, 0]
         };
+        let muted = dim_towards(text, surface, TEXT_CONTRAST);
+        let mem_used = ensure_contrast(self.color("used_end"), surface, UI_CONTRAST);
+        let mem_free = ensure_contrast(self.color("free_end"), surface, UI_CONTRAST);
+        // The Memory bar's cache segment sits beside used, other (muted) and
+        // free (DEF-VIEW-50-MEM-TERMS). Some btop themes give cached_end the
+        // free colour (Everforest, Gruvbox light), so cache takes the cached
+        // stop farthest by CIEDE2000 from those three.
+        let nearest = |rgb: Rgb| {
+            [mem_used, muted, mem_free]
+                .map(|other| lab(rgb).difference(lab(other)))
+                .into_iter()
+                .fold(f32::MAX, f32::min)
+        };
+        let mem_cached = ["cached_end", "cached_mid", "cached_start"]
+            .map(|key| ensure_contrast(self.color(key), surface, UI_CONTRAST))
+            .into_iter()
+            .max_by(|one, other| nearest(*one).total_cmp(&nearest(*other)))
+            .unwrap_or(mem_free);
         vec![
             ("surface", surface),
             ("text", text),
             ("text-strong", text_strong),
-            ("muted", dim_towards(text, surface, TEXT_CONTRAST)),
+            ("muted", muted),
             ("accent", accent),
             ("selection-bg", selection_bg),
             (
@@ -355,14 +373,9 @@ impl Palette {
                 "chart-cpu",
                 ensure_contrast(self.color("cpu_start"), surface, UI_CONTRAST),
             ),
-            (
-                "chart-mem-used",
-                ensure_contrast(self.color("used_end"), surface, UI_CONTRAST),
-            ),
-            (
-                "chart-mem-free",
-                ensure_contrast(self.color("free_end"), surface, UI_CONTRAST),
-            ),
+            ("chart-mem-used", mem_used),
+            ("chart-mem-free", mem_free),
+            ("chart-mem-cached", mem_cached),
             (
                 "chart-net-down",
                 ensure_contrast(self.color("download_end"), surface, UI_CONTRAST),
@@ -675,6 +688,10 @@ fn blend(from: Rgb, to: Rgb, weight: f64) -> Rgb {
 /// WCAG 2.1 contrast between two sRGB colours from `palette`'s
 /// `Wcag21RelativeContrast`; the crate's 0.7.7 name for the ratio is
 /// `relative_contrast`, computed from `relative_luminance`.
+fn lab([red, green, blue]: Rgb) -> Lab {
+    Lab::from_color(Srgb::new(red, green, blue).into_format::<f32>())
+}
+
 fn contrast_ratio(one: Rgb, other: Rgb) -> f64 {
     fn srgb([red, green, blue]: Rgb) -> Srgb<f64> {
         Srgb::new(red, green, blue).into_format()
@@ -740,6 +757,35 @@ mod tests {
         assert!(dark.color("main_bg").iter().all(|channel| *channel < 40));
     }
 
+    /// ACC-THEME-94-CYBER-CYAN: the three designed pairs define every theme
+    /// key in both modes, so no CSS custom property falls back to Default.
+    #[test]
+    fn designed_themes_define_every_key_and_mode() {
+        let designed = ["synthwave", "terracotta", "ultraviolet"];
+        let mut found = 0;
+        for path in ThemeAsset::iter() {
+            if !designed.iter().any(|id| path.starts_with(id)) {
+                continue;
+            }
+            found += 1;
+            let file = ThemeAsset::get(&path).expect("embedded theme");
+            let palette =
+                Palette::parse(&String::from_utf8_lossy(&file.data)).expect("valid theme file");
+            assert_eq!(
+                palette.colors.len(),
+                THEME_KEYS.len(),
+                "{path} defines {} of {} keys",
+                palette.colors.len(),
+                THEME_KEYS.len()
+            );
+        }
+        assert_eq!(
+            found,
+            designed.len() * 2,
+            "a designed pair is missing a mode"
+        );
+    }
+
     /// ACC-THEME-65-STEEL-DEFAULT: Default dark sits on Steel Dark, Default
     /// light on the JupyterLab light page.
     #[test]
@@ -796,7 +842,7 @@ mod tests {
     /// The Default light palette is the Steel dark with every lightness
     /// inverted, under the `STEEL_LIGHT` overrides from the JupyterLab light
     /// and Steel Light themes (ACC-THEME-65-STEEL-DEFAULT). Every token is pinned so a conversion swap cannot move one channel
-    /// (DEF-LIB-19-HSL-CONVERT); the semantic tokens are the last thirty.
+    /// (DEF-LIB-19-HSL-CONVERT); the semantic tokens are the last thirty-one.
     /// The status tokens use the 4.5:1 text floor (DEF-THEME-20-LIGHT-GREEN),
     /// and chip-fg, zebra, row-hover and the net text variants carry the
     /// tinted-layer fix (DEF-THEME-21-TINT-CONTRAST).
@@ -878,6 +924,7 @@ mod tests {
             "--chart-cpu:#358859;",
             "--chart-mem-used:#9c1c33;",
             "--chart-mem-free:#4f6812;",
+            "--chart-mem-cached:#2190b8;",
             "--chart-net-down:#294f79;",
             "--chart-net-up:#875726;",
             "--chart-proc:#867b23;",

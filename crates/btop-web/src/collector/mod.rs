@@ -63,13 +63,20 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// The time the charts span: the 240 s window, or `capacity` samples of a
+    /// longer interval. The page reads it with the interval to scroll a plot
+    /// between readouts (ACC-GRAPH-98-ANIM-CLOCK).
+    pub fn window_ms(&self) -> u64 {
+        crate::chart::capacity(self.update_ms) as u64 * self.update_ms
+    }
+
     /// The shared time axis under the network plots: the window, then each
     /// quarter of it, in seconds, oldest first. Empty before the first sample.
     pub fn axis_labels(&self) -> Vec<String> {
         if self.update_ms == 0 {
             return Vec::new();
         }
-        let window_ms = crate::chart::capacity(self.update_ms) as u64 * self.update_ms;
+        let window_ms = self.window_ms();
         (1..=4)
             .rev()
             .map(|quarter| format!("{} s", window_ms * quarter / 4 / 1000))
@@ -222,7 +229,13 @@ pub struct MemSnapshot {
     pub ram_used: Option<u64>,
     pub ram_free: Option<u64>,
     pub ram_available: Option<u64>,
-    pub ram_cached: Option<u64>,
+    /// The Memory bar's cache segment (DEF-VIEW-50-MEM-TERMS): MemAvailable -
+    /// MemFree on a host, the cgroup's reclaimable file and slab memory in a
+    /// container.
+    pub ram_cache: Option<u64>,
+    /// The memory used outside this container; `None` on a host, where the
+    /// bar has no such segment.
+    pub ram_other: Option<u64>,
     pub ram_percent: Option<f64>,
     /// The memory gauge arc's value: the used history's 1 s EMA, `None`
     /// whenever this tick's raw value is unavailable (ACC-GRAPH-47).
@@ -231,8 +244,8 @@ pub struct MemSnapshot {
     pub ram_free_percent: Option<f64>,
     /// btop `mem.percent["available"]`.
     pub ram_available_percent: Option<f64>,
-    /// btop `mem.percent["cached"]`.
-    pub ram_cached_percent: Option<f64>,
+    pub ram_cache_percent: Option<f64>,
+    pub ram_other_percent: Option<f64>,
     pub swap_total: Option<u64>,
     pub swap_used: Option<u64>,
     pub swap_free: Option<u64>,
@@ -267,15 +280,77 @@ impl MemSnapshot {
     }
 
     pub fn ram_free_label(&self) -> String {
-        bytes(self.ram_free)
+        bytes(self.ram_legend()[2])
     }
 
+    /// free + cache as the legend shows them, so the line adds up on screen;
+    /// in bytes available is free + cache in both modes.
     pub fn ram_available_label(&self) -> String {
-        bytes(self.ram_available)
+        match self.ram_legend() {
+            [Some(cache), _, Some(free)] => human((shown(cache).0 + shown(free).0).ceil() as u64),
+            _ => bytes(self.ram_available),
+        }
     }
 
-    pub fn ram_cached_label(&self) -> String {
-        bytes(self.ram_cached)
+    pub fn ram_cache_label(&self) -> String {
+        bytes(self.ram_legend()[0])
+    }
+
+    pub fn ram_other_label(&self) -> String {
+        bytes(self.ram_legend()[1])
+    }
+
+    /// The cache, other and free values the legend prints. btop's strings
+    /// truncate to their last digit, so four parts can print up to 2 GiB less
+    /// than the total. The bytes the truncations drop go back one step at a
+    /// time to the part that dropped the most (largest remainder) while half
+    /// that part's step is left, so the printed parts add up to the total
+    /// within one step and each part stays within one step of its value
+    /// (DEF-VIEW-50-MEM-TERMS). used keeps btop's string, as the gauge and the
+    /// Memory tile print it. Own code: apportionment crates split one integer
+    /// by weights, and these parts have floating_humanizer's mixed steps.
+    fn ram_legend(&self) -> [Option<u64>; 3] {
+        let parts = [self.ram_cache, self.ram_other, self.ram_free];
+        let (Some(total), Some(used), Some(_), Some(_)) =
+            (self.ram_total, self.ram_used, self.ram_cache, self.ram_free)
+        else {
+            return parts;
+        };
+        let mut left = total as f64 - shown(used).0;
+        let mut order = Vec::new();
+        for (index, part) in parts.iter().enumerate() {
+            if let Some(value) = *part {
+                let (printed, step) = shown(value);
+                left -= printed;
+                order.push((value as f64 - printed, printed + step, step, index));
+            }
+        }
+        order.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let mut legend = parts;
+        for (_, up, step, index) in order {
+            if left >= step / 2.0 {
+                left -= step;
+                legend[index] = Some(up.ceil() as u64);
+            }
+        }
+        legend
+    }
+
+    /// The Memory bar's segments in order with their unrounded width in
+    /// percent of the total; empty when a part is unknown.
+    pub fn ram_segments(&self) -> Vec<(&'static str, f64)> {
+        let (Some(total), Some(used), Some(cache), Some(free)) =
+            (self.ram_total, self.ram_used, self.ram_cache, self.ram_free)
+        else {
+            return Vec::new();
+        };
+        let share = |value: u64| value as f64 * 100.0 / total as f64;
+        let mut segments = vec![("used", share(used)), ("cache", share(cache))];
+        if let Some(other) = self.ram_other {
+            segments.push(("other", share(other)));
+        }
+        segments.push(("free", share(free)));
+        segments
     }
 
     pub fn swap_label(&self) -> String {
@@ -562,8 +637,12 @@ pub struct GpuSnapshot {
     /// btop `shared_gpu_percent["gpu-pwr-total"]`.
     pub power_percent: Option<f64>,
     /// Distinct pids using any GPU, a btop-web addition (ACC-VIEW-53-PROC-TILE);
-    /// [`gpu`] records where it is unavailable.
+    /// in a container, its processes holding a GPU node (DEF-VIEW-48-GPU-FACT).
+    /// [`gpu`] records the sources and where it is unavailable.
     pub process_count: Option<usize>,
+    /// Container processes whose fds could not be read; above 0 the count is
+    /// a lower bound.
+    pub process_unreadable: usize,
 }
 
 impl GpuSnapshot {
@@ -620,6 +699,16 @@ impl GpuDevice {
     pub fn vram_bar(&self) -> Option<u8> {
         match (self.vram_used, self.vram_total) {
             (Some(used), Some(total)) if total > 0 => bar(Some(used as f64 * 100.0 / total as f64)),
+            _ => None,
+        }
+    }
+
+    /// btop's pwr meter: power usage of the power management limit, the same
+    /// ratio as `power_percent`; `None` when either reading or the limit is
+    /// missing, so the meter draws its unknown state.
+    pub fn power_bar(&self) -> Option<u8> {
+        match (self.power_w, self.power_max_w) {
+            (Some(watts), Some(max)) if max > 0.0 => bar(Some(watts * 100.0 / max)),
             _ => None,
         }
     }
@@ -852,10 +941,22 @@ fn human_short(value: u64) -> String {
     human_with(value, true)
 }
 
+const UNITS: [&str; 11] = [
+    "Byte", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "BiB", "GEB",
+];
+
+/// A [`human`] string's value and the step of its last digit, in bytes:
+/// `13.1 GiB` is 13.1 GiB with a 0.1 GiB step.
+fn shown(value: u64) -> (f64, f64) {
+    let label = human(value);
+    let (number, unit) = label.split_once(' ').unwrap_or_default();
+    let scale = 1024_f64.powi(UNITS.iter().position(|name| *name == unit).unwrap_or(0) as i32);
+    let decimals = number.split_once('.').map_or(0, |(_, digits)| digits.len());
+    let step = scale / 10_f64.powi(decimals as i32);
+    (number.parse::<f64>().unwrap_or(0.0) * scale, step)
+}
+
 fn human_with(value: u64, shorten: bool) -> String {
-    const UNITS: [&str; 11] = [
-        "Byte", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "BiB", "GEB",
-    ];
     let mut value = u128::from(value) * 100;
     let mut start = 0;
     let mut out = String::new();
@@ -1116,6 +1217,62 @@ mod tests {
         assert_eq!(device(None, Some(45.0)).temperature_label(), "45°C");
         assert_eq!(GpuDevice::default().power_label(), "unavailable");
         assert_eq!(GpuDevice::default().temperature_label(), "unavailable");
+    }
+
+    /// DEF-VIEW-50-MEM-TERMS: btop's truncated strings alone printed
+    /// 13.1 + 37.4 + 225 + 226 GiB of a 503.2 GiB total.
+    #[test]
+    fn memory_legend_adds_up_to_the_total_within_one_step() {
+        let total: u64 = 540_312_911_872;
+        let mut short_by_more_than_a_step = 0;
+        for i in 0..400_u64 {
+            let used = 14_000_000_000 + i * 7_919_113;
+            let cache = 40_000_000_000 + i * 104_729_011;
+            let other = (i % 2 == 0).then(|| 240_000_000_000 + i * 15_485_863);
+            let free = total - used - cache - other.unwrap_or(0);
+            let mem = MemSnapshot {
+                ram_total: Some(total),
+                ram_used: Some(used),
+                ram_cache: Some(cache),
+                ram_other: other,
+                ram_free: Some(free),
+                ram_available: Some(free + cache),
+                ..MemSnapshot::default()
+            };
+            let truncated: f64 = [Some(used), Some(cache), other, Some(free)]
+                .into_iter()
+                .flatten()
+                .map(|value| shown(value).0)
+                .sum();
+            if total as f64 - truncated > (1u64 << 30) as f64 {
+                short_by_more_than_a_step += 1;
+            }
+            let legend = mem.ram_legend();
+            let mut printed = shown(used).0;
+            let mut largest_step = shown(used).1;
+            for (part, value) in legend.iter().zip([Some(cache), other, Some(free)]) {
+                let (Some(part), Some(value)) = (*part, value) else {
+                    continue;
+                };
+                let (part_printed, step) = shown(part);
+                assert!(
+                    (part_printed - value as f64).abs() < step,
+                    "{i}: {part} vs {value}"
+                );
+                printed += part_printed;
+                largest_step = largest_step.max(step);
+            }
+            assert!(
+                (total as f64 - printed).abs() < largest_step,
+                "{i}: {printed}"
+            );
+            assert_eq!(mem.ram_free_label(), human(legend[2].unwrap()));
+            let free_cache = shown(legend[0].unwrap()).0 + shown(legend[2].unwrap()).0;
+            let (available, step) = shown(free_cache.ceil() as u64);
+            assert_eq!(mem.ram_available_label(), human(free_cache.ceil() as u64));
+            assert!(available <= free_cache && free_cache < available + step);
+        }
+        assert!(short_by_more_than_a_step > 0);
     }
 
     #[test]

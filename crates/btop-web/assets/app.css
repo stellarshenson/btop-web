@@ -25,9 +25,9 @@
    An element that appears once in its panel carries data-p and data-field;
    elements repeated per core, process, GPU or direction drop by class, so the
    SSE fragments carry no repeated markers. The tier chip in the top bar
-   names the tiers on screen. The GPU legend also steps by its own height
-   (container queries): type and gaps, then temperature · power, then one
-   line per entry. */
+   names the tiers on screen. Each GPU legend entry also steps by its lane's
+   height (container queries): type and gaps, then temperature · power, then
+   one line per entry. */
 @property --row-h {
   /* app.js fitProc() reads --row-h as a px number; registered, the clamp() computes to px */
   syntax: "<length>";
@@ -53,7 +53,9 @@
   --fs-9: clamp(8px, calc(7.519px + var(--e) * 0.001202), 9px);
   --lg-v: clamp(12px, calc(10.788px + var(--e) * 0.002404), 14px);
   --legend-w: clamp(112px, calc(43.635px + var(--e) * 0.086538), 168px);
-  --gpu-legend-w: clamp(188px, calc(2.712px + var(--e) * 0.153846), 224px);
+  /* the GPU mini bars reserve 48 px inside the legend, so the legend keeps the
+     width the value line needs at every tier (ACC-VIEW-79-GPU-BARS) */
+  --gpu-legend-w: 224px;
   --filter-w: clamp(92px, calc(63.019px + var(--e) * 0.048077), 132px);
   --lh-name: calc(var(--fs-10) * 1.25);
   --lh-val: calc(var(--lg-v) * 1.1);
@@ -66,7 +68,8 @@
      gives up rows. Band 2 holds the network legend (2 x name, value, 3 meta
      lines) and the CPU facts (4 x label and value, the load caption);
      band 3 holds 11 core rows (64 cores) whose 8 px text needs a 9.3 px line
-     box, and the GPU legend, which steps down by its own container queries */
+     box, and the GPU lanes, which step their legend down by container
+     queries and reserve 14 px each below that (16px per lane with its gap) */
   --band-min-1: calc(var(--head-h) + var(--tile-h) + var(--foot-h) + 22px);
   --band-min-2: max(calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 3 * var(--lh-meta) + 4px) + 12px),
                     calc(var(--head-h) + 41px + 4 * (var(--lh-name) + var(--fs-12) * 1.25 + 1px) + var(--lh-meta)));
@@ -81,7 +84,6 @@
   --chart-cpu-warn: var(--cpu-mid);
   --chart-cpu-crit: var(--cpu-end);
   --chart-mem-available: var(--available-end);
-  --chart-mem-cached: var(--cached-end);
   --status-ok: var(--ok);
   --status-warn: var(--warn);
   --status-crit: var(--crit);
@@ -114,9 +116,17 @@ body {
 
 /* reserved width (ACC-LAYOUT-74-RESERVED-WIDTH): a live value is as wide as
    its widest form, data-w, set by a hidden zero-height copy, so nothing
-   beside it moves; tabular figures make every digit as wide as 0 */
+   beside it moves; tabular figures make every digit as wide as 0. The value
+   starts at its label's left edge and the reserve falls after the number, so
+   its unit and following words keep one x (ACC-VIEW-87-NUMBER-PLACE) */
 [data-w] {
   display: inline-block;
+  text-align: left;
+}
+
+/* the memory legend's percent cells and its available value are a stacked
+   column, so they keep one right edge (ACC-VIEW-87-NUMBER-PLACE) */
+.mem-rows [data-w] {
   text-align: right;
 }
 
@@ -178,6 +188,29 @@ select.opt option {
   color: var(--muted);
 }
 
+/* ACC-VIEW-80-STAT-TIPS: one tooltip for every stat. The server writes the
+   text into data-tip; app.js positions this box clear of the hovered stat,
+   every [data-chart] box and the viewport edges. At most 4 short lines,
+   --text on --surface (4.5:1 in every pair and mode). */
+.tip {
+  position: fixed;
+  z-index: 60;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-10);
+  line-height: 1.2;
+  white-space: pre-line;
+  pointer-events: none;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
 /* top bar: app status, CONFIG at its right end (ACC-VIEW-41-TOP-BAR) */
 .utility {
   flex: 0 0 var(--bar-h);
@@ -220,8 +253,11 @@ select.opt option {
 }
 
 .utility-right {
-  flex: 0 0 auto;
-  margin-left: auto;
+  /* fills the bar, so the live chip's auto margin has the free space that
+     absorbs its width as the state word and the sample age change; the
+     clock, tier and CONTAINER chips stay at this group's left edge
+     (DEF-VIEW-55-CHIP-BLANK) */
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -255,10 +291,15 @@ select.opt option {
   background: var(--chip-hue, var(--border));
 }
 
+/* the state chip is as wide as its content and packs READ-ONLY and CONFIG
+   at the bar's right end; its auto margin takes the group's free space, so a
+   state change or an age tick moves no other chip and no reserved blank sits
+   inside it (DEF-VIEW-55-CHIP-BLANK) */
 .chip-live {
   --chip-hue: var(--ok);
   border-color: var(--ok);
   color: var(--chip-fg);
+  margin-left: auto;
 }
 
 .chip-live.paused,
@@ -276,10 +317,6 @@ select.opt option {
 .chip-live.paused .lamp,
 .chip-live.stale .lamp {
   background: var(--warn);
-}
-
-.live-word {
-  text-align: left;
 }
 
 .live-age {
@@ -353,7 +390,10 @@ select.opt option {
 .band[data-band="3"] {
   --share: var(--share-3);
   --bf: var(--bf-3, 1);
-  --band-min: var(--band-min-3);
+  /* 25px: the GPU panel's 2 px border, 9 px body padding and 14 px axis;
+     app.js sets --gpu-lanes to the visible lane count; 18px per lane: a 14px
+     lane and its 4 px gap (DEF-GRAPH-54) */
+  --band-min: max(var(--band-min-3), calc(var(--head-h) + 25px + var(--gpu-lanes, 0) * 18px));
 }
 
 .band[data-band="4"] {
@@ -563,6 +603,16 @@ html[data-off~="proc"] [data-panel="proc"],
     linear-gradient(var(--grid-line), var(--grid-line)) 0 75% / 100% 1px no-repeat;
 }
 
+/* ACC-GRAPH-98-ANIM-CLOCK: between readouts app.js translates a chart's drawn
+   series group left by a fraction of one slot; only the series moves, never
+   the grid under its box, the axis or a label, and the tail the server draws
+   keeps the curve at the right edge. The rule composes with the scale change
+   below, which must stay after this one: both select the same group. */
+.chart .series,
+.chart .gpu-series {
+  transform: translateX(var(--shift, 0px));
+}
+
 /* ACC-GRAPH-67-SMOOTH-SCALE: a scale change scales the series group about the
    plot floor by k0 * q^p, p animated 0 to 1, which shows the ceiling
    from * (to / from)^p; app.js clocks the animation across swaps */
@@ -574,7 +624,7 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .chart .rescale {
   transform-box: view-box;
-  transform: scaleY(calc(var(--k0) * pow(var(--q), var(--p))));
+  transform: translateX(var(--shift, 0px)) scaleY(calc(var(--k0) * pow(var(--q), var(--p))));
 }
 
 @keyframes rescale {
@@ -670,12 +720,6 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .stat-value.crit {
   color: var(--crit);
-}
-
-/* the process total keeps the tile's left edge; its reserved digits fall
-   after it. CPU and memory end at a fixed x, so their unit stays */
-#p-proc-stat .stat-value {
-  text-align: left;
 }
 
 .stat-unit {
@@ -879,14 +923,52 @@ html[data-off~="proc"] [data-panel="proc"],
   white-space: nowrap;
 }
 
-/* gpu load: the network panel's plot and legend, one series per device */
+/* gpu load (DEF-GRAPH-51-GPU-LANES): one lane per device, its own 0-100%
+   plot beside its legend entry, the lanes stacked on one shared time axis */
 #p-gpu .net-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* DEF-GRAPH-54-LANES-MERGED, ACC-GRAPH-78-GPU-LANES: each lane reads as its
+   own graph. Lanes sit 4 px apart and a lane followed by another visible lane
+   carries a 1 px rule at its foot; the rule is painted, not a border, so the
+   short lane at 1024x768 keeps its legend fields. The plot box, and with it
+   the grid, stops 3 px inside the lane, so the vertical grid lines and the
+   0% and 100% strokes never lie on the lane boundary */
+#p-gpu .gpu-lane[data-selected="true"]:has(~ .gpu-lane[data-selected="true"]) {
+  background: linear-gradient(var(--border), var(--border)) 0 100% / 100% 1px no-repeat;
+}
+
+#p-gpu .net-plot {
+  margin: 3px 0;
+}
+
+/* a lane under 1 px per unit leaves less than the half stroke above 100% and
+   below 0%; the stroke paints into the plot margin and the body padding */
+#p-gpu .chart {
+  overflow: visible;
+}
+
+.gpu-lane {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) var(--gpu-legend-w);
-  container: gpu-body / size;
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: 10px;
+  container: gpu-lane / size;
+}
+
+/* the axis spans the plot column only, so each lane's 60 s grid lines fall
+   under its labels */
+#p-gpu .net-body > .xaxis {
+  margin-right: calc(var(--gpu-legend-w) + 10px);
 }
 
 #p-gpu .net-legend {
-  gap: 8px;
+  padding: 0 0 0 10px;
 }
 
 #p-gpu .legend-name {
@@ -901,6 +983,46 @@ html[data-off~="proc"] [data-panel="proc"],
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* GPU mini bars (ACC-VIEW-79-GPU-BARS): LOAD, MEM and PWR in the core meters'
+   track-and-fill style, in a fixed column right of the values. The column is
+   reserved, so a fill never moves a value, and it drops at the one-line legend
+   (drop-p2) and on a lane too short for three rows, before any text value */
+#p-gpu .legend-item {
+  grid-template-columns: 3px minmax(0, 1fr) 48px;
+}
+
+/* ACC-VIEW-82-GPU-TAB: the entry's marker is a tab on the row's left edge,
+   the full height of the entry, in its line colour, not a square */
+#p-gpu .sw {
+  width: 3px;
+  height: auto;
+  margin-top: 0;
+  align-self: stretch;
+}
+
+.gpu-bars {
+  grid-column: 3;
+  grid-row: 1 / span 3;
+  align-self: center;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 1px 3px;
+}
+
+.gbl {
+  font-style: normal;
+  font-size: var(--fs-9);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gpu-bars .meter {
+  height: 3px;
 }
 
 .lg-model {
@@ -1037,19 +1159,17 @@ html[data-off~="proc"] [data-panel="proc"],
   dominant-baseline: central;
 }
 
-/* the value ends and its unit starts at a fixed x, which centres the widest
-   form (100.0 %, 1023 GiB), so the unit stays when the value's width changes
-   (ACC-LAYOUT-74-RESERVED-WIDTH) */
+/* the value and its unit are one block centred on the gauge axis, so the
+   block's centre holds as its width changes and nothing else sits on its
+   line (ACC-VIEW-87-NUMBER-PLACE) */
 .g-value {
   color: var(--text-strong);
   font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  text-anchor: end;
 }
 
 .g-unit {
-  text-anchor: start;
   fill: var(--muted);
   font-size: 9px;
   font-weight: 500;
@@ -1122,7 +1242,7 @@ html[data-off~="proc"] [data-panel="proc"],
   white-space: nowrap;
 }
 
-.mem-row:first-child {
+.mem-bar + .mem-row {
   border-top: 0;
 }
 
@@ -1134,6 +1254,47 @@ html[data-off~="proc"] [data-panel="proc"],
 .mem-row b {
   font-weight: 500;
   color: var(--text);
+}
+
+/* DEF-VIEW-50-MEM-TERMS: one bar, used | cache | other | free = total, and a
+   key on each legend row; other is a container's outside use. The available
+   row is the widest and sets the arc's width: it has no percent cell (the
+   Memory tile shows it), and its value reserves 0000 MiB so the arc keeps
+   its size (ACC-LAYOUT-74-RESERVED-WIDTH) */
+.mem-bar {
+  display: flex;
+  flex: 0 0 auto;
+  height: 6px;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.mem-seg,
+.mem-key {
+  background: var(--seg);
+}
+
+.mem-key {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+}
+
+[data-seg="used"] {
+  --seg: var(--chart-mem-used);
+}
+
+[data-seg="cache"] {
+  --seg: var(--chart-mem-cached);
+}
+
+[data-seg="other"] {
+  --seg: var(--muted);
+}
+
+[data-seg="free"] {
+  --seg: var(--chart-mem-free);
 }
 
 /* cores: btop's column-major list, one row per core - label, a meter
@@ -1181,7 +1342,8 @@ html[data-off~="proc"] [data-panel="proc"],
   height: 3px;
 }
 
-.core-row .meter::after {
+.core-row .meter::after,
+.gpu-bars .meter::after {
   inset: 0;
   width: auto;
   background: linear-gradient(in srgb-linear to right, var(--ok), var(--warn), var(--crit));
@@ -1292,7 +1454,8 @@ html[data-off~="proc"] [data-panel="proc"],
   background: var(--meter-color, var(--ok));
 }
 
-.meter[data-state="unavailable"] {
+.meter[data-state="unavailable"],
+.mem-bar[data-state="unavailable"] {
   background: repeating-linear-gradient(
     -45deg,
     var(--meter-track) 0 3px,
@@ -1317,16 +1480,10 @@ html[data-off~="proc"] [data-panel="proc"],
   flex: 0 0 auto;
 }
 
-.filter {
+/* the filter takes the config popover's house input style, .opt with
+   .cfg-in (DEF-VIEW-49-FILTER-STYLE); two classes outrank input.cfg-in's width */
+.cfg-in.filter {
   width: var(--filter-w);
-  height: 20px;
-  padding: 0 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--fs-10);
-  font-variant-numeric: tabular-nums;
 }
 
 .filter::placeholder {
@@ -1715,15 +1872,12 @@ select.opt {
   cursor: not-allowed;
 }
 
-/* the GPU legend steps down by its own height, so a short band 3 (a stored
-   layout with proc, net or cpu-stat L) never clips it: type and gaps first,
-   then temperature · power, then one line per entry (the phone form).
-   shortcut: thresholds are sized for 3 entries; a 1-2 GPU host drops earlier */
-@container gpu-body (height < 149px) {
-  #p-gpu .net-legend {
-    gap: 3px;
-  }
-
+/* each GPU legend entry steps down by its lane's height, so a short lane (4
+   or more GPUs, or a stored layout with proc, net or cpu-stat L) never clips
+   it: tighter rows and type first, which keep every field for 3 GPUs at
+   1440x900 and 1024x768 (owner 2026-10-28), then temperature · power, then
+   one line per entry (the phone form) */
+@container gpu-lane (height < 44px) {
   #p-gpu .legend-item {
     row-gap: 0;
   }
@@ -1733,13 +1887,31 @@ select.opt {
   }
 }
 
-@container gpu-body (height < 124px) {
+@container gpu-lane (height < 37px) {
+  #p-gpu .legend-name,
   #p-gpu .legend-meta {
+    line-height: 1.1;
+  }
+
+  #p-gpu .legend-value {
+    line-height: 1;
+  }
+}
+
+@container gpu-lane (height < 34px) {
+  #p-gpu .legend-meta,
+  #p-gpu .gpu-bars {
     display: none;
   }
 }
 
-@container gpu-body (height < 94px) {
+@container gpu-lane (height < 25px) {
+  /* a lane this short keeps its plot area: a 3 px inset each side would leave
+     almost none */
+  #p-gpu .net-plot {
+    margin: 1px 0;
+  }
+
   #p-gpu .legend-item {
     display: flex;
     align-items: baseline;
@@ -1781,8 +1953,8 @@ select.opt {
   display: none;
 }
 
-/* the GPU legend's container step (height < 124px) can drop temperature and
-   power at full and drop-p4; app.js then marks the chip .gpu-drop to name it */
+/* the GPU legend's lane step (height < 34px) can drop temperature and power
+   at full and drop-p4; app.js then marks the chip .gpu-drop to name it */
 .chip-tier.gpu-drop {
   display: inline-flex;
 }
@@ -1914,18 +2086,24 @@ select.opt {
     --band-min-3: calc(var(--head-h) + 60px);
   }
 
-  /* the version stays (ACC-LAYOUT-62-VERSION): tighter bar spacing keeps 360 px PAUSED inside the bar */
+  /* the version stays (ACC-LAYOUT-62-VERSION) and the bar fits 360 px in
+     PAUSED with 0.6.100 (DEF-LAYOUT-58-VERSION-WIDTH): gaps and chip padding
+     tighten instead of dropping a field; 6.2 px spare, 0.5 px at 8 characters */
   .utility {
-    gap: 4px;
+    gap: 3px;
     padding: 0 4px;
   }
 
   .utility-right {
-    gap: 3px;
+    gap: 2px;
   }
 
   .chip {
-    padding: 0 4px;
+    padding: 0 3px;
+  }
+
+  #p-gpu .gpu-bars {
+    display: none;
   }
 
   #p-gpu .legend-item {

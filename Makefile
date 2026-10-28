@@ -1,24 +1,50 @@
+.PHONY: help increment_version_number build build-static fmt-check clippy test deny coverage ci run docker clean env tools version upgrade release doctor
+
+#################################################################################
+# GLOBALS                                                                       #
+#################################################################################
+
 CARGO ?= cargo
 DOCKER ?= docker
 IMAGE ?= btop-web:dev
 RUSTUP ?= rustup
 LEVEL ?= patch
+# Set EXECUTE=1 to let make release act instead of a dry run
 EXECUTE ?= 0
 FEATURES ?=
 FEATURES_FLAG = $(if $(FEATURES),--features $(FEATURES))
 RUST_VERSION := $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
 
-.DEFAULT_GOAL := help
+# Every ?= variable is also read from the environment: STATIC=1 make build is make build STATIC=1
+# Set STATIC=1 to build the static glibc binary without FEATURES (make build-static is make build STATIC=1)
+STATIC ?= 0
+# Set STRIP=1 to strip the symbols from the release binary
+STRIP ?= 0
+# Set SKIP_VERSION_INCREMENT=1 to skip the patch version increment in build, build-static, run and docker
+SKIP_VERSION_INCREMENT ?= 0
 
-.PHONY: help build fmt-check clippy test deny coverage ci run docker clean env tools version upgrade release doctor
+#################################################################################
+# COMMANDS                                                                      #
+#################################################################################
 
-## Print the list of available commands
-help:
-	@python3 -c "$${PRINT_HELP_PYSCRIPT}" < $(MAKEFILE_LIST)
+## Increment build number (skip with SKIP_VERSION_INCREMENT=1)
+increment_version_number:
+	@if [ "$(SKIP_VERSION_INCREMENT)" = "1" ]; then \
+		echo "skipping version increment (SKIP_VERSION_INCREMENT=1)"; \
+	elif ! command -v cargo-set-version >/dev/null 2>&1; then \
+		echo "cargo-set-version not installed - install it with: make tools"; \
+		exit 1; \
+	else \
+		$(CARGO) set-version --workspace --bump patch; \
+	fi
 
-## Build the release binary
-build:
-	$(CARGO) build --locked --release $(FEATURES_FLAG)
+## Build the release binary; STATIC=1 builds the static glibc binary without FEATURES (rocm needs the shared librocm_smi64), STRIP=1 strips its symbols
+build: increment_version_number
+	$(if $(filter 1,$(STRIP)),CARGO_PROFILE_RELEASE_STRIP=true) $(if $(filter 1,$(STATIC)),RUSTFLAGS="-C target-feature=+crt-static") $(CARGO) build --locked --release $(if $(filter 1,$(STATIC)),--target x86_64-unknown-linux-gnu,$(FEATURES_FLAG))
+
+## Build the static glibc release binary, the same as make build STATIC=1; deploys use it
+build-static:
+	$(MAKE) build STATIC=1
 
 ## Check formatting with rustfmt
 fmt-check:
@@ -52,12 +78,12 @@ coverage:
 ci: fmt-check clippy test
 
 ## Build and run the server
-run:
+run: increment_version_number
 	$(CARGO) run --locked --release $(FEATURES_FLAG)
 
 # shortcut: the Dockerfile has no ARG FEATURES, so this build arg is ignored until it declares one
 ## Build the container image
-docker:
+docker: increment_version_number
 	$(DOCKER) build -t $(IMAGE) $(if $(FEATURES),--build-arg FEATURES=$(FEATURES)) .
 
 ## Remove the build output
@@ -130,6 +156,12 @@ doctor:
 		fi; \
 	done
 
+#################################################################################
+# Self Documenting Commands                                                     #
+#################################################################################
+
+.DEFAULT_GOAL := help
+
 define PRINT_HELP_PYSCRIPT
 import re, sys; \
 lines = sys.stdin.read(); \
@@ -140,3 +172,7 @@ print('\n'.join(['\033[36m{:25}\033[0m{}'.format(*reversed(match)) for match in 
 print()
 endef
 export PRINT_HELP_PYSCRIPT
+
+## Print the list of available commands
+help:
+	@python3 -c "$${PRINT_HELP_PYSCRIPT}" < $(MAKEFILE_LIST)

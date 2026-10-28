@@ -1,7 +1,7 @@
 <header class="ph"><h2 id="storage-title">Storage</h2>{% if snapshot.container %}<span class="head-right meta" title="io.stat has no busy time">IO unavailable</span>{% endif %}</header>
 <div class="storage-body">
   {% for disk in snapshot.mem.disks %}{% if disk.mount != "swap" %}
-  <div class="mount">
+  <div class="mount" data-tip="Mount space, unit bytes and percent&#10;source: statvfs(3) blocks × frsize&#10;used = total - free (f_bavail)&#10;{% if snapshot.container %}IO unavailable: io.stat has no busy time{% else %}IO: block stat io_ticks delta / uptime{% endif %}">
     <div class="mount-head"><span class="mount-label" title="{{ disk.mount }}">{{ disk.mount }}</span>{% if let Some(io) = disk.io_activity %}<span class="mount-io">IO <span data-w="100%">{{ io|fmt("{:.0}") }}%</span></span>{% endif %}{% if disk.total.is_some() %}<b>{{ crate::collector::bytes(*disk.total) }}</b>{% endif %}</div>
     <div class="mount-row"><span class="mount-key">used</span><span class="meter meter-used"{% if let Some(value) = disk.bar() %} style="--value:{{ value }}"{% else %} data-state="unavailable"{% endif %}></span><span class="mount-pct">{% if let Some(pct) = disk.used_percent %}{{ pct|fmt("{:.0}") }}%{% endif %}</span><span class="mount-size">{{ crate::collector::bytes(*disk.used) }}</span></div>
     <div class="mount-row free"><span class="mount-key">free</span><span class="meter meter-free"{% if let Some(value) = crate::collector::bar(*disk.free_percent) %} style="--value:{{ value }}"{% else %} data-state="unavailable"{% endif %}></span><span class="mount-pct">{% if let Some(pct) = disk.free_percent %}{{ pct|fmt("{:.0}") }}%{% endif %}</span><span class="mount-size">{{ crate::collector::bytes(*disk.free) }}</span></div>

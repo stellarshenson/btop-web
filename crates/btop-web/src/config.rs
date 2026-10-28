@@ -46,12 +46,15 @@ pub const fn default_port() -> u16 {
 pub const DEFAULT_UPDATE_MS: u64 = 250;
 
 /// The shipped themes in picker order. Index 0 is the built-in Default.
-pub const THEMES: [&str; 5] = [
+pub const THEMES: [&str; 8] = [
     "default",
     "everforest-medium",
     "flexoki",
     "gruvbox",
     "solarized",
+    "synthwave",
+    "terracotta",
+    "ultraviolet",
 ];
 
 /// ACC-CONF-60-VIEW-FLAG: the process list views `--proc-view` accepts.
@@ -92,12 +95,15 @@ pub struct ServerOption {
     pub help: &'static str,
 }
 
-const THEME_CHOICES: [(&str, &str); 5] = [
+const THEME_CHOICES: [(&str, &str); 8] = [
     ("0", "0 default"),
     ("1", "1 everforest-medium"),
     ("2", "2 flexoki"),
     ("3", "3 gruvbox"),
     ("4", "4 solarized"),
+    ("5", "5 synthwave"),
+    ("6", "6 terracotta"),
+    ("7", "7 ultraviolet"),
 ];
 
 /// Each value is its own label.
@@ -141,7 +147,7 @@ const MEBIBITS: Control = Control::Int {
 };
 
 /// The server options in page order and, within a page, btop's menu order.
-pub const SERVER_OPTIONS: [ServerOption; 36] = [
+pub const SERVER_OPTIONS: [ServerOption; 38] = [
     option(
         "general",
         "theme",
@@ -237,6 +243,30 @@ pub const SERVER_OPTIONS: [ServerOption; 36] = [
         "zfs_arc_cached",
         "(Linux) Count ZFS ARC as cached memory.",
     ),
+    flag(
+        "net",
+        "net_auto",
+        "Start in network graphs auto rescaling mode.",
+    ),
+    option(
+        "net",
+        "net_floor",
+        Control::Int {
+            min: 0,
+            max: i32::MAX as i64,
+        },
+        "Lowest auto-scaled ceiling, in Mbit/s.",
+    ),
+    option(
+        "net",
+        "net_fall",
+        Control::Int {
+            min: 1,
+            max: 86_400,
+        },
+        "Seconds below a tenth of the ceiling before the auto scale falls.",
+    ),
+    flag("net", "net_sync", "Network scale sync."),
     option(
         "net",
         "net_download",
@@ -249,12 +279,6 @@ pub const SERVER_OPTIONS: [ServerOption; 36] = [
         MEBIBITS,
         "Fixed network graph upload value.",
     ),
-    flag(
-        "net",
-        "net_auto",
-        "Start in network graphs auto rescaling mode.",
-    ),
-    flag("net", "net_sync", "Network scale sync."),
     text("net", "net_iface", "Network Interface."),
     option(
         "proc",
@@ -419,6 +443,12 @@ pub struct Config {
     pub net_auto: bool,
     /// btop `net_sync`: share the auto scale between both directions.
     pub net_sync: bool,
+    /// btop-web `net_floor`: the lowest auto-scaled ceiling in Mbit/s
+    /// (ACC-GRAPH-96-NET-AUTOSCALE).
+    pub net_floor: i32,
+    /// btop-web `net_fall`: seconds below a tenth of the ceiling before the
+    /// auto scale falls, 300 by default (ACC-GRAPH-96-NET-AUTOSCALE).
+    pub net_fall: i32,
     /// btop `net_download`: fixed download ceiling in Mebibits.
     pub net_download: i32,
     /// btop `net_upload`: fixed upload ceiling in Mebibits.
@@ -500,6 +530,8 @@ impl Config {
             "net_download" => Some(self.net_download.to_string()),
             "net_upload" => Some(self.net_upload.to_string()),
             "net_auto" => flag(self.net_auto),
+            "net_floor" => Some(self.net_floor.to_string()),
+            "net_fall" => Some(self.net_fall.to_string()),
             "net_sync" => flag(self.net_sync),
             "net_iface" => Some(self.net_iface.clone()),
             "proc_sorting" => Some(self.proc_sorting.clone()),
@@ -576,6 +608,8 @@ impl Config {
             custom_gpu_name5: String::new(),
             net_iface: String::new(),
             net_auto: true,
+            net_floor: 1,
+            net_fall: 300,
             net_sync: true,
             net_download: 100,
             net_upload: 100,
@@ -693,6 +727,8 @@ impl Config {
                 "custom_gpu_name5" => self.custom_gpu_name5 = value.to_string(),
                 "net_iface" => self.net_iface = value.to_string(),
                 "net_auto" => self.net_auto = parse_bool(key, value, origin, index)?,
+                "net_floor" => self.net_floor = parse_int(key, value, origin, index)?,
+                "net_fall" => self.net_fall = parse_int(key, value, origin, index)?,
                 "net_sync" => self.net_sync = parse_bool(key, value, origin, index)?,
                 "net_download" => self.net_download = parse_int(key, value, origin, index)?,
                 "net_upload" => self.net_upload = parse_int(key, value, origin, index)?,
@@ -866,6 +902,8 @@ mod tests {
         assert_eq!(config.net_iface, "");
         assert!(config.net_auto);
         assert!(config.net_sync);
+        assert_eq!(config.net_floor, 1);
+        assert_eq!(config.net_fall, 300);
         assert_eq!(config.net_download, 100);
         assert_eq!(config.net_upload, 100);
         assert_eq!(config.proc_sorting, "cpu lazy");
@@ -900,6 +938,8 @@ custom_gpu_name4 = gpu4
 custom_gpu_name5 = gpu5
 net_iface = eth0
 net_auto = False
+net_floor = 2
+net_fall = 60
 net_sync = False
 net_download = 250
 net_upload = 50
@@ -932,6 +972,8 @@ proc_filter_kernel = True
         assert_eq!(config.net_iface, "eth0");
         assert!(!config.net_auto);
         assert!(!config.net_sync);
+        assert_eq!(config.net_floor, 2);
+        assert_eq!(config.net_fall, 60);
         assert_eq!(config.net_download, 250);
         assert_eq!(config.net_upload, 50);
         assert_eq!(config.proc_sorting, "cpu direct");
@@ -950,6 +992,8 @@ proc_filter_kernel = True
             ("net_download = -1\n", "net_download"),
             ("net_upload = 1.5\n", "net_upload"),
             ("net_download = 2147483648\n", "net_download"),
+            ("net_floor = -1\n", "net_floor"),
+            ("net_fall = 1.5\n", "net_fall"),
             ("show_gpu_info = Sometimes\n", "show_gpu_info"),
             ("cpu_core_map = 0-1\n", "cpu_core_map"),
             ("cpu_core_map = 0:1:2\n", "cpu_core_map"),
@@ -1004,22 +1048,37 @@ proc_filter_kernel = True
                 "everforest-medium",
                 "flexoki",
                 "gruvbox",
-                "solarized"
+                "solarized",
+                "synthwave",
+                "terracotta",
+                "ultraviolet"
             ]
         );
         let mut config = Config::from_text(&default_config_text(), "test").unwrap();
         config.apply("theme = 4\n", "test.conf").unwrap();
         assert_eq!(config.theme_id(), "solarized");
+        config.apply("theme = 7\n", "test.conf").unwrap();
+        assert_eq!(config.theme_id(), "ultraviolet");
+    }
+
+    /// The theme numbers are the picker order: the menu lists exactly
+    /// [`THEMES`] in this order, so a number names the same theme in the flag,
+    /// the config file and the picker.
+    #[test]
+    fn shipped_theme_numbers_follow_the_embedded_picker_order() {
+        let pairs = crate::theme::embedded_pairs();
+        let ids: Vec<&str> = pairs.iter().map(|pair| pair.id.as_str()).collect();
+        assert_eq!(ids, THEMES);
     }
 
     #[test]
     fn an_out_of_range_theme_lists_the_valid_range() {
         let mut config = Config::from_text(&default_config_text(), "test").unwrap();
-        let error = config.apply("theme = 5\n", "test.conf").unwrap_err();
+        let error = config.apply("theme = 8\n", "test.conf").unwrap_err();
         let message = error.to_string();
         assert!(message.contains("test.conf:1"), "{message}");
         assert!(
-            message.contains("theme must be in 0..=4, got 5"),
+            message.contains("theme must be in 0..=7, got 8"),
             "{message}"
         );
     }
@@ -1095,7 +1154,7 @@ proc_filter_kernel = True
             ("net_download", "1.5"),
             ("show_swap", "yes"),
             ("cpu_core_map", "0-1"),
-            ("theme", "5"),
+            ("theme", "8"),
             ("custom_cpu_name", "a\nb"),
             ("custom_cpu_name", "a\rb"),
             ("custom_cpu_name", "a\"b"),

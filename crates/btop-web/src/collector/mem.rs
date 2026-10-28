@@ -6,18 +6,25 @@
 //! `<proc_root>/spl/kstat/zfs/arcstats` (`size`, `c_min`),
 //! `<proc_root>/filesystems`, the mount table (`<etc>/mtab` when it exists,
 //! otherwise `<proc_root>/self/mounts`), `<etc>/fstab` with `use_fstab`, and
-//! `statvfs(3)` on every mountpoint. Disk IO comes from
+//! `statvfs(3)` on every mountpoint under `<root>`. Disk IO comes from
 //! `<sys_root>/block/<dev>/stat`, or the ZFS kstat files under
 //! `<proc_root>/spl/kstat/zfs`.
 //!
-//! `<etc>` and `<sys_root>` are derived from the `proc_root` parent, so a
-//! recorded tree pairs `<tree>/proc` with `<tree>/etc` and `<tree>/sys`, while
-//! live `/proc` maps to `/etc` and `/sys`.
+//! `<root>`, `<etc>` and `<sys_root>` are derived from the `proc_root` parent,
+//! so a recorded tree pairs `<tree>/proc` with `<tree>`, `<tree>/etc` and
+//! `<tree>/sys`, while live `/proc` maps to `/`, `/etc` and `/sys`.
 //!
 //! Formula (btop): available = MemAvailable, or MemFree + Cached when the
-//! kernel lacks MemAvailable; with ZFS ARC, cached += arc size and available
-//! += arc size above c_min. used = MemTotal - available, but MemFree when
-//! available exceeds MemTotal. Percentages are `round(stats * 100 / total)`.
+//! kernel lacks MemAvailable; with ZFS ARC, available += arc size above
+//! c_min. used = MemTotal - available, but MemFree when available exceeds
+//! MemTotal. Percentages are `round(stats * 100 / total)`.
+//! Memory bar (DEF-VIEW-50-MEM-TERMS, owner 2026-10-28), in place of btop's
+//! cached row: used | cache | free = MemTotal, free = MemFree and cache the
+//! remainder, MemAvailable - MemFree, the memory the kernel can reclaim; so
+//! available = free + cache. Btop's Cached is not a segment: it leaves
+//! Buffers and reclaimable slab out of the sum. [`split`] clamps each part to
+//! what is left of the total, so MemAvailable < MemFree gives free =
+//! MemAvailable and cache 0.
 //! Disk total = f_blocks * f_frsize; free = f_bavail * f_frsize (f_bfree with
 //! `disk_free_priv`); used = total - free; used percent =
 //! round(used * 100 / total); free percent = 100 - used percent. Block IO is
@@ -31,13 +38,16 @@
 //! Container (ACC-SCOPE-64-CONTAINER): inside a container this collector
 //! departs from btop on the owner's order (2026-10-27) and reads the
 //! container's cgroup v2 files. Every sample, `update_ms`, in bytes:
-//! - total T = min(`memory.max`, MemTotal), MemTotal when `memory.max` is
-//!   `max`: with no limit the machine's size is the ceiling
-//! - used U = max(0, `memory.current` - (`active_file` + `inactive_file` +
-//!   `slab_reclaimable`) of `memory.stat`), the kernel's MemAvailable terms
-//!   taken from the cgroup; available = T - U; cached = `file`; free =
-//!   max(0, T - `memory.current`); percentages round(x * 100 / T). The ZFS
-//!   ARC is not charged to a cgroup and is not added
+//! - the Memory bar is used | cache | other | free = T (DEF-VIEW-50-MEM-TERMS,
+//!   owner 2026-10-28: total and free are the system's, there is no
+//!   in-container free, so `memory.max` is not read). T = MemTotal; used U =
+//!   max(0, `memory.current` - R), R = `active_file` + `inactive_file` +
+//!   `slab_reclaimable` of `memory.stat`, the kernel's MemAvailable terms
+//!   taken from the cgroup; cache = R, this container's reclaimable cache;
+//!   free = MemFree; other = T - `memory.current` - MemFree, the memory used
+//!   outside this container; available = free + cache; percentages
+//!   round(x * 100 / T). The ZFS ARC is not charged to a cgroup and is not
+//!   added
 //! - swap used = `memory.swap.current`; swap total = min(`memory.swap.max`,
 //!   SwapTotal), SwapTotal when `max`; free = total - used. A missing
 //!   `memory.swap.current` leaves swap unavailable
@@ -107,7 +117,7 @@ impl MemCollector {
         }
 
         let free = stats.get("MemFree").copied();
-        let mut cached = stats.get("Cached").copied();
+        let cached = stats.get("Cached").copied();
         let mut available = stats
             .get("MemAvailable")
             .copied()
@@ -116,23 +126,26 @@ impl MemCollector {
                 _ => None,
             });
 
-        // btop's zfs_arc_cached: ARC counts as cached, and only the part above
-        // c_min is available to applications.
+        // btop's zfs_arc_cached: only the ARC above c_min is available to
+        // applications.
         if config.zfs_arc_cached
             && let Some((size, minimum)) = zfs_arc(proc_root)
+            && let Some(value) = available.as_mut()
         {
-            if let Some(value) = cached.as_mut() {
-                *value += size;
-            }
-            if let Some(value) = available.as_mut() {
-                *value += size.saturating_sub(minimum);
-            }
+            *value += size.saturating_sub(minimum);
         }
 
         let used = match (available, free) {
             (Some(available), _) if available <= total => Some(total - available),
             (_, Some(free)) => Some(total.saturating_sub(free)),
             _ => None,
+        };
+        let (free, cache) = match (used, free) {
+            (Some(used), Some(free)) => {
+                let ([_, free], cache) = split(total, [used, free]);
+                (Some(free), Some(cache))
+            }
+            _ => (free, None),
         };
 
         // btop stops reading meminfo after Cached when both swap keys are off.
@@ -162,11 +175,11 @@ impl MemCollector {
             ram_used: used,
             ram_free: free,
             ram_available: available,
-            ram_cached: cached,
+            ram_cache: cache,
             ram_percent: used.map(|used| percent(used, total)),
             ram_free_percent: free.map(|free| percent(free, total)),
             ram_available_percent: available.map(|available| percent(available, total)),
-            ram_cached_percent: cached.map(|cached| percent(cached, total)),
+            ram_cache_percent: cache.map(|cache| percent(cache, total)),
             swap_total,
             swap_used,
             swap_free,
@@ -301,9 +314,10 @@ impl MemCollector {
 
         //? Get disk/partition stats with statvfs
         let disk_free_priv = config.disk_free_priv;
+        let root = tree_root(proc_root);
         let mut failed: Vec<String> = Vec::new();
         for mount in self.disks.keys().cloned().collect::<Vec<_>>() {
-            match statvfs(Path::new(&mount)) {
+            match statvfs(&root.join(mount.trim_start_matches('/'))) {
                 Ok(stats) => {
                     let block_size = stats.fragment_size();
                     let total = stats.blocks().saturating_mul(block_size);
@@ -495,25 +509,28 @@ fn container_memory(
             Some((key.to_string(), value.trim().parse().ok()?))
         })
         .collect();
-    if let Some(current) = read("memory.current") {
-        let total = read("memory.max").map_or(mem_total, |limit| limit.min(mem_total));
-        let reclaimable: Option<u64> = ["active_file", "inactive_file", "slab_reclaimable"]
+    if let Some(current) = read("memory.current")
+        && let Some(reclaimable) = ["active_file", "inactive_file", "slab_reclaimable"]
             .iter()
             .map(|key| memory_stat.get(*key).copied())
-            .sum();
-        let used = reclaimable.map(|reclaimable| current.saturating_sub(reclaimable));
-        let available = used.map(|used| total.saturating_sub(used));
-        let free = total.saturating_sub(current);
-        let cached = memory_stat.get("file").copied();
+            .sum::<Option<u64>>()
+        && let Some(mem_free) = meminfo.get("MemFree").copied()
+    {
+        let total = mem_total;
+        let used = current.saturating_sub(reclaimable);
+        let ([used, cache, free], other) = split(total, [used, reclaimable, mem_free]);
+        let available = free + cache;
         snapshot.ram_total = Some(total);
-        snapshot.ram_used = used;
-        snapshot.ram_available = available;
+        snapshot.ram_used = Some(used);
+        snapshot.ram_cache = Some(cache);
+        snapshot.ram_other = Some(other);
         snapshot.ram_free = Some(free);
-        snapshot.ram_cached = cached;
-        snapshot.ram_percent = used.map(|used| percent(used, total));
-        snapshot.ram_available_percent = available.map(|available| percent(available, total));
+        snapshot.ram_available = Some(available);
+        snapshot.ram_percent = Some(percent(used, total));
+        snapshot.ram_cache_percent = Some(percent(cache, total));
+        snapshot.ram_other_percent = Some(percent(other, total));
         snapshot.ram_free_percent = Some(percent(free, total));
-        snapshot.ram_cached_percent = cached.map(|cached| percent(cached, total));
+        snapshot.ram_available_percent = Some(percent(available, total));
     }
     if swap_enabled
         && let (Some(used), Some(swap_total)) = (
@@ -533,6 +550,19 @@ fn container_memory(
         }
     }
     snapshot
+}
+
+/// The Memory bar's parts in order, each clamped to what the earlier ones
+/// left of `total`, and the remainder: the parts plus it sum to `total`, also
+/// when reads taken at different instants overshoot.
+fn split<const N: usize>(total: u64, parts: [u64; N]) -> ([u64; N], u64) {
+    let mut left = total;
+    let parts = parts.map(|part| {
+        let part = part.min(left);
+        left -= part;
+        part
+    });
+    (parts, left)
 }
 
 /// btop: `round(stats * 100 / total)`.
@@ -576,12 +606,17 @@ fn zfs_arc(proc_root: &Path) -> Option<(u64, u64)> {
     size.map(|size| (size, minimum))
 }
 
+/// `/proc` maps to `/`; a recorded `<tree>/proc` to `<tree>`.
+fn tree_root(proc_root: &Path) -> &Path {
+    match proc_root.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("/"),
+    }
+}
+
 /// `/proc` maps to `/etc`; a recorded `<tree>/proc` to `<tree>/etc`.
 fn etc_root(proc_root: &Path) -> PathBuf {
-    match proc_root.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent.join("etc"),
-        _ => PathBuf::from("/etc"),
-    }
+    tree_root(proc_root).join("etc")
 }
 
 fn uptime_secs(proc_root: &Path) -> f64 {
@@ -863,11 +898,10 @@ mod tests {
         );
         // btop's stream extraction keeps the token as written, so only a literal
         // directory name containing the four characters resolves.
-        let raw = format!("{}/disk\\040name", root.display());
-        std::fs::create_dir_all(&raw).expect("create mountpoint");
+        std::fs::create_dir_all(root.join("disk\\040name")).expect("create mountpoint");
         write(
             &root.join("proc/self/mounts"),
-            &format!("/dev/sdd {raw} ext4 rw 0 0\n"),
+            "/dev/sdd /disk\\040name ext4 rw 0 0\n",
         );
 
         let mut config = empty_config(&root.join("proc"));
@@ -876,7 +910,7 @@ mod tests {
         let mut collector = MemCollector::default();
         let snapshot = collector.collect(&root.join("proc"), &config);
 
-        assert_eq!(mounts(&snapshot.disks), [raw.as_str()]);
+        assert_eq!(mounts(&snapshot.disks), ["/disk\\040name"]);
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -905,13 +939,20 @@ mod tests {
         assert_eq!(snapshot.ram_total, Some(527_649_328 * 1024));
         assert_eq!(snapshot.ram_free_percent, Some(33.0));
         assert_eq!(snapshot.ram_available_percent, Some(93.0));
-        assert_eq!(snapshot.ram_cached_percent, Some(55.0));
         let total = 527_649_328u64 * 1024;
         let available = 490_578_592u64 * 1024 + 1_048_576 - 262_144;
         assert_eq!(
             snapshot.ram_percent,
             Some(percent(total - available, total))
         );
+        // DEF-VIEW-50-MEM-TERMS: used | cache | free = MemTotal, cache =
+        // MemAvailable - MemFree, no other segment on a host.
+        let free = 172_308_644u64 * 1024;
+        assert_eq!(snapshot.ram_free, Some(free));
+        assert_eq!(snapshot.ram_cache, Some(available - free));
+        assert_eq!(snapshot.ram_other, None);
+        assert_eq!(bar_sum(&snapshot), total);
+        assert_eq!(snapshot.ram_cache_percent, Some(60.0));
         assert!(snapshot.has_swap);
         assert_eq!(snapshot.swap_free, Some(133_798_148 * 1024));
         assert_eq!(snapshot.swap_percent, Some(0.0));
@@ -926,6 +967,40 @@ mod tests {
         );
     }
 
+    /// The used, cache, other and free bytes and their bar widths both add up
+    /// to the total.
+    fn bar_sum(snapshot: &MemSnapshot) -> u64 {
+        let width: f64 = snapshot.ram_segments().iter().map(|(_, width)| width).sum();
+        assert!((width - 100.0).abs() < 1e-9, "widths sum to {width}");
+        [
+            snapshot.ram_used,
+            snapshot.ram_cache,
+            snapshot.ram_other.or(Some(0)),
+            snapshot.ram_free,
+        ]
+        .into_iter()
+        .sum::<Option<u64>>()
+        .expect("every segment")
+    }
+
+    /// MemAvailable below MemFree (the kernel reserve above the reclaimable
+    /// memory): free is clamped to what used leaves, and cache is 0.
+    #[test]
+    fn memory_bar_clamps_free_when_available_is_below_memfree() {
+        let root = temp_root("bar-clamp");
+        write(
+            &root.join("proc/meminfo"),
+            "MemTotal:       1000 kB\nMemFree:         600 kB\nMemAvailable:    500 kB\nCached:          100 kB\n",
+        );
+        let snapshot =
+            MemCollector::default().collect(&root.join("proc"), &empty_config(&root.join("proc")));
+        assert_eq!(snapshot.ram_used, Some(500 * 1024));
+        assert_eq!(snapshot.ram_free, Some(500 * 1024));
+        assert_eq!(snapshot.ram_cache, Some(0));
+        assert_eq!(bar_sum(&snapshot), 1000 * 1024);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn zfs_arc_is_added_only_when_enabled() {
         let expected = 1_048_576;
@@ -933,7 +1008,6 @@ mod tests {
 
         let mut collector = MemCollector::default();
         let with_arc = collector.collect(&fixture("proc"), &fixture_config());
-        assert_eq!(with_arc.ram_cached, Some(290_299_976 * 1024 + expected));
         assert_eq!(
             with_arc.ram_available,
             Some(490_578_592 * 1024 + expected - minimum)
@@ -943,7 +1017,6 @@ mod tests {
         config.zfs_arc_cached = false;
         let mut collector = MemCollector::default();
         let without_arc = collector.collect(&fixture("proc"), &config);
-        assert_eq!(without_arc.ram_cached, Some(290_299_976 * 1024));
         assert_eq!(without_arc.ram_available, Some(490_578_592 * 1024));
     }
 
@@ -1020,6 +1093,7 @@ mod tests {
         );
         write(&root.join("proc/self/mounts"), "/dev/sdd / ext4 rw 0 0\n");
         write(&root.join("etc/mtab"), "/dev/sdd /home ext4 rw 0 0\n");
+        std::fs::create_dir_all(root.join("home")).expect("create mountpoint");
 
         let mut config = empty_config(&root.join("proc"));
         config.use_fstab = false;
@@ -1171,40 +1245,39 @@ mod tests {
 
     const GIB: u64 = 1 << 30;
 
+    /// DEF-VIEW-50-MEM-TERMS: used | cache | other | free = MemTotal.
     #[test]
     fn container_memory_follows_the_cgroup() {
         let snapshot = container_snapshot(&fixture("container/sys/fs/cgroup"));
-        // T = min(memory.max 8 GiB, MemTotal 503 GiB).
-        assert_eq!(snapshot.ram_total, Some(8 * GIB));
-        // U = 4 GiB - (1 + 1 GiB + 256 MiB) = 1.75 GiB.
+        let total = 527_649_328 * 1024;
+        let free = 172_308_644 * 1024;
+        assert_eq!(snapshot.ram_total, Some(total));
+        // U = 4 GiB - R, R = 1 + 1 GiB + 256 MiB = 2.25 GiB.
         assert_eq!(snapshot.ram_used, Some(1_879_048_192));
-        assert_eq!(snapshot.ram_percent, Some(22.0));
-        assert_eq!(snapshot.ram_available, Some(6_710_886_400));
-        assert_eq!(snapshot.ram_available_percent, Some(78.0));
-        assert_eq!(snapshot.ram_free, Some(4 * GIB));
-        assert_eq!(snapshot.ram_free_percent, Some(50.0));
-        assert_eq!(snapshot.ram_cached, Some(2 * GIB));
-        assert_eq!(snapshot.ram_cached_percent, Some(25.0));
+        assert_eq!(snapshot.ram_cache, Some(2_415_919_104));
+        assert_eq!(snapshot.ram_free, Some(free));
+        assert_eq!(snapshot.ram_other, Some(total - 4 * GIB - free));
+        assert_eq!(snapshot.ram_available, Some(free + 2_415_919_104));
+        assert_eq!(bar_sum(&snapshot), total);
+        assert_eq!(snapshot.ram_percent, Some(0.0));
+        assert_eq!(snapshot.ram_cache_percent, Some(0.0));
+        assert_eq!(snapshot.ram_other_percent, Some(67.0));
+        assert_eq!(snapshot.ram_free_percent, Some(33.0));
+        assert_eq!(snapshot.ram_available_percent, Some(33.0));
     }
 
+    /// No in-container free: no limit and a limit above MemTotal give the
+    /// recorded 8 GiB limit's bar.
     #[test]
-    fn container_memory_max_falls_back_to_memtotal() {
-        let cgroup = cgroup_variant("cg-max", "memory.max", Some("max\n"));
-        let snapshot = container_snapshot(&cgroup);
-        assert_eq!(snapshot.ram_total, Some(527_649_328 * 1024));
-        assert_eq!(snapshot.ram_used, Some(1_879_048_192));
-        assert_eq!(snapshot.ram_free, Some(527_649_328 * 1024 - 4 * GIB));
-        let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
-    }
-
-    #[test]
-    fn container_memory_limit_above_memtotal_is_memtotal() {
-        let cgroup = cgroup_variant("cg-above", "memory.max", Some("1000000000000000\n"));
-        assert_eq!(
-            container_snapshot(&cgroup).ram_total,
-            Some(527_649_328 * 1024)
-        );
-        let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
+    fn container_memory_ignores_memory_max() {
+        let limited = container_snapshot(&fixture("container/sys/fs/cgroup"));
+        for (name, limit) in [("cg-max", "max\n"), ("cg-above", "1000000000000000\n")] {
+            let cgroup = cgroup_variant(name, "memory.max", Some(limit));
+            let snapshot = container_snapshot(&cgroup);
+            assert_eq!(bar_sum(&snapshot), 527_649_328 * 1024);
+            assert_eq!(snapshot.ram_segments(), limited.ram_segments());
+            let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
+        }
     }
 
     #[test]

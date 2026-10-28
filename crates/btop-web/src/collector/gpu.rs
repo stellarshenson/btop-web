@@ -43,7 +43,9 @@
 //! completed sweep. btop collects GPUs inline; here a sweep of three NVIDIA
 //! cards takes 0.2-1.3 s, which would hold a 250 ms tick back. The readings are
 //! instantaneous, so the values are unchanged. The utilization history takes
-//! one sample per tick from that newest sweep ([`attach_charts`]).
+//! one sample per tick from that newest sweep ([`attach_charts`]) and draws
+//! each device in its own 0-100% lane, [`crate::chart::gpu_lane`]
+//! (DEF-GRAPH-51-GPU-LANES).
 //!
 //! Container (ACC-SCOPE-64-CONTAINER, DEF-GPU-40-CONTAINER-HIDDEN): the
 //! devices NVML, ROCm SMI and DRM sysfs list inside a container are the
@@ -57,14 +59,34 @@
 //! device, called in the device loop of the NVML sweep (off the tick).
 //! Formula: the number of distinct pids over all those lists. It is
 //! unavailable when any call fails, when any device is not NVML (DRM sysfs
-//! and ROCm SMI cannot list processes), inside a container (NVML reports host
-//! pid-namespace pids the container cannot attribute) and on WSL2, where
-//! NVML returns success with empty lists while processes hold VRAM.
+//! and ROCm SMI cannot list processes) and on WSL2, where NVML returns
+//! success with empty lists while processes hold VRAM.
+//!
+//! Inside a container NVML reports host pid-namespace pids the container
+//! cannot attribute, so the count has its own source there
+//! (DEF-VIEW-48-GPU-FACT, owner 2026-10-28): the members of the container's
+//! cgroup and every cgroup below it (`cgroup.procs`), less btop-web itself;
+//! for each, the targets of `<proc_root>/<pid>/fd/*`. Formula: the number of
+//! members holding a GPU node open: `/dev/nvidia<N>` (not `nvidiactl`,
+//! `nvidia-uvm` or `nvidia-modeset`), `/dev/dxg` (WSL2, where CUDA opens no
+//! `/dev/nvidia*` node), `/dev/kfd` (AMD compute) or `/dev/dri/renderD<N>`.
+//! A member that exits mid-sweep holds nothing and is skipped; a member whose
+//! fd table cannot be read (another uid, no CAP_SYS_PTRACE) is counted as
+//! unreadable and the count renders as a lower bound, `gpu n+`. No readable
+//! cgroup makes it unavailable. Period: [`HOLDER_PERIOD`], inside the
+//! off-tick sweep. The fd walk uses `nix`'s `Dir` and `readlinkat`, one
+//! syscall per fd. The `procfs` crate opens and stats every fd as well, for an
+//! open mode the count does not use: 7.5-8.2 against 4.6 us CPU per fd here.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
+use nix::dir::Dir;
+use nix::errno::Errno;
+use nix::fcntl::{OFlag, readlinkat};
+use nix::sys::stat::Mode;
 use nvml_wrapper::Device as NvmlDevice;
 use nvml_wrapper::Nvml;
 use nvml_wrapper::enum_wrappers::device::{
@@ -72,7 +94,7 @@ use nvml_wrapper::enum_wrappers::device::{
 };
 
 use super::{GpuDevice, GpuSnapshot, sys_root};
-use crate::chart::{GPU_PLOT, History};
+use crate::chart::{History, gpu_lane};
 use crate::config::Config;
 
 /// btop `gpu_info::pwr_max_usage` default, mW.
@@ -99,10 +121,98 @@ pub fn collect(proc_root: &Path, config: &Config) -> GpuSnapshot {
     }
     devices.extend(amd);
     apply_custom_names(&mut devices, config);
+    let mut process_unreadable = 0;
+    if let Some(container) = &config.container {
+        // The fd sweep covers AMD holders too, so it replaces the rule above.
+        let cgroup = container.cgroup.as_deref().filter(|_| !devices.is_empty());
+        let holders = cgroup.and_then(|cgroup| cached_holders(proc_root, cgroup));
+        process_count = holders.map(|(count, _)| count);
+        process_unreadable = holders.map_or(0, |(_, unreadable)| unreadable);
+    }
     GpuSnapshot {
         process_count,
+        process_unreadable,
         ..summarize(devices, power_cap_known || amd_power_cap_known)
     }
+}
+
+/// DEF-VIEW-48-GPU-FACT: the container holder count's period. One sweep costs
+/// about 4.6 us CPU per open fd in the container (27-29 ms over 5,800-6,200
+/// fds), against 8.5-11 ms CPU per 250 ms tick for the whole sampler, so a
+/// sweep every tick would more than double the dashboard's load
+/// (ACC-PERF-16). Every 5 s it added 10.1-17.0 percent CPU per tick at
+/// 5,400-7,100 container fds; the cost grows with that fd count.
+const HOLDER_PERIOD: Duration = Duration::from_secs(5);
+
+/// A holder sweep's result: the holders and the unreadable members, or
+/// `None` when the cgroup cannot be read ([`gpu_holders`]).
+type Holders = Option<(usize, usize)>;
+
+/// The last holder sweep per collected tree and when it ran.
+static HOLDERS: Mutex<BTreeMap<PathBuf, (Instant, Holders)>> = Mutex::new(BTreeMap::new());
+
+/// The holder count, swept again when the last sweep is older than
+/// [`HOLDER_PERIOD`]; `gpu::collect` runs once per tick at most, so the period
+/// is never shorter than `update_ms`.
+fn cached_holders(proc_root: &Path, cgroup: &Path) -> Holders {
+    let mut cache = HOLDERS.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some((swept, holders)) = cache.get(proc_root)
+        && swept.elapsed() < HOLDER_PERIOD
+    {
+        return *holders;
+    }
+    let holders = gpu_holders(proc_root, cgroup, std::process::id() as i32);
+    cache.insert(proc_root.to_path_buf(), (Instant::now(), holders));
+    holders
+}
+
+/// One holder sweep (see the module docs): the members of `cgroup` and every
+/// cgroup below it, except `own_pid`, that hold a GPU node open, and the
+/// members whose fd table could not be read. `None` when `cgroup.procs`
+/// cannot be read.
+fn gpu_holders(proc_root: &Path, cgroup: &Path, own_pid: i32) -> Holders {
+    let (mut holders, mut unreadable) = (0, 0);
+    for pid in super::proc::cgroup_members(cgroup, "cgroup.procs")? {
+        if pid == own_pid {
+            continue;
+        }
+        let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC;
+        match Dir::open(&proc_root.join(format!("{pid}/fd")), flags, Mode::empty()) {
+            Ok(mut fds) => {
+                // `iter` borrows `fds`, which `readlinkat` needs, so list the names first.
+                let names: Vec<_> = fds
+                    .iter()
+                    .flatten()
+                    .map(|entry| entry.file_name().to_owned())
+                    .filter(|name| !matches!(name.to_bytes(), b"." | b".."))
+                    .collect();
+                if names.iter().any(|name| {
+                    readlinkat(&fds, name.as_c_str())
+                        .is_ok_and(|target| is_gpu_node(Path::new(&target)))
+                }) {
+                    holders += 1;
+                }
+            }
+            // The process exited after `cgroup.procs` was read.
+            Err(Errno::ENOENT | Errno::ESRCH) => {}
+            Err(_) => unreadable += 1,
+        }
+    }
+    Some((holders, unreadable))
+}
+
+/// A GPU device node an fd can point to (see the module docs).
+fn is_gpu_node(target: &Path) -> bool {
+    let numbered = |prefix: &str| {
+        target
+            .to_str()
+            .and_then(|target| target.strip_prefix(prefix))
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+    };
+    target == Path::new("/dev/dxg")
+        || target == Path::new("/dev/kfd")
+        || numbered("/dev/nvidia")
+        || numbered("/dev/dri/renderD")
 }
 
 /// The number of distinct pids over every process list; `None` when any list
@@ -150,9 +260,11 @@ pub fn attach_charts(proc_root: &Path, devices: &mut [GpuDevice], update_ms: u64
     while histories.len() < devices.len() {
         histories.push(History::new());
     }
+    // DEF-GRAPH-51-GPU-LANES: each device draws in its own 0-100% lane.
+    let lane = gpu_lane(devices.len());
     for (history, device) in histories.iter_mut().zip(devices.iter_mut()) {
         history.push(device.utilization_pct, update_ms);
-        device.chart = history.chart(GPU_PLOT, 0.0, 100.0);
+        device.chart = history.chart(lane, 0.0, 100.0);
     }
 }
 
@@ -432,9 +544,7 @@ impl NvmlState {
             Ok(states) => states,
             Err(poisoned) => poisoned.into_inner(),
         };
-        // shortcut: in a container with `--pid host`, intersecting these pids
-        // with the cgroup members would attribute them; upgrade when the owner
-        // runs that way.
+        // A container counts its own holders instead (`gpu_holders`).
         let count_processes = self.lists_processes && config.container.is_none();
         let mut process_lists = Vec::new();
         let mut devices = Vec::with_capacity(states.len());
@@ -817,7 +927,7 @@ fn summarize(devices: Vec<GpuDevice>, power_cap_known: bool) -> GpuSnapshot {
         vram_percent: (vram_total != 0).then(|| (vram_used / vram_total) as f64),
         power_percent: power_cap_known.then_some(0.0),
         devices,
-        process_count: None,
+        ..GpuSnapshot::default()
     }
 }
 
@@ -1248,6 +1358,69 @@ mod tests {
     }
 
     #[test]
+    fn gpu_nodes_are_the_device_nodes_only() {
+        for node in [
+            "/dev/nvidia0",
+            "/dev/nvidia12",
+            "/dev/dxg",
+            "/dev/kfd",
+            "/dev/dri/renderD128",
+        ] {
+            assert!(is_gpu_node(Path::new(node)), "{node}");
+        }
+        for other in [
+            "/dev/nvidiactl",
+            "/dev/nvidia-uvm",
+            "/dev/nvidia-uvm-tools",
+            "/dev/nvidia-modeset",
+            "/dev/nvidia",
+            "/dev/dri/card0",
+            "/dev/null",
+        ] {
+            assert!(!is_gpu_node(Path::new(other)), "{other}");
+        }
+    }
+
+    /// DEF-VIEW-48-GPU-FACT: the container fixture's members are 1 and 7 in
+    /// the cgroup and 42 in `worker`; 1 and 42 hold a GPU node, 7 only
+    /// NVIDIA control nodes.
+    #[test]
+    fn container_gpu_holders_count_members_holding_a_gpu_node() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let cgroup = fixture("container/sys/fs/cgroup");
+        let root =
+            std::env::temp_dir().join(format!("btop-web-gpu-{}-holders", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (pid, targets) in [
+            (1, &["/dev/nvidia0", "/dev/nvidiactl"][..]),
+            (7, &["/dev/nvidia-uvm", "/dev/nvidiactl"][..]),
+            (42, &["/dev/null", "/dev/dxg"][..]),
+        ] {
+            let fd = root.join(format!("{pid}/fd"));
+            std::fs::create_dir_all(&fd).unwrap();
+            for (number, target) in targets.iter().enumerate() {
+                symlink(target, fd.join(number.to_string())).unwrap();
+            }
+        }
+        assert_eq!(gpu_holders(&root, &cgroup, 0), Some((2, 0)));
+        // btop-web itself is not counted.
+        assert_eq!(gpu_holders(&root, &cgroup, 42), Some((1, 0)));
+        // Members that exited are skipped, not unreadable.
+        let empty = root.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(gpu_holders(&empty, &cgroup, 0), Some((0, 0)));
+        assert_eq!(gpu_holders(&root, &cgroup.join("missing"), 0), None);
+
+        let denied = root.join("7/fd");
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(&denied).is_err() {
+            // a privileged test run can read the directory anyway
+            assert_eq!(gpu_holders(&root, &cgroup, 0), Some((2, 1)));
+        }
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
     fn recorded_tree_reports_unavailable_without_reading_live_nvml() {
         let snapshot = collect(&fixture("proc"), &config());
         assert!(snapshot.devices.is_empty(), "{:#?}", snapshot.devices);
@@ -1284,7 +1457,7 @@ mod tests {
         for _ in 0..5 {
             attach_charts(key, &mut devices, 250);
         }
-        let first = (960 - 5) as f64 * GPU_PLOT.width / 959.0;
+        let first = (960 - 5) as f64 * gpu_lane(1).width / 959.0;
         let start = format!("M{first:.2} ");
         assert!(
             devices[0].chart.line.starts_with(&start),

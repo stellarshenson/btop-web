@@ -51,6 +51,50 @@ The release build and the CI gate that admits it
   - mechanism: 2026-10-25T15:17:13Z @kj one FEATURES variable defaults to empty in the workflow and the Makefile; the feature flag is added only when FEATURES has a value, so a runner without librocm_smi64 never enables rocm
   - log: 2026-10-25T15:17:13Z @kj added
   - log: 2026-10-25T16:24:23Z @kj closed
+- [x] `ACC-BUILD-76-STATIC` **Static release binary** - MEDIUM; the release build produces a statically linked btop-web binary with no shared-library dependency; its size is measured against the dynamic build and reported to the owner
+  - evidence: wf_8da30b69-32c: make static gives a static-pie binary, ldd 'statically linked', 6.13 MiB (4.69 MiB with STRIP=1); serves all ten panels with the three NVIDIA GPUs; sizes of six variants re-measured by a verifier and reported to the owner 2026-10-28
+  - mechanism: 2026-10-28T14:16:48Z @kj glibc with -C target-feature=+crt-static; NVML is dlopened, which works only where the host glibc matches the build glibc (2.39 here); static musl cannot dlopen, so its GPU panel is unavailable
+  - test: file and ldd on the release binary report a static executable; the binary serves the page and every panel on an ephemeral port
+  - test-tags: E2E
+  - log: 2026-10-28T13:59:50Z @kj added
+  - log: 2026-10-28T14:16:48Z @kj closed
+- [x] `ACC-BUILD-77-STATIC-MAKE` **Static build is make build STATIC=1, alias make build-static** - MEDIUM; make build takes STATIC=1 for the static glibc binary and STRIP=1 for a stripped one; make build-static is make build STATIC=1; the old static target is gone; builds deployed to port 40290 use make build-static; the help text and README name the commands
+  - evidence: wf_b2f16ac1-863 verify and verify-2: make -n build-static equals make -n build STATIC=1; STATIC=1 make build equals the argument form; static-pie not stripped, STRIP=1 stripped; one bump; STATIC in the GLOBALS block; make static gone; README rows match make help
+  - related: ACC-BUILD-76-STATIC
+  - test: make build-static and make build STATIC=1 run the same command (make -n); file reports static-pie; STRIP=1 gives stripped; one bump per build
+  - test-tags: E2E
+  - log: 2026-10-28T14:02:03Z @kj added
+  - log: 2026-10-28T14:16:48Z @kj closed
+  - log: 2026-10-28T14:31:57Z @kj reopened; evidence retired: Makefile static target with STRIP ?= 0; make help lists it; make static is not stripped, make static STRIP=1 is stripped (file); make -n build, ci and run unchanged; README build table names both commands (wf_8da30b69-32c make-verify.json)
+  - log: 2026-10-28T14:31:57Z @kj amended title "Static build from a Makefile target, stripped or not" -> "Static build is make build STATIC=1, alias make build-static"; text "a Makefile target builds the static release binary; one make variable chooses a stripped binary or one that keeps its symbols; the help text and README name both commands" -> "make build takes STATIC=1 for the static glibc binary and STRIP=1 for a stripped one; make build-static is make build STATIC=1; the old static target is gone; builds deployed to port 40290 use make build-static; the help text and README name the commands"
+  - log: 2026-10-28T14:31:58Z @kj edited test "run the target both ways; file reports static, and stripped or not stripped, for each" -> "make build-static and make build STATIC=1 run the same command (make -n); file reports static-pie; STRIP=1 gives stripped; one bump per build"
+  - log: 2026-10-28T14:31:58Z @kj owner 2026-10-28: rename to make build-static, essentially make build with STATIC=1; deploys use it; build, run and docker keep bumping
+  - log: 2026-10-28T14:32:20Z @kj owner: the variable sits in the Makefile preamble with FEATURES, STRIP and BUMP; name kept as STATIC, the owner's own word
+  - log: 2026-10-28T14:40:17Z @kj closed
+- [x] `ACC-BUILD-83-VERSION` **Version 0.6.28** - MEDIUM; the workspace version in Cargo.toml and Cargo.lock is 0.6.28; make version, btop-web -v and the top bar show it; no tag, commit or publish comes with it
+  - evidence: wf_12584e95-844: Cargo.toml and Cargo.lock say 0.6.28 (cargo set-version); make version prints 0.6.28; built binary -v prints the version; 360x740 PAUSED + READ-ONLY with a 6-character version: one 22 px row, no clip, no scroll, CONFIG ends 1.9 px inside the viewport
+  - test: make version prints 0.6.28; btop-web -v prints btop-web 0.6.28; the top bar shows 0.6.28 and fits at 360 px in every live state
+  - test-tags: E2E
+  - log: 2026-10-28T14:17:45Z @kj added
+  - log: 2026-10-28T14:25:42Z @kj closed
+- [x] `ACC-BUILD-84-AUTO-PATCH` **Every rebuild increments the patch version** - MEDIUM; make build (STATIC=1 and build-static included), run and docker increment the workspace patch version (0.6.28 to 0.6.29) in Cargo.toml and Cargo.lock before compiling, through an increment_version_number target as in the copier-data-science Makefile; SKIP_VERSION_INCREMENT=1 skips it; make ci and test never bump; no tag, commit or publish
+  - evidence: wf_b2f16ac1-863 verify-2: increment_version_number (cargo set-version --workspace --bump patch) before build, build-static, run, docker; 0.6.28 -> 0.6.29 once per build-static; SKIP_VERSION_INCREMENT=1 keeps it; make -n ci unchanged; GLOBALS/COMMANDS/help banners identical to kmp-concept
+  - related: ACC-BUILD-83-VERSION - starts from 0.6.28
+  - test: run make build twice: 0.6.28, 0.6.29, 0.6.30; -v matches; SKIP_VERSION_INCREMENT=1 make build and make ci leave it unchanged
+  - test-tags: E2E
+  - log: 2026-10-28T14:18:29Z @kj added
+  - log: 2026-10-28T14:25:42Z @kj closed
+  - log: 2026-10-28T14:33:14Z @kj reopened; evidence retired: wf_12584e95-844 verify: make build 0.6.28 -> 0.6.29 -> 0.6.30, lock matches, cargo build --locked passes, -v prints 0.6.30; BUMP=0 unchanged; static and run bump; docker -n shows the bump; ci, test, coverage never bump (make -n ci byte-identical)
+  - log: 2026-10-28T14:33:14Z @kj amended text "make build, static, run and docker increment the workspace patch version (0.6.28 to 0.6.29) in Cargo.toml and Cargo.lock before compiling, automatically; BUMP=0 builds without it; make ci and test never bump; no tag, commit or publish" -> "make build (STATIC=1 and build-static included), run and docker increment the workspace patch version (0.6.28 to 0.6.29) in Cargo.toml and Cargo.lock before compiling, through an increment_version_number target as in the copier-data-science Makefile; SKIP_VERSION_INCREMENT=1 skips it; make ci and test never bump; no tag, commit or publish"
+  - log: 2026-10-28T14:33:14Z @kj edited test "run make build twice: make version goes 0.6.28, 0.6.29, 0.6.30; btop-web -v matches; make build BUMP=0 and make ci leave it unchanged" -> "run make build twice: 0.6.28, 0.6.29, 0.6.30; -v matches; SKIP_VERSION_INCREMENT=1 make build and make ci leave it unchanged"
+  - log: 2026-10-28T14:33:14Z @kj owner: follow the copier-data-science Makefile approach (GLOBALS preamble with a comment per toggle, SKIP_VERSION_INCREMENT, increment_version_number), variables also settable as environment variables, unless cargo has its own best approach; cargo set-version kept as the cargo-ecosystem tool
+  - log: 2026-10-28T14:40:17Z @kj closed
+- [x] `ACC-BUILD-95-PUBLIC-REPO` **Repository is public** - MEDIUM; the GitHub repository stellarshenson/btop-web answers visibility public to the GitHub API, so its source, its README badges and its Actions runs are readable without an account
+  - evidence: GitHub API GET showed private true, PATCH {"private":false} answered HTTP 200, visibility public, private false
+  - test: curl the GitHub API for the repository, read the visibility field, assert public
+  - test-tags: MANUAL
+  - log: 2026-10-28T15:34:56Z @kj added
+  - log: 2026-10-28T15:34:57Z @kj closed: repository made public on the Star Colonel's instruction 2026-10-28
 
 ## Collection parity `PARITY`
 
@@ -81,6 +125,13 @@ Every metric matches btop 1.3.0 from the same source; an unreadable metric is ne
   - mechanism: 2026-10-25T02:25:12Z @kj Collector fields are Option<T>; the template renders None as unavailable
   - log: 2026-10-25T02:25:12Z @kj added
   - log: 2026-10-25T03:14:13Z @kj closed: verified against the unavailable fixture tree, 2026-10-25
+- [x] `ACC-PARITY-88-WHOLE-PCT` **CPU total as a whole percent** - MEDIUM; the CPU total in the gauge and the CPU tile shows a whole percent (14%), as btop 1.3.0 Cpu::draw prints it; the reserved slot is 100
+  - evidence: CPU total reads a whole percent in the tile, the gauge and the aria-label every frame, with the slot of 100
+  - related: ACC-VIEW-81-NUMBER-ALIGN, ACC-VIEW-87-NUMBER-PLACE
+  - test: page at 14 percent CPU shows 14%, not 14.0%; http test pins the format
+  - test-tags: UNIT, FUNCTIONAL
+  - log: 2026-10-28T14:40:02Z @kj added
+  - log: 2026-10-28T18:03:56Z @kj closed
 
 ## Collector structure `COLL`
 
@@ -160,6 +211,11 @@ Selectable light and dark theme pairs, applied only through CSS custom propertie
   - test-tags: FUNCTIONAL
   - log: 2026-10-27T18:31:54Z @kj added
   - log: 2026-10-28T02:00:20Z @kj closed; reason: evidence names the measured result and the checkpoint
+- [ ] `ACC-THEME-94-CYBER-CYAN` **More theme pairs including a cyber-cyan pair** - MEDIUM; Three new numbered pairs join the five today: one futuristic cyber pair on cyan accents, plus two more for variety, each with dark and light; every CSS custom property has a value in every pair, text reaches 4.5:1 composed and graphics 3:1, and tests/theme_contrast.rs covers every pair in both modes
+  - test: switch to each new pair in dark and light; the contrast test passes for all pairs; no property falls back to Default
+  - test-tags: FUNCTIONAL, UNIT
+  - mechanism: 2026-10-28T15:16:27Z @kj Numbered pairs 5 and up in the theme layer; CSS custom properties only, token names unchanged
+  - log: 2026-10-28T15:16:27Z @kj added
 
 ## Documentation `DOCS`
 
@@ -181,6 +237,18 @@ The README explains the product and shows both themes
   - mechanism: 2026-10-25T15:15:34Z @kj numbered sections, a commands table and a status line refreshed whenever a gate or a count moves
   - log: 2026-10-25T15:15:34Z @kj added
   - log: 2026-10-26T18:59:43Z @kj closed
+- [x] `ACC-DOCS-85-README-TERSE` **README in the terse technical style** - MEDIUM; README.md follows the markdown-editing technical-documentation form: a short overview, then declarative bullets and tables, one fact each; at most 1,500 words (3,792 on 2026-10-28); every command, flag, endpoint and path a user needs stays, and every statement matches the code
+  - evidence: README.md is 1300 words (wc -w), terse form with a grouped overview; verifier round 3 pass with no findings; applied from tmp/workflows/btop-web-readme/README.draft.md
+  - test: wc -w README.md; check each command and path against the Makefile and the code
+  - test-tags: MANUAL
+  - log: 2026-10-28T14:23:25Z @kj added
+  - log: 2026-10-28T16:06:23Z @kj closed
+- [x] `ACC-DOCS-86-SMOOTH-SCROLL` **Smooth graph scrolling documented** - MEDIUM; the README explains, in a short section, how the graphs scroll continuously while the sampler runs only every 250 ms: what the server sends per tick, what the browser animates between ticks, and what that saves; it names the code that does it
+  - evidence: one section states the 250 ms sampling, the 1 s EMA and PCHIP, nothing moving between frames, and the measured rejection of between-tick motion; verifier round 3 pass; tmp/workflows/btop-web-readme/checkpoints/verify-3.json
+  - test: read the section; each claim points at code that does it
+  - test-tags: MANUAL
+  - log: 2026-10-28T14:23:25Z @kj added
+  - log: 2026-10-28T16:06:23Z @kj closed
 
 ## Safety and controls `SAFE`
 
@@ -283,7 +351,8 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - mechanism: 2026-10-26T15:01:47Z @kj server-built SVG arc with tick paths; the readout is HTML centred over the hollow, with the arc's inner radius as its bound
   - log: 2026-10-26T15:01:47Z @kj added
   - log: 2026-10-26T17:09:27Z @kj closed
-- [ ] `ACC-GRAPH-43-GPU-LOAD` **GPU load graph in the lower band** - HIGH; the lower band's left slot holds a GPU load graph: each GPU in its own lane, the lanes on one shared time axis, smoothed and PCHIP like the other plots, no text over the plot; owner asked 2026-10-26, lanes 2026-10-28
+- [x] `ACC-GRAPH-43-GPU-LOAD` **GPU load graph in the lower band** - HIGH; the lower band's left slot holds a GPU load graph: each GPU in its own lane, the lanes on one shared time axis, smoothed and PCHIP like the other plots, no text over the plot; owner asked 2026-10-26, lanes 2026-10-28
+  - evidence: GPU load graph in the lower band: three lanes on one shared time axis, PCHIP lines, legend per GPU; batch-2 verify-1 gate 1; live at 40290
   - test: render at 1440x900: band 3 left panel is the GPU load plot, one series per GPU, no text inside its data-chart box
   - test-tags: UNIT, FUNCTIONAL
   - log: 2026-10-26T15:51:13Z @kj added
@@ -293,6 +362,7 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - log: 2026-10-28T11:14:34Z @kj amended text "the lower band's left slot, where 05 had the network graph, holds a GPU load graph: utilisation history of each GPU on one shared time axis, smoothed and PCHIP like the other plots, no text over the plot; owner asked 2026-10-26" -> "HIGH; the lower band's left slot holds a GPU load graph: each GPU in its own lane, the lanes on one shared time axis, smoothed and PCHIP like the other plots, no text over the plot; owner asked 2026-10-26, lanes 2026-10-28"
   - log: 2026-10-28T11:14:34Z @kj correction: the reopen line's defect id is DEF-GRAPH-51-GPU-LANES
   - log: 2026-10-28T11:44:20Z @kj owner 2026-10-28: one separate graph per GPU, not one shared graph; legend keeps all fields at 1024x768
+  - log: 2026-10-28T15:38:34Z @kj closed
 - [-] `ACC-GRAPH-45-MOTION-PREDICT` **Plots and gauges move between samples with a fast predictor** - MEDIUM; between samples every plot slides and every gauge arc glides toward a one-interval-ahead estimate from a fast Rust predictor (Kalman or similar), corrected when the sample arrives; numbers stay raw; used only if it costs next to nothing; a CONFIG toggle turns it off; owner asked 2026-10-26
   - test: fps sweep: client CPU under 1 pp of one core at the chosen capped fps, fps above the 4 per s update rate; predictor beats hold-last on CPU; toggle off gives today's page
   - test-tags: UNIT, FUNCTIONAL
@@ -352,6 +422,77 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - log: 2026-10-28T10:07:54Z @kj added
   - log: 2026-10-28T10:10:23Z @kj overrides ACC-GRAPH-24-UNOBSCURED removed - override removed, ACC-GRAPH-73 rejected
   - log: 2026-10-28T10:10:23Z @kj rejected: rejected by the owner on 2026-10-28 before any change was made; ACC-GRAPH-24-UNOBSCURED applies unchanged
+- [x] `ACC-GRAPH-78-GPU-LANES` **One graph lane per GPU with visible boundaries** - HIGH; each GPU has its own graph lane, lined up with its legend row; a gap and a dividing line separate the lanes; the vertical grid stops at each lane edge; the 0% and 100% lines sit inside the lane, clear of the boundary
+  - evidence: each GPU has its own lane lined up with its legend row; gap and 1 px rule between lanes; vertical grid stops at the lane edges; one shared time axis
+  - test: screenshot the GPU panel at 1440x900 and 1024x768 with one GPU at 0% next to one at 100%; each line is visibly in its own lane
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T14:05:07Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `ACC-GRAPH-89-PRED-TRACE` **Masked prediction traces recorded** - HIGH; Live-host traces at a 50 ms grid across idle, steady, bursty and peak load, plus the 2026-10-26 six-minute burst trace, with phase stamps and gaps recorded under tmp/workflows/btop-web-predict/traces/; each series is the readout btop-web printed, not a recomputation
+  - evidence: six scenarios at a 100 ms grid with zero dropped ticks plus the 2026-10-26 250 ms trace; recorder and per-scenario summaries in tmp/workflows/btop-web-predict/traces/; run wf_96e5bb85-9e1
+  - test: recount each trace: grid spacing, gaps and phases; rerun the recorder and compare
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-28T15:15:02Z @kj The recorder reads the live /events stream of an own btop-web copy on an ephemeral port and writes one JSON line per tick
+  - log: 2026-10-28T15:15:02Z @kj added
+  - log: 2026-10-28T16:32:29Z @kj closed
+- [x] `ACC-GRAPH-90-PRED-STABLE` **Chosen predictor is stable and well behaved** - HIGH; The chosen predictor stays inside the range of the last raw samples, adds no excess direction reversals against the truth, and its correction when the next readout lands is bounded; the bounds are stated in the evidence for every recorded phase
+  - evidence: hold passes every gate at 1 s (overshoot 0, reversals 0, sigma ratio 0.69) and ema_step at 2 s (0.159 reversals per second, 0.221); kf1 and holt_damped are more accurate but fail the reversal gate in all seven traces
+  - test: score the chosen predictor on the test segments; report overshoot, reversals and correction jumps
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T15:15:02Z @kj added
+  - log: 2026-10-28T16:32:34Z @kj closed
+- [x] `ACC-GRAPH-91-PRED-MASK` **Predictions use only samples up to the last readout** - HIGH; Every candidate predictor at readout k sees samples at or before the last readout only; tuning and test segments are disjoint; evaluation runs at 250, 500, 1000 and 2000 ms readout intervals
+  - evidence: poison check passed: a mid-trace and an appended future sample changed no earlier prediction; tuning and held-out halves disjoint; four readout intervals scored; tmp/workflows/btop-web-predict/eval/metrics.json
+  - test: inject a future sample far from the trend; no prediction at an earlier readout changes
+  - test-tags: UNIT, FUNCTIONAL
+  - log: 2026-10-28T15:15:16Z @kj added
+  - log: 2026-10-28T16:32:34Z @kj closed
+- [ ] `ACC-GRAPH-92-PRED-ONESEC` **One-second readout keeps a smooth, close plot** - HIGH; At a 1 s readout interval the drawn path stays within the stated p99 error of the truth at the real plot size and meets the wiggle bound in every recorded phase, including peaks; 250 and 500 ms do not regress against the current EMA
+  - test: replay every trace at 1 s; report p99 error and reversals per phase
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T15:15:16Z @kj added
+- [x] `ACC-GRAPH-93-PRED-PAGE` **Prediction comparison page** - MEDIUM; A page replays the recorded traces, switches predictor and readout interval from 250 ms to 2 s, animates the plots with the masked prediction, and shows the live error and wiggle numbers; the best approach is presented with its measured numbers
+  - evidence: page verified in headless Chromium: no console error, no request beyond the file, every control changes its drawing and stats, predicted tail past the last readout with correction on the next; live numbers match the evaluator within 5 percent; tmp/workflows/btop-web-predict-eval/checkpoints/verify.json
+  - test: open the page; switch predictors and intervals; the shown numbers equal the evaluator's
+  - test-tags: MANUAL, FUNCTIONAL
+  - log: 2026-10-28T15:15:16Z @kj added
+  - log: 2026-10-28T16:32:29Z @kj closed
+- [ ] `ACC-GRAPH-96-NET-AUTOSCALE` **Network auto scale with a 1 Mbit/s floor** - HIGH; btop's net_auto: auto on or off, floor 1 Mbit/s, fall window five minutes, sync, manual ceilings when off; up after five ticks above to 1.3 times the five-tick average, down after the window below a tenth to 3 times the average, never under the floor; axis prints the top value
+  - related: ACC-GRAPH-67-SMOOTH-SCALE
+  - test: run traffic above and below the ceiling for five minutes; the axis label, the uptick and the delayed fall match the rule in both directions
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-28T16:04:25Z @kj btop 1.3.0 src/linux/btop_collect.cpp:2198-2278 with the floor and window as stated; every ceiling change animates through chart::Scale (ACC-GRAPH-67-SMOOTH-SCALE)
+  - mechanism: 2026-10-28T16:02:30Z @kj btop 1.3.0 src/linux/btop_collect.cpp:2198-2278, with the floor and the decay window changed as stated
+  - log: 2026-10-28T16:02:30Z @kj added
+  - log: 2026-10-28T16:03:53Z @kj edited text "btop's net_auto with a 1 Mbit/s floor: the ceiling rises after five ticks above it to 1.3 times the five-tick average, falls only after five minutes below it, never under the floor; download and upload share it; the axis prints the top value; it survives a page reload" -> "btop's net_auto with settings: auto on or off, floor 1 Mbit/s, fall window five minutes, sync or separate, manual ceilings when off; rises after five ticks above to 1.3 times the five-tick average, falls only after the window, never under the floor; axis prints the top value; persists"
+  - log: 2026-10-28T16:04:25Z @kj edited text "btop's net_auto with settings: auto on or off, floor 1 Mbit/s, fall window five minutes, sync or separate, manual ceilings when off; rises after five ticks above to 1.3 times the five-tick average, falls only after the window, never under the floor; axis prints the top value; persists" -> "btop's net_auto: auto on or off, floor 1 Mbit/s, fall window five minutes, sync, manual ceilings when off; up after five ticks above to 1.3 times the five-tick average, down after the window below a tenth to 3 times the average, never under the floor; axis prints the top value"
+- [x] `ACC-GRAPH-97-SMOOTH-REFRESH` **Smoothing constant fixed in time, not stretched with the interval** - HIGH; Smoothing stays 1 s in wall-clock time: at 250 ms it spans four samples, at 1 s it spans one, so a sparse sampler yields a choppier graph rather than a faked smooth rise; the animation clock smooths motion, not values; numbers stay raw
+  - evidence: chart::tests::smoothing_constant_stays_one_second_at_every_interval passes: tau 1000.0 and alpha = 1 - exp(-ms/1000) at 100, 250, 500, 1000 and 2000 ms, the constant never scales with update_ms
+  - test: run at 250 ms, 1 s and 2 s; the per-step movement fraction is 0.221 in each, the curve lags tau, make ci green
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-28T16:40:50Z @kj chart::smooth keeps tau = 1 s whatever update_ms is; alpha follows the interval, 0.221 at 250 ms and 0.632 at 1 s; a step reaches 95 percent in about 3 s
+  - mechanism: 2026-10-28T16:39:51Z @kj chart::smooth derives tau = 4 x update_ms with no floor; 4 x 250 ms is today's 1 s, so the default is unchanged; a step reaches 95 percent in about 3 tau, twelve readouts
+  - mechanism: 2026-10-28T16:36:52Z @kj chart::smooth derives tau from update_ms; 4 x 250 ms equals today's 1 s constant, so the default is unchanged
+  - log: 2026-10-28T16:36:52Z @kj added
+  - log: 2026-10-28T16:39:51Z @kj edited text "Smoothing scales with the refresh interval: tau = max(1 s, 4 times the interval), so every refresh moves the same 0.221 fraction of the gap per step and a 1 s refresh looks as smooth as today's 250 ms; no predictor is added; numbers stay raw" -> "Smoothing tracks the sampling rate: tau is four readout intervals, so the curve always spans four samples - the detail the sampling provides - and finer sampling gives finer detail; at 250 ms that is today's 1 s; the animation never justifies a longer interval; numbers stay raw"
+  - log: 2026-10-28T16:40:50Z @kj edited text "Smoothing tracks the sampling rate: tau is four readout intervals, so the curve always spans four samples - the detail the sampling provides - and finer sampling gives finer detail; at 250 ms that is today's 1 s; the animation never justifies a longer interval; numbers stay raw" -> "Smoothing stays 1 s in wall-clock time: at 250 ms it spans four samples, at 1 s it spans one, so a sparse sampler yields a choppier graph rather than a faked smooth rise; the animation clock smooths motion, not values; numbers stay raw"
+  - log: 2026-10-28T16:40:50Z @kj edited title "Smoothing scales with the refresh interval" -> "Smoothing constant fixed in time, not stretched with the interval"
+  - log: 2026-10-28T19:15:09Z @kj closed
+- [x] `ACC-GRAPH-98-ANIM-CLOCK` **Animation clock independent of the sampler** - HIGH; The plot animation runs on its own clock, independent of the sampler: the window scrolls at the display frame rate between readouts, the tail past the last readout extends the last smoothed knot, never a raw value, PAUSED, STALE and reduced motion stop it, and a setting turns it off
+  - evidence: 300 frames at 250 ms and 1 s: every frame advances, 1.85 percent spread, worst boundary step 0.046 px; tail extends the smoothed knot within 0.026 px; stops on PAUSED, STALE, hidden, reduced motion; CONFIG chip toggles; cost 43.8 against 20.0 points at 60 fps
+  - related: ACC-GRAPH-97-SMOOTH-REFRESH
+  - test: capture 300 frames over 5 s at 250 ms and at 1 s sampling: the curve advances in every frame, per-frame displacement varies under 10 percent, and no readout boundary jumps position or value more than 0.5 px
+  - test-tags: FUNCTIONAL, UNIT
+  - mechanism: 2026-10-28T16:38:17Z @kj One requestAnimationFrame loop translates the drawn series group by (now - last readout)/window; the tail extends the EMA knot the curve already draws; the next frame lands exactly one slot on, so position is continuous
+  - mechanism: 2026-10-28T16:38:06Z @kj One requestAnimationFrame loop translates the drawn series group by (now - last readout)/window; the next frame lands exactly one slot on, so the position is continuous
+  - log: 2026-10-28T16:38:06Z @kj added
+  - log: 2026-10-28T16:38:17Z @kj edited text "The plot animation runs on its own clock, independent of the sampler: the window scrolls at the display frame rate between readouts, the tail past the last readout holds the last measured value, no value is invented, PAUSED, STALE and reduced motion stop it, and a setting turns it off" -> "The plot animation runs on its own clock, independent of the sampler: the window scrolls at the display frame rate between readouts, the tail past the last readout extends the last smoothed knot, never a raw value, PAUSED, STALE and reduced motion stop it, and a setting turns it off"
+  - log: 2026-10-28T16:39:06Z @kj edited test "run at 250 ms and 1 s sampling with animation on and off; the scroll is continuous, the tail is the held value, no motion in PAUSED, STALE or reduced motion; report the client CPU points" -> "capture 300 frames over 5 s at 250 ms and at 1 s sampling: the curve advances in every frame, per-frame displacement varies under 10 percent, and no readout boundary jumps position or value more than 0.5 px"
+  - log: 2026-10-28T19:15:14Z @kj closed
+- [ ] `ACC-GRAPH-99-LANE-BORDER` **Clear border between GPU lanes** - MEDIUM; Every GPU lane boundary is a clear border: a full-width rule of at least 1 px between lanes, in a colour reaching 3:1 against the plot surface, with the 4 px gap kept; vertical grid lines stop at each lane's edge; it reads as a boundary in a screenshot
+  - test: screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a visible full-width rule at 3:1 or more
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T19:20:04Z @kj added
 
 ## Dashboard display `VIEW`
 
@@ -475,11 +616,50 @@ What the panels render and how unavailable values are drawn
   - test-tags: UNIT, FUNCTIONAL
   - log: 2026-10-27T12:19:32Z @kj added; reason: states the click rule, the memory default over btop.conf and the marker
   - log: 2026-10-28T07:31:15Z @kj closed; reason: evidence names the measured result and the checkpoint
-- [ ] `ACC-VIEW-75-PANEL-MENU` **Right-click a panel to set its size** - HIGH; right-click on any panel opens a menu: Off, S, M, L; the choice applies at once, shares the Layout page state and persists in the browser; Off removes the panel, which the Layout page adds back; the keyboard context-menu key opens it on a focused panel
+- [x] `ACC-VIEW-75-PANEL-MENU` **Right-click a panel to set its size** - HIGH; right-click on any panel opens a menu: Off, S, M, L; the choice applies at once, shares the Layout page state and persists in the browser; Off removes the panel, which the Layout page adds back; the keyboard context-menu key opens it on a focused panel
+  - evidence: right-click opens OFF/S/M/L with M checked and Escape closes; batch-2 merge smoke and final gate 2; build 9c91f603 live on 40290
   - related: ACC-VIEW-40-GADGETS
   - test: right-click each panel at 1440x900: menu shows Off/S/M/L with the current size marked; each choice changes the panel and the Layout page and survives a reload
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T11:06:35Z @kj added
+  - log: 2026-10-28T15:38:34Z @kj closed
+- [x] `ACC-VIEW-79-GPU-BARS` **GPU mini bars for load, memory and power** - MEDIUM; each GPU legend row shows three mini bars in the core-bar style, in the free space right of the values: LOAD (utilisation), MEM (VRAM used of total), PWR (power draw of the power limit); the bars reserve their width; at narrow widths they drop before any text field
+  - evidence: LOAD, MEM and PWR bars match the same tick's utilisation, VRAM and power within 1-2 points; unavailable is hatched; bars drop before any text at 1024x768
+  - test: screenshot the GPU panel at 1440x900 and 1024x768; bar lengths match the row's %, GiB and W values; no text field is dropped
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-28T14:05:13Z @kj PWR is btop's pwr meter: power_w / power_max_w from NVML power usage and power management limit; MEM is mem_used / mem_total; LOAD is NVML GPU utilisation
+  - log: 2026-10-28T14:05:13Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `ACC-VIEW-80-STAT-TIPS` **Tooltip on every stat** - MEDIUM; every stat on the page (number, gauge, bar, chip) shows a tooltip on hover: what the value is, its unit and source, and a few details the panel does not show; about 4 short lines at most; it stays while the value updates and does not cover the hovered value
+  - evidence: 164 of 164 stat anchors at 1440x900 and 57 of 57 at 390x844 name value, unit and source, at most 4 lines, clear of the stat and of any chart; 26 stayed through two live frames
+  - test: hover each stat in every panel at 1440x900; a tooltip names the value, unit and source, stays through two updates, and has at most 4 lines
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T14:05:40Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `ACC-VIEW-81-NUMBER-ALIGN` **Placement alternatives for reserved-width numbers** - MEDIUM; the owner gets design alternatives for placing a reserved-width number (gauge centres, stat columns) without a blank band before it; the chosen one is applied everywhere ACC-LAYOUT-74 reserves width outside table columns
+  - evidence: owner picked placement by context plus btop's whole percent; applied by acc-87; gauge centred, values at the label's left edge, no blank band, nothing beside them moves
+  - mechanism: 2026-10-28T14:38:39Z @kj gauge readouts centred with their unit as one block on the gauge axis; other reserved values start at the label's left edge, reserve after the number, before its unit or word; numeric table columns stay right-aligned; CPU total as btop's whole percent (slot 100)
+  - test: screenshot the CPU gauge and stat column at 1.0, 14.0 and 100.0; no blank band before the number; nothing beside it moves
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T14:08:23Z @kj added
+  - log: 2026-10-28T14:10:07Z @kj owner picked option 1 of 4 (centre the gauge readout with its %; stat values start under their label, reserved gap after the number), then asked for concepts borrowed from other solutions on the web before the change
+  - log: 2026-10-28T14:10:13Z @kj owner: same for the Memory panel
+  - log: 2026-10-28T14:38:36Z @kj owner delegated the pick (use best judgement): concept 1 (placement by context) with concept 4(a) (CPU total as btop's whole percent); research tmp/workflows/btop-web-number-research/concepts.md
+  - log: 2026-10-28T18:03:56Z @kj closed
+- [x] `ACC-VIEW-82-GPU-TAB` **GPU legend edge tab instead of a square** - LOW; each GPU legend row is marked by a tab on its left edge, the full height of the row, in that GPU's line colour, replacing the square swatch; the tab reaches 3:1 against the panel background in every theme
+  - evidence: full-height 3.00 px edge tab in each GPU line colour, 3.013:1 minimum over ten theme variants, no square
+  - related: ACC-GRAPH-78-GPU-LANES, ACC-VIEW-79-GPU-BARS - same legend rows
+  - test: screenshot the GPU panel in dark and light; every row has a full-height tab in its line colour and no square
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T14:16:22Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `ACC-VIEW-87-NUMBER-PLACE` **Live numbers placed by context** - MEDIUM; gauge readouts (CPU, Memory) sit centred on the gauge axis with their unit as one block; every other reserved value starts at its label's left edge with the reserve after the number, so its unit and following words never move; numeric table columns stay right-aligned
+  - evidence: gauge readouts centred as one block (0.055 and 0.000 px), other values at their label edge with the reserve after the number, tables right-aligned, drift 0.000 px over 20 s
+  - related: ACC-VIEW-81-NUMBER-ALIGN,DEF-VIEW-56-NUMBER-INDENT,DEF-VIEW-57-MEM-INDENT,ACC-LAYOUT-74-RESERVED-WIDTH
+  - test: screenshot CPU and Memory at 1, 14 and 100 percent and 9.00, 512 and 1023 GiB; no blank band before a number; units, of 64 and used keep one x
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T14:39:53Z @kj added
+  - log: 2026-10-28T18:03:56Z @kj closed
 
 ## Layout and density `LAYOUT`
 
@@ -521,12 +701,14 @@ Page fit, density and responsive behaviour across viewport sizes
   - test-tags: FUNCTIONAL
   - log: 2026-10-27T12:21:51Z @kj added
   - log: 2026-10-28T02:00:21Z @kj closed; reason: evidence names the measured result and the checkpoint
-- [ ] `ACC-LAYOUT-74-RESERVED-WIDTH` **Reserved space, nothing moves** - HIGH; general rule: every live value reserves the width of its widest form (100%, three-digit counts, longest unit), tabular figures, so no label, value or control beside it moves when the value changes; text longer than its slot (process and model names) is cut by an ellipsis inside the slot
+- [x] `ACC-LAYOUT-74-RESERVED-WIDTH` **Reserved space, nothing moves** - HIGH; general rule: every live value reserves the width of its widest form (100%, three-digit counts, longest unit), tabular figures, so no label, value or control beside it moves when the value changes; text longer than its slot (process and model names) is cut by an ellipsis inside the slot
+  - evidence: reserved width in place; batch-2 verify-1 gate 5: no label, value or control moved more than 0.281 px over 391 sizes, drop order unchanged
   - test: each viewport and theme: set every live value to its narrowest and widest form and watch 20 s of updates; no other text box moves more than 0.5 px
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T10:11:50Z @kj added
   - log: 2026-10-28T10:12:14Z @kj owner: applies everywhere it makes sense - every panel, top bar, legends, process table - wherever a width change moves other text; a value with nothing after it on its line needs no reservation
   - log: 2026-10-28T11:06:10Z @kj scope note: the units after the big numbers (CPU %, Memory GiB) are in scope; the ACC-GRAPH-73 rejection excludes only the overlay and taller charts
+  - log: 2026-10-28T15:38:34Z @kj closed
 
 ## Design and presentation `DESIGN`
 

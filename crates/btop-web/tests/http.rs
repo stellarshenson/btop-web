@@ -8,7 +8,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use btop_web::AppState;
-use btop_web::chart::{ChartPath, GPU_PLOT, PROC_GRAPH, gauge_arc};
+use btop_web::chart::{ChartPath, PROC_GRAPH, gauge_arc, gpu_lane};
 use btop_web::collector::{
     CoreUsage, CpuSnapshot, GpuDevice, MemSnapshot, Snapshot, cpu, gpu, mem, net, proc,
 };
@@ -68,8 +68,8 @@ fn fixture_snapshot() -> Snapshot {
             &[12.0, 37.0],
             0,
             960,
-            GPU_PLOT.width,
-            GPU_PLOT.height,
+            gpu_lane(1).width,
+            gpu_lane(1).height,
             0.0,
             100.0,
         ),
@@ -200,6 +200,9 @@ async fn page_has_every_panel_and_theme_option() {
         "flexoki",
         "gruvbox",
         "solarized",
+        "synthwave",
+        "terracotta",
+        "ultraviolet",
     ] {
         assert!(
             page.contains(&format!("value=\"{theme}\"")),
@@ -299,11 +302,11 @@ async fn unavailable_meters_render_their_unknown_state() {
     }
     assert_eq!(
         page.matches(r#"data-state="unavailable""#).count(),
-        2,
-        "the CPU and memory gauges are the meters the empty tree leaves"
+        3,
+        "the CPU and memory gauges and the memory bar are the meters the empty tree leaves"
     );
     assert!(
-        page.contains(r#"<div class="mem-row swap"><span>swap</span><b>unavailable</b>"#),
+        page.contains(r#"<span>swap</span><b>unavailable</b>"#),
         "the unavailable swap row does not say so"
     );
     // data-w="100%" is the reserved width of a percent cell, not a value
@@ -316,6 +319,41 @@ async fn unavailable_meters_render_their_unknown_state() {
         !page.contains("--value:0"),
         "an unavailable meter rendered a zero fill"
     );
+}
+
+/// DEF-VIEW-50-MEM-TERMS: one bar with a segment and a legend key per part,
+/// in bar order, then one available line.
+fn assert_mem_bar(html: &str, parts: &[&str]) {
+    let segments: Vec<&str> = html
+        .match_indices(r#"<span class="mem-seg" data-seg=""#)
+        .map(|(at, open)| {
+            let name = &html[at + open.len()..];
+            &name[..name.find('"').expect("quote")]
+        })
+        .collect();
+    assert_eq!(segments, parts, "bar segments");
+    for part in parts {
+        assert!(
+            html.contains(&format!(
+                r#"<span><i class="mem-key" data-seg="{part}"></i>{part}</span><b>"#
+            )),
+            "legend lacks {part}"
+        );
+    }
+    assert_eq!(html.matches(r#"class="mem-key""#).count(), parts.len());
+    assert_eq!(html.matches("available = free + cache").count(), 1);
+    assert!(!html.contains(">cached<"), "the cached row is still drawn");
+}
+
+/// DEF-VIEW-50-MEM-TERMS: on a host the bar is used | cache | free.
+#[tokio::test]
+async fn host_memory_bar_has_three_segments() {
+    let snapshot = fixture_snapshot();
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    for html in page_and_event(&page, &fragments(&snapshot), "mem") {
+        assert_mem_bar(html, &["used", "cache", "free"]);
+    }
 }
 
 /// R23: with `show_swap` and `swap_disk` both off btop hides swap entirely,
@@ -350,7 +388,7 @@ async fn swap_block_follows_the_swap_keys() {
     let page =
         String::from_utf8(get(&app(Some(unavailable), true), "/").await.2).expect("utf-8 page");
     assert!(
-        page.contains(r#"<div class="mem-row swap"><span>swap</span><b>unavailable</b>"#),
+        page.contains(r#"<span>swap</span><b>unavailable</b>"#),
         "a requested swap is hidden or not marked unavailable"
     );
 }
@@ -386,12 +424,20 @@ async fn page_renders_the_05_panel_set() {
         "btop<span>-web</span>",
         env!("CARGO_PKG_VERSION"),
         ">250 ms<",
-        r#"class="live-word up" aria-live="polite" data-w="paused">live<"#,
+        r#"class="live-word up" aria-live="polite">live<"#,
         "READ-ONLY",
         "config-toggle",
     ] {
         assert!(bar.contains(marker), "top bar lacks {marker}");
     }
+    // DEF-VIEW-55-CHIP-BLANK: the live chip reserves no width, so it hugs
+    // its state word and sample age and shows no blank band.
+    let chip = bar.find(r#"id="live-chip""#).expect("live chip");
+    let chip = &bar[chip..chip + bar[chip..].find("</b></span>").expect("live chip end")];
+    assert!(
+        !chip.contains("data-w"),
+        "the live chip reserves a width: {chip}"
+    );
     let main = &page[page.find("<main").expect("main")..];
     for repeated in [">250 ms<", "live-word", "READ-ONLY", "hdr-clock"] {
         assert!(!main.contains(repeated), "a panel repeats {repeated}");
@@ -454,6 +500,51 @@ async fn no_text_inside_chart_boxes() {
     }
 }
 
+/// ACC-VIEW-80-STAT-TIPS: every stat carries its tooltip text from the
+/// server: at most 4 short lines, each text naming a unit and a source; no
+/// plot box carries one; one shared tip element serves the page.
+#[tokio::test]
+async fn stat_tips_are_short_and_name_unit_and_source() {
+    let snapshot = fixture_snapshot();
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let mut documents = vec![("page", page)];
+    documents.extend(fragments(&snapshot));
+    for (name, html) in &documents {
+        let tips = elements_with(html, "data-tip");
+        assert!(!tips.is_empty(), "{name} has no stat tooltip");
+        for (tag, _) in tips {
+            assert!(
+                !tag.contains("data-chart"),
+                "{name}: a plot carries a tooltip"
+            );
+            let value = &tag[tag.find("data-tip=\"").expect("tip") + 10..];
+            let value = &value[..value.find('"').expect("tip end")];
+            let lines: Vec<&str> = value.split("&#10;").collect();
+            assert!(
+                (1..=4).contains(&lines.len()),
+                "{name}: {} lines: {value}",
+                lines.len()
+            );
+            let lower = value.to_lowercase();
+            assert!(lower.contains("unit"), "{name}: no unit: {value}");
+            assert!(lower.contains("source:"), "{name}: no source: {value}");
+            for line in lines {
+                let text = line.replace("&lt;", "<").replace("&gt;", ">");
+                assert!(!text.is_empty(), "{name}: empty line: {value}");
+                assert!(text.chars().count() <= 48, "{name}: long line: {text}");
+            }
+        }
+    }
+    let page = &documents[0].1;
+    let all = page.match_indices("data-tip=\"").count();
+    assert!(all >= 30, "the page carries only {all} stat tooltips");
+    assert!(
+        page.contains(r#"<div class="tip" id="tip" role="tooltip" hidden></div>"#),
+        "the page lacks the shared tooltip element"
+    );
+}
+
 /// ACC-GRAPH-67-SMOOTH-SCALE: each network plot draws its area and line in
 /// one series group, which a scale change transforms.
 #[tokio::test]
@@ -462,6 +553,15 @@ async fn network_plots_draw_in_a_series_group() {
     assert!(!snapshot.net.down_chart.line.is_empty());
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
+    // ACC-GRAPH-96: the axis label prints each direction's shown ceiling.
+    let down = btop_web::collector::bytes_short(snapshot.net.scale_down.label_max);
+    let up = btop_web::collector::bytes_short(snapshot.net.scale_up.label_max);
+    assert!(
+        page.contains(&format!(
+            "scale ▼ <span data-w=\"999M\">{down}</span> ▲ <span data-w=\"999M\">{up}</span>"
+        )),
+        "the axis label does not print the shown ceilings"
+    );
     let events = fragments(&snapshot);
     for html in page_and_event(&page, &events, "net") {
         let plots: Vec<_> = elements_with(html, "data-chart")
@@ -477,6 +577,20 @@ async fn network_plots_draw_in_a_series_group() {
             );
         }
     }
+}
+
+/// DEF-TEST-53-HOST-IFACE: the page names the interface the recorded tree
+/// lists. The tree holds no eth0, so an interface of the machine that runs
+/// the test must not reach the page.
+#[tokio::test]
+async fn page_names_the_interface_the_recorded_tree_lists() {
+    let snapshot = recorded_snapshot("tests/fixtures/net/host-names/proc", 1);
+    let page = String::from_utf8(get(&app(Some(snapshot), true), "/").await.2).expect("utf-8 page");
+    assert!(
+        page.contains(">enp0s3<"),
+        "the tree's interface is not named"
+    );
+    assert!(!page.contains("eth0"), "a host interface reached the page");
 }
 
 /// The page and the proc fragment of `snapshot`.
@@ -691,24 +805,16 @@ async fn config_offers_process_view_and_tree_nodes() {
     }
 }
 
-/// ACC-GRAPH-43-GPU-LOAD: the GPU panel is one plot with one series per
-/// device and a legend with one entry per device, on the network plot's time
-/// axis. A device without a utilization reading draws no line and reads
-/// unavailable, never zero.
+/// ACC-GRAPH-43-GPU-LOAD, DEF-GRAPH-51-GPU-LANES: the GPU panel holds one
+/// lane per device, each its own plot box with one series beside its legend
+/// entry, and one shared axis with the network plot's labels. A device
+/// without a utilization reading draws no line and reads unavailable, never
+/// zero.
 #[tokio::test]
-async fn gpu_panel_draws_one_series_and_one_legend_entry_per_device() {
+async fn gpu_panel_draws_one_lane_per_device() {
     let mut snapshot = recorded_snapshot("tests/fixtures/proc", 2);
-    let chart = || {
-        ChartPath::new(
-            &[12.0, 37.0],
-            0,
-            960,
-            GPU_PLOT.width,
-            GPU_PLOT.height,
-            0.0,
-            100.0,
-        )
-    };
+    let lane = gpu_lane(3);
+    let chart = || ChartPath::new(&[12.0, 37.0], 0, 960, lane.width, lane.height, 0.0, 100.0);
     snapshot.gpu.devices = vec![
         GpuDevice {
             name: "RTX PRO 4000 Blackwell".to_string(),
@@ -723,6 +829,8 @@ async fn gpu_panel_draws_one_series_and_one_legend_entry_per_device() {
         GpuDevice {
             name: "RTX PRO 6000 Blackwell Max-Q Workstation Edition".to_string(),
             utilization_pct: Some(12.0),
+            power_w: Some(150.0),
+            power_max_w: Some(200.0),
             chart: chart(),
             ..GpuDevice::default()
         },
@@ -761,39 +869,52 @@ async fn gpu_panel_draws_one_series_and_one_legend_entry_per_device() {
         ("gpu fragment", &fragment, "hx-swap-oob"),
     ] {
         let gpu = panel(html, attribute, "p-gpu");
-        assert_eq!(gpu.matches("data-chart=").count(), 1, "{name}: one plot");
-        let series: Vec<(&str, &str)> = elements_with(&gpu, "data-gpu")
+        assert_eq!(
+            gpu.matches("data-chart=").count(),
+            3,
+            "{name}: one plot per device"
+        );
+        let lanes: Vec<(&str, &str)> = elements_with(&gpu, "data-gpu")
             .into_iter()
-            .filter(|(tag, _)| tag.starts_with("<g"))
+            .filter(|(tag, _)| tag.starts_with(r#"<div class="gpu-lane""#))
             .collect();
         let entries: Vec<(&str, &str)> = elements_with(&gpu, "data-gpu")
             .into_iter()
-            .filter(|(tag, _)| tag.starts_with("<div"))
+            .filter(|(tag, _)| tag.starts_with(r#"<div class="legend-item""#))
             .collect();
-        assert_eq!(series.len(), 3, "{name}: one series per device");
+        assert_eq!(lanes.len(), 3, "{name}: one lane per device");
         assert_eq!(entries.len(), 3, "{name}: one legend entry per device");
-        for (index, entry) in entries.iter().enumerate() {
-            assert_eq!(
-                gpu.matches(&format!(
-                    r#"class="gpu-series g{index}" data-gpu="{index}""#
-                ))
-                .count(),
-                1,
-                "{name}: series {index}"
+        let view_box = format!(r#"viewBox="0 0 {} {}""#, lane.width, lane.height);
+        for (index, (tag, inner)) in lanes.iter().enumerate() {
+            assert!(
+                tag.contains(&format!(r#"data-gpu="{index}""#)),
+                "{name}: lane {index}"
+            );
+            let plots = elements_with(inner, "data-chart");
+            assert_eq!(plots.len(), 1, "{name}: lane {index} has one plot box");
+            assert!(
+                plots[0].1.contains(&view_box),
+                "{name}: lane {index} {view_box}"
             );
             assert_eq!(
-                gpu.matches(&format!(r#"class="legend-item" data-gpu="{index}""#))
-                    .count(),
+                plots[0].1.matches("<g ").count(),
                 1,
-                "{name}: legend entry {index}"
+                "{name}: lane {index} series"
             );
             assert!(
-                entry.1.contains(&format!("sw-gpu-{index}")),
-                "{name}: entry {index} swatch"
+                plots[0]
+                    .1
+                    .contains(&format!(r#"class="gpu-series g{index}""#)),
+                "{name}: lane {index} series colour"
+            );
+            assert!(
+                inner.contains(&format!(r#"class="legend-item" data-gpu="{index}""#))
+                    && inner.contains(&format!("sw-gpu-{index}")),
+                "{name}: lane {index} holds its legend entry"
             );
         }
-        assert!(series[0].1.contains("<path"), "{name}: GPU 0 draws a line");
-        assert!(!series[2].1.contains("<path"), "{name}: GPU 2 drew a line");
+        assert!(lanes[0].1.contains("<path"), "{name}: GPU 0 draws a line");
+        assert!(!lanes[2].1.contains("<path"), "{name}: GPU 2 drew a line");
         assert!(
             entries[2].1.contains("unavailable") && !entries[2].1.contains("0%"),
             "{name}: GPU 2 entry {}",
@@ -818,9 +939,44 @@ async fn gpu_panel_draws_one_series_and_one_legend_entry_per_device() {
                 entries[0].1
             );
         }
+        // ACC-VIEW-79-GPU-BARS: LOAD, MEM and PWR bars in the core meter
+        // style; a bar with no reading renders its unavailable state.
+        assert!(
+            entries[0].1.contains(
+                r#"<i class="gbl">load</i><span class="meter" style="--value:37"></span><i class="gbl">mem</i><span class="meter" style="--value:2"></span><i class="gbl">pwr</i><span class="meter" data-state="unavailable"></span>"#
+            ),
+            "{name}: GPU 0 bars {}",
+            entries[0].1
+        );
+        assert!(
+            entries[1].1.contains(
+                r#"<i class="gbl">load</i><span class="meter" style="--value:12"></span><i class="gbl">mem</i><span class="meter" data-state="unavailable"></span><i class="gbl">pwr</i><span class="meter" style="--value:75"></span>"#
+            ),
+            "{name}: GPU 1 bars {}",
+            entries[1].1
+        );
+        assert_eq!(
+            entries[2]
+                .1
+                .matches(r#"<span class="meter" data-state="unavailable"></span>"#)
+                .count(),
+            3,
+            "{name}: GPU 2 bars render unavailable, never zero: {}",
+            entries[2].1
+        );
+        assert!(
+            !entries[2].1.contains("--value"),
+            "{name}: GPU 2 bars carry no value: {}",
+            entries[2].1
+        );
         assert!(
             !gpu.contains("gpu-spark") && !gpu.contains(r#"class="gpu""#),
             "{name}: GPU cards markup remains"
+        );
+        assert_eq!(
+            gpu.matches(r#"class="xaxis""#).count(),
+            1,
+            "{name}: one shared axis"
         );
         assert_eq!(
             xaxis(&gpu),
@@ -858,11 +1014,9 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
                 r#"<path class="g-fill warn" d="{}">"#,
                 gauge_arc(Some(50.0))
             ),
-            r#"<text class="g-value" x="74" y="66">80.0<tspan class="g-unit" x="75">%</tspan>"#
-                .to_string(),
-            r#"aria-label="CPU total 80.0 percent""#.to_string(),
-            r#"<span class="stat-value crit" data-w="100.0" id="cpu-total">80.0</span>"#
-                .to_string(),
+            r#"<text class="g-value" x="54" y="66">80<tspan class="g-unit">%</tspan>"#.to_string(),
+            r#"aria-label="CPU total 80 percent""#.to_string(),
+            r#"<span class="stat-value crit" data-w="100" id="cpu-total">80</span>"#.to_string(),
         ] {
             assert!(html.contains(&marker), "lacks {marker}");
         }
@@ -873,6 +1027,15 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
             gauge_arc(Some(40.0))
         );
         assert!(html.contains(&arc), "the memory arc is not the EMA");
+        let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
+        let readout = format!(
+            r#"<text class="g-value" x="54" y="66">{} <tspan class="g-unit">{}</tspan>"#,
+            value, unit
+        );
+        assert!(
+            html.contains(&readout),
+            "the memory readout is not centred on the gauge axis"
+        );
         assert!(
             html.contains(r#"<b data-w="100%">70%</b> used"#),
             "the memory foot is not raw"
@@ -908,8 +1071,8 @@ async fn cores_render_rows_with_a_meter_and_the_smoothed_number() {
         let cores = &html[html.find(r#"class="cores-body""#).expect("cores body")..];
         let cores = &cores[..cores.find("</section>").unwrap_or(cores.len())];
         for row in [
-            r#"<div class="core-row" title="cpu0" style="--value:42.4"><span class="cl">C00</span><span class="meter"></span><span class="cv">42<i>%</i></span></div>"#,
-            r#"<div class="core-row" title="cpu1" style="--value:57.6"><span class="cl">C01</span><span class="meter"></span><span class="cv">58<i>%</i></span></div>"#,
+            r#"<div class="core-row" data-tip="Core cpu0, unit percent&#10;source: /proc/stat cpu0 line, delta&#10;1 s average shown by the meter and number" style="--value:42.4"><span class="cl">C00</span><span class="meter"></span><span class="cv">42<i>%</i></span></div>"#,
+            r#"<div class="core-row" data-tip="Core cpu1, unit percent&#10;source: /proc/stat cpu1 line, delta&#10;1 s average shown by the meter and number" style="--value:57.6"><span class="cl">C01</span><span class="meter"></span><span class="cv">58<i>%</i></span></div>"#,
         ] {
             assert!(cores.contains(row), "lacks {row} in {cores}");
         }
@@ -974,7 +1137,9 @@ async fn cpu_gauge_says_total_and_shows_load_per_core_and_cores_busy() {
 /// ACC-SCOPE-64-CONTAINER: the recorded container tree renders only the
 /// container's values; what has no container source reads unavailable, and
 /// the host values the tree also carries (loadavg 14.22, the 60 cpuN lines
-/// outside the cpuset, the cpuinfo frequency, MemTotal 503 GiB) appear nowhere.
+/// outside the cpuset, the cpuinfo frequency) appear nowhere. The memory bar
+/// is the owner's exception (DEF-VIEW-50-MEM-TERMS): the system's MemTotal
+/// and MemFree, with this container's used and cache and the other use.
 /// DEF-CPU-44: the load is the container's own, two R or D tasks over E = 2.
 #[tokio::test]
 async fn container_page_shows_only_container_values() {
@@ -1011,10 +1176,10 @@ async fn container_page_shows_only_container_values() {
         for marker in [
             "<span>load per core</span><b>1.00 1.00 1.00</b>",
             "divided by 2 cores",
-            r#"<span>load <b data-w="000">2</b> <b data-w="000">2</b> <b data-w="000">2</b></span>"#,
-            r#"data-field="cpu-gauge-cores">2 cores</span>"#,
+            r#">load <b data-w="000">2</b> <b data-w="000">2</b> <b data-w="000">2</b></span>"#,
+            r#">2 cores</span>"#,
             // DEF-CPU-41: the cpuset 0-3 gives four core rows, named C00 to C03.
-            r#"<h2 id="cores-title">Cores</h2><span class="head-right meta">4 &middot; 0&ndash;100%</span>"#,
+            r#"4 &middot; 0&ndash;100%</span>"#,
             r#"<span class="cl">C03</span>"#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
@@ -1045,15 +1210,12 @@ async fn container_page_shows_only_container_values() {
         );
     }
     for html in page_and_event(&page, &events, "mem") {
-        assert!(
-            html.contains("of 8.00 GiB"),
-            "memory total is not memory.max"
-        );
+        assert!(html.contains("of 503 GiB"), "memory total is not MemTotal");
+        assert_mem_bar(html, &["used", "cache", "other", "free"]);
         assert!(
             html.contains("IO unavailable"),
             "storage IO is not withheld"
         );
-        assert!(!html.contains("of 503"), "MemTotal leaked");
     }
     let proc_rows = page_and_event(&page, &events, "proc");
     for html in proc_rows {
@@ -1192,7 +1354,7 @@ async fn top_bar_names_the_tiers_and_bands_1_3_share_a_wrapper() {
     let bar_start = page.find(r#"<header class="utility">"#).expect("top bar");
     let bar = &page[bar_start..bar_start + page[bar_start..].find("</header>").expect("bar end")];
     let chip = bar
-        .find(r#"<span class="chip chip-tier" id="tier-chip">"#)
+        .find(r#"<span class="chip chip-tier" id="tier-chip""#)
         .expect("tier chip");
     assert!(
         chip < bar.find(r#"id="live-chip""#).expect("live chip"),
@@ -1318,11 +1480,11 @@ async fn proc_tile_carries_the_count_graph_and_the_facts() {
                 r#"<span class="stat-value" data-w="000">{}</span><span class="proc-facts">"#,
                 snapshot.proc.total.expect("total")
             ),
-            "<span>running <b>1</b></span>".to_string(),
-            "<span>sleeping <b>7</b></span>".to_string(),
-            "<span>waiting <b>0</b></span>".to_string(),
-            "<span>zombie <b>0</b></span>".to_string(),
-            "<span>threads <b>85</b></span>".to_string(),
+            ">running <b>1</b></span>".to_string(),
+            ">sleeping <b>7</b></span>".to_string(),
+            ">waiting <b>0</b></span>".to_string(),
+            ">zombie <b>0</b></span>".to_string(),
+            ">threads <b>85</b></span>".to_string(),
             format!(
                 r#"<div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to {}">"#,
                 snapshot.proc.chart_max
@@ -1371,25 +1533,34 @@ async fn proc_counts_reserve_the_ceiling_digits() {
 }
 
 /// ACC-VIEW-53-PROC-TILE and ACC-VIEW-23-RELEVANT: a host without a GPU shows
-/// no GPU process fact; with devices it shows the count, or unavailable.
+/// no GPU process fact; with devices it shows the count, or unavailable, and
+/// a lower bound with unreadable processes (DEF-VIEW-48-GPU-FACT).
 #[tokio::test]
 async fn proc_tile_gpu_fact_follows_the_devices() {
-    for (devices, count, expected) in [
-        (false, None, None),
-        (true, None, Some("<span>gpu unavailable</span>")),
-        (true, Some(3), Some("<span>gpu <b>3</b></span>")),
+    for (devices, count, unreadable, expected) in [
+        (false, None, 0, None),
+        (true, None, 0, Some(">gpu unavailable</span>")),
+        (true, Some(3), 0, Some(">gpu <b>3</b></span>")),
+        (true, Some(3), 2, Some(">gpu <b>3+</b></span>")),
     ] {
         let mut snapshot = fixture_snapshot();
         if !devices {
             snapshot.gpu.devices.clear();
         }
         snapshot.gpu.process_count = count;
+        snapshot.gpu.process_unreadable = unreadable;
         let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
             .expect("utf-8 page");
         for tile in proc_tiles(&snapshot, &page) {
             match expected {
                 Some(fact) => assert!(tile.contains(fact), "lacks {fact} in {tile}"),
-                None => assert!(!tile.contains("<span>gpu "), "a GPU fact without a GPU"),
+                None => assert!(!tile.contains(">gpu "), "a GPU fact without a GPU"),
+            }
+            if unreadable > 0 {
+                assert!(
+                    tile.contains("processes it could not read"),
+                    "the lower bound is unexplained: {tile}"
+                );
             }
         }
     }
@@ -1593,6 +1764,62 @@ async fn assets_are_served_with_their_content_types() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+/// DEF-VIEW-59-ASSET-CACHE: the ETag is the embedded bytes' hash, so a build
+/// that changes a file changes its validator; `no-cache` makes the browser
+/// revalidate, and a matching validator answers 304.
+#[tokio::test]
+async fn assets_carry_a_content_hash_etag_and_revalidate() {
+    let app = app(Some(Snapshot::default()), true);
+    let header_value = |headers: &HeaderMap, name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let (status, headers, body) = get(&app, "/assets/app.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(header_value(&headers, "cache-control"), "no-cache");
+    let etag = header_value(&headers, "etag");
+    assert_eq!(etag.len(), 66, "quoted sha256 hex: {etag}");
+    assert!(etag.starts_with('"') && etag.ends_with('"'));
+    assert!(etag[1..65].bytes().all(|byte| byte.is_ascii_hexdigit()));
+
+    // Different bytes carry a different validator.
+    let (_, js_headers, _) = get(&app, "/assets/app.js").await;
+    assert_ne!(header_value(&js_headers, "etag"), etag);
+
+    // The same bytes revalidate to 304 with the validator and no body.
+    let request = Request::builder()
+        .uri("/assets/app.css")
+        .header(header::IF_NONE_MATCH, &etag)
+        .body(Body::empty())
+        .expect("request");
+    let response = app.clone().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok()),
+        Some(etag.as_str())
+    );
+
+    // A validator from an older build does not match: the new bytes are sent.
+    let stale = format!("\"{}\"", "0".repeat(64));
+    let request = Request::builder()
+        .uri("/assets/app.css")
+        .header(header::IF_NONE_MATCH, stale)
+        .body(Body::empty())
+        .expect("request");
+    let response = app.clone().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let served = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    assert_eq!(served.as_ref(), body.as_slice());
+}
+
 #[tokio::test]
 async fn events_route_answers_with_an_event_stream() {
     let request = Request::builder()
@@ -1788,6 +2015,7 @@ async fn config_pages_hold_their_options() {
             "layout",
             &[r#"data-group="panels""#, r#"id="layout-reset""#],
         ),
+        ("net", &[r#"network scale"#]),
     ] {
         for marker in markers {
             assert_eq!(page.matches(marker).count(), 1, "{marker}");
@@ -1798,6 +2026,20 @@ async fn config_pages_hold_their_options() {
         assert!(
             !inner(id).contains("view · this browser"),
             "{id} has only the server group"
+        );
+    }
+    // ACC-GRAPH-96: the net page is the network scale section.
+    for key in [
+        "net_auto",
+        "net_floor",
+        "net_fall",
+        "net_sync",
+        "net_download",
+        "net_upload",
+    ] {
+        assert!(
+            inner("net").contains(&format!(r#"data-key="{key}""#)),
+            "{key} is not on the net page"
         );
     }
     assert!(
@@ -2013,4 +2255,28 @@ async fn config_post_without_a_file_applies_until_restart() {
         page_of(&app).await.contains(">1000 ms<"),
         "a new page load shows the live interval"
     );
+}
+
+/// ACC-GRAPH-96: the network scale rows reach the server through the same
+/// config POST, change the live config, and a reloaded page shows them.
+#[tokio::test]
+async fn network_scale_rows_persist_through_the_config_path() {
+    let path = temp_conf("network-scale", &default_config_text());
+    let (app, live) = config_app(false, Config::defaults(), Some(path.clone()));
+    for (body, key, value) in [
+        ("key=net_floor&value=2", "net_floor", "2"),
+        ("key=net_fall&value=60", "net_fall", "60"),
+    ] {
+        let (status, fragment) = post_config(&app, body, Some(ORIGIN)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(live.borrow().get(key).as_deref(), Some(value), "{body}");
+        assert!(fragment.contains("saved to"), "{fragment}");
+    }
+    let written = std::fs::read_to_string(&path).expect("file");
+    assert!(written.contains("net_floor = 2\n"), "{written}");
+    assert!(written.contains("net_fall = 60\n"), "{written}");
+    let page = page_of(&app).await;
+    assert!(page.contains(r#"id="cfg-net_floor" value="2""#), "{page}");
+    assert!(page.contains(r#"id="cfg-net_fall" value="60""#), "{page}");
+    assert!(page.contains("network scale · all viewers"));
 }

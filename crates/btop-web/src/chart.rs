@@ -23,12 +23,24 @@
 //! with a 1 s time constant, so the PCHIP knots are the smoothed values. The
 //! readouts never read a history; they show btop's raw values.
 //!
+//! ACC-GRAPH-97-SMOOTH-REFRESH: the constant is 1 s of wall-clock time
+//! whatever the interval, so at 250 ms it spans four samples and at 1 s one.
+//! A sparse sampler therefore yields a choppier graph on purpose; no code
+//! path may stretch tau to fake smoothness.
+//!
 //! [`History::with_window`] spans a shorter window, [`PROC_WINDOW_MS`], for
 //! the process row graphs (ACC-VIEW-52-PROC-GRAPH).
 //!
 //! ACC-GRAPH-67-SMOOTH-SCALE: an auto-scaled chart moves to a new ceiling
 //! over several frames through [`Scale`]; the server draws at the larger of
 //! the two ceilings and the page scales the series group about the plot floor.
+//!
+//! ACC-GRAPH-98-ANIM-CLOCK: a panel chart scrolls on the page's clock between
+//! readouts, so [`ChartPath::new`] extends the newest, smoothed knot by one
+//! slot (`width / slots`); the page translates the series group by a fraction
+//! of that slot as time passes, and the next frame arrives exactly one slot
+//! on. The tail holds the value the curve already draws, never a raw sample
+//! or a guess.
 //!
 //! The SVG path data is written by hand at two fixed decimals, which bounds the SSE payload.
 
@@ -104,12 +116,26 @@ pub const NET_PLOT: Size = Size {
     height: 77.0,
 };
 
-/// The GPU load plot's box at 1440x900 (05.06-adaptive-base `#gpu-load`), one
-/// series per device on the network plot's time axis.
+/// The GPU load plot's box at 1440x900 (05.06-adaptive-base `#gpu-load`), on
+/// the network plot's time axis; `gpu_lane` splits its height into one lane
+/// per device (DEF-GRAPH-51-GPU-LANES).
 pub const GPU_PLOT: Size = Size {
     width: 334.0,
     height: 135.0,
 };
+
+/// One GPU lane's viewBox when `devices` lanes share the GPU plot's height
+/// with the CSS 4 px gap between them: 135, 65, 42, 30 and 13 units for 1, 2,
+/// 3, 4 and 8 devices. It is the lane's share of the plot at 1440x900; the
+/// plot box is inset 3 px inside the lane to keep the 0% and 100% strokes off
+/// the lane boundary (app.css), so the svg stretches that inset box a little.
+pub fn gpu_lane(devices: usize) -> Size {
+    let lanes = devices.max(1) as f64;
+    Size {
+        width: GPU_PLOT.width,
+        height: ((GPU_PLOT.height - 4.0 * (lanes - 1.0)) / lanes).floor(),
+    }
+}
 
 /// A process row graph's viewBox. Ten units across make each time-anchored
 /// bucket a tenth of the window, so the path keeps about ten knots at any
@@ -131,6 +157,11 @@ impl ChartPath {
     /// Build both paths for `samples`, right-aligned in `slots` sample
     /// positions, at the given viewBox size and range. `first` is the
     /// absolute sample count of `samples[0]`, which anchors the buckets.
+    /// The line and the area extend one slot (`width / slots`) past the newest
+    /// knot: a panel chart scrolls by up to that much between readouts
+    /// (ACC-GRAPH-98-ANIM-CLOCK), and the tail holds the smoothed value the
+    /// curve already draws. The SVG box clips it until the page moves. A
+    /// process row graph draws [`path`] and carries no tail.
     pub fn new(
         samples: &[f64],
         first: u64,
@@ -140,15 +171,23 @@ impl ChartPath {
         min: f64,
         max: f64,
     ) -> Self {
-        let (line, start) = line(samples, first, slots, width, height, min, max);
-        let area = if line.is_empty() {
-            String::new()
+        let (mut line, start, newest_y) = line(samples, first, slots, width, height, min, max);
+        if line.is_empty() {
+            return Self::default();
+        }
+        let tail = if width.is_finite() && slots >= 2 {
+            width / slots as f64
         } else {
-            // The area closes under the line's first vertex.
-            let mut area = line.clone();
-            let _ = write!(area, "L{width:.2} {height:.2}L{start:.2} {height:.2}Z");
-            area
+            0.0
         };
+        push_vertex(&mut line, 'L', width + tail, newest_y);
+        // The area closes under the line's first vertex, past the tail.
+        let mut area = line.clone();
+        let _ = write!(
+            area,
+            "L{:.2} {height:.2}L{start:.2} {height:.2}Z",
+            width + tail
+        );
         Self { line, area }
     }
 }
@@ -179,7 +218,8 @@ pub fn path(
     line(samples, first, slots, width, height, min, max).0
 }
 
-/// [`path`] and the x of its first vertex, where the area closes.
+/// [`path`], the x of its first vertex, where the area closes, and the y of
+/// its newest vertex, where [`ChartPath::new`] anchors its tail.
 fn line(
     samples: &[f64],
     first: u64,
@@ -188,7 +228,7 @@ fn line(
     height: f64,
     min: f64,
     max: f64,
-) -> (String, f64) {
+) -> (String, f64, f64) {
     if samples.len() < 2
         || !width.is_finite()
         || width < 1.0
@@ -198,10 +238,10 @@ fn line(
         || !max.is_finite()
         || max <= min
     {
-        return (String::new(), 0.0);
+        return (String::new(), 0.0, 0.0);
     }
     if samples.iter().any(|value| !value.is_finite()) {
-        return (String::new(), 0.0);
+        return (String::new(), 0.0, 0.0);
     }
     let full = samples.len() >= slots;
     let slots = slots.max(samples.len());
@@ -230,14 +270,15 @@ fn line(
             for step in 1..steps {
                 let at = from + (to - from) * step as f64 / steps as f64;
                 let Some(value) = spline.interpolate(&at) else {
-                    return (String::new(), 0.0);
+                    return (String::new(), 0.0, 0.0);
                 };
                 push_vertex(&mut path, 'L', x(at), y(value));
             }
         }
         push_vertex(&mut path, 'L', x(to), y(samples[pair[1]]));
     }
-    (path, start)
+    // The newest knot is the last vertex, at the right edge.
+    (path, start, y(samples[samples.len() - 1]))
 }
 
 /// Append `command` and the vertex `x y`, each as `{:.2}` writes it.
@@ -387,7 +428,9 @@ impl History {
     }
 
     /// The chart for this history at a fixed viewBox size and value range,
-    /// right-aligned in the full window.
+    /// right-aligned in the full window. The path carries the one-slot tail a
+    /// panel chart scrolls between readouts (ACC-GRAPH-98-ANIM-CLOCK); the
+    /// process rows draw [`History::line`] instead.
     pub fn chart(&self, size: Size, min: f64, max: f64) -> ChartPath {
         let samples: Vec<f64> = self.samples.iter().copied().collect();
         let first = self.pushed - samples.len() as u64;
@@ -606,6 +649,28 @@ mod tests {
         }
     }
 
+    /// DEF-GRAPH-51-GPU-LANES, DEF-GRAPH-54-LANES-MERGED: a lane is the GPU
+    /// plot's height split by the device count with the CSS 4-unit gaps, at
+    /// the plot's width.
+    #[test]
+    fn gpu_lanes_split_the_plot_height() {
+        for (devices, height) in [
+            (0, 135.0),
+            (1, 135.0),
+            (2, 65.0),
+            (3, 42.0),
+            (4, 30.0),
+            (8, 13.0),
+        ] {
+            let lane = gpu_lane(devices);
+            assert_eq!(
+                (lane.width, lane.height),
+                (GPU_PLOT.width, height),
+                "{devices}"
+            );
+        }
+    }
+
     #[test]
     fn a_monotone_series_stays_monotone() {
         let samples = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
@@ -648,16 +713,21 @@ mod tests {
         assert!(history.chart(CPU_HISTORY, 0.0, 100.0).line.is_empty());
     }
 
-    /// A process row graph takes the line alone; it is the chart's line.
+    /// A process row graph takes the line alone: the chart's line without the
+    /// scrolling tail (ACC-GRAPH-98-ANIM-CLOCK).
     #[test]
-    fn line_is_the_charts_line() {
+    fn a_row_graph_is_the_chart_line_without_its_tail() {
         let mut history = History::with_window(PROC_WINDOW_MS);
         for tick in 0..100 {
             history.push(Some(f64::from(tick % 7) * 9.0), 250);
-            assert_eq!(
-                history.line(PROC_GRAPH, 0.0, 100.0),
-                history.chart(PROC_GRAPH, 0.0, 100.0).line
-            );
+            let row = history.line(PROC_GRAPH, 0.0, 100.0);
+            let chart = history.chart(PROC_GRAPH, 0.0, 100.0).line;
+            if row.is_empty() {
+                assert!(chart.is_empty());
+                continue;
+            }
+            assert!(chart.starts_with(&row), "{chart}");
+            assert!(chart.len() > row.len(), "{chart}");
         }
     }
 
@@ -678,8 +748,8 @@ mod tests {
         // sample (DEF-GRAPH-39-NET-JUMP).
         assert!(chart.line.starts_with("M3.92 "), "{}", &chart.line[..12]);
         // A slot is 467 / 119 = 3.92 units wide: the knot and two PCHIP
-        // vertices per interval.
-        assert_eq!(chart.line.matches('L').count(), (slots - 2) * 3);
+        // vertices per interval, then the one-slot tail.
+        assert_eq!(chart.line.matches('L').count(), (slots - 2) * 3 + 1);
         assert!(chart.area.ends_with("L3.92 28.00Z"), "{}", chart.area);
         assert!(chart.area.ends_with('Z'));
         assert!(!chart.line.contains("NaN"));
@@ -762,6 +832,11 @@ mod tests {
                 let first = tick - slots as u64;
                 let mut frame = std::collections::BTreeMap::new();
                 for (x, y) in points(&history.chart(size, 0.0, 100.0).line) {
+                    // The one-slot tail past the right edge is no knot: it
+                    // moves with the newest knot, not with the samples.
+                    if x > size.width + 0.001 {
+                        continue;
+                    }
                     let at = x / step;
                     assert!((at - at.round()).abs() < 0.03, "vertex off a sample: {x}");
                     frame.insert(first + at.round() as u64, (x, y));
@@ -975,6 +1050,35 @@ mod tests {
         assert!((step(10, 100) - 63.21).abs() < 0.01, "{}", step(10, 100));
     }
 
+    /// ACC-GRAPH-97-SMOOTH-REFRESH: the constant is 1 s of wall-clock time at
+    /// every interval, so a step moves by `1 - exp(-update_ms / 1000)`,
+    /// 0.221 at 250 ms and 0.632 at 1 s, and never by a fixed per-sample
+    /// fraction. A sparse sampler graphs choppier on purpose.
+    #[test]
+    fn smoothing_constant_stays_one_second_at_every_interval() {
+        assert_eq!(SMOOTHING_TAU_MS, 1000.0);
+        for update_ms in [100, 250, 500, 1000, 2000] {
+            // `smooth` from 0 towards 1 moves by exactly alpha.
+            let alpha = smooth(Some(0.0), 1.0, update_ms);
+            let expected = 1.0 - (-(update_ms as f64) / 1000.0).exp();
+            assert!(
+                (alpha - expected).abs() < 1e-12,
+                "{update_ms} ms: {alpha} != {expected}"
+            );
+        }
+        // A wall-clock constant composes over time: ten 100 ms steps reach
+        // exactly what one 1000 ms step reaches.
+        let mut stepped = 0.0;
+        for _ in 0..10 {
+            stepped = smooth(Some(stepped), 1.0, 100);
+        }
+        let one_step = smooth(Some(0.0), 1.0, 1000);
+        assert!(
+            (stepped - one_step).abs() < 1e-12,
+            "ten 100 ms steps reached {stepped}, one 1000 ms step {one_step}"
+        );
+    }
+
     #[test]
     fn first_sample_seeds_and_none_keeps_the_ema() {
         let mut history = History::new();
@@ -995,16 +1099,71 @@ mod tests {
         let chart = ChartPath::new(&[10.0, 20.0], 0, 960, width, 28.0, 0.0, 100.0);
         let drawn = points(&chart.line);
         let first = drawn.first().expect("first point").0;
-        let last = drawn.last().expect("last point").0;
+        let newest = drawn[drawn.len() - 2].0;
+        let tail = drawn.last().expect("last point").0;
         assert!(
             (first - width * 958.0 / 959.0).abs() < 0.01,
             "first x {first}"
         );
-        assert!((last - width).abs() < 0.01, "last x {last}");
+        assert!((newest - width).abs() < 0.01, "newest x {newest}");
+        // The tail reaches one slot past the right edge.
+        assert!(
+            (tail - (width + width / 960.0)).abs() < 0.01,
+            "tail x {tail}"
+        );
         assert!(
             chart.area.ends_with(&format!("L{first:.2} 28.00Z")),
             "{}",
             chart.area
+        );
+    }
+
+    /// ACC-GRAPH-98-ANIM-CLOCK: a panel chart extends its newest, smoothed
+    /// knot by one slot (`width / capacity`), the most the page scrolls the
+    /// series between readouts; the tail holds the value the curve already
+    /// draws. A process row graph is never scrolled and has no tail.
+    #[test]
+    fn a_panel_chart_extends_its_newest_knot_by_one_slot() {
+        let mut history = History::new();
+        history.push(Some(20.0), 250);
+        history.push(Some(80.0), 250);
+        let chart = history.chart(CPU_HISTORY, 0.0, 100.0);
+        let drawn = points(&chart.line);
+        let newest = drawn[drawn.len() - 2];
+        let tail = drawn[drawn.len() - 1];
+        assert_eq!(tail.1, newest.1, "the tail holds the newest knot's value");
+        let slot = CPU_HISTORY.width / capacity(250) as f64;
+        assert!((newest.0 - CPU_HISTORY.width).abs() < 0.01, "{newest:?}");
+        assert!(
+            (tail.0 - (CPU_HISTORY.width + slot)).abs() < 0.01,
+            "{tail:?}"
+        );
+        assert!(
+            chart
+                .line
+                .ends_with(&format!("L{:.2} {:.2}", tail.0, tail.1)),
+            "{}",
+            chart.line
+        );
+        assert!(
+            chart.area.contains(&format!("L{:.2} 28.00L", tail.0)),
+            "{}",
+            chart.area
+        );
+        // A 2000 ms interval keeps 120 samples: one slot is 467 / 120 units.
+        history.push(Some(80.0), 2000);
+        assert_eq!(history.capacity, 120);
+        let wide = history.chart(CPU_HISTORY, 0.0, 100.0);
+        let drawn = points(&wide.line);
+        assert!((drawn.last().expect("a tail").0 - 467.0 - 467.0 / 120.0).abs() < 0.01);
+        // A process row graph draws `line` and reaches only the right edge.
+        let mut row = History::with_window(PROC_WINDOW_MS);
+        row.push(Some(30.0), 250);
+        row.push(Some(70.0), 250);
+        let graph = points(&row.line(PROC_GRAPH, 0.0, 100.0));
+        assert!(
+            graph.last().expect("a last vertex").0 <= PROC_GRAPH.width,
+            "{graph:?}"
         );
     }
 

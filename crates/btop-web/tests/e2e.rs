@@ -38,7 +38,7 @@ fn fixture_cpu_total() -> String {
     let total: u64 = values.iter().sum::<u64>() - values.iter().skip(8).sum::<u64>();
     let idles = values[3] + values.get(4).copied().unwrap_or(0);
     let percent = (total.saturating_sub(idles) as f64 * 100.0 / total as f64).round();
-    format!("{percent:.1}")
+    format!("{percent:.0}")
 }
 
 /// Start the binary on a free loopback port against the recorded tree.
@@ -267,7 +267,7 @@ fn binary_serves_fixture_metrics_and_an_event_stream() {
     };
     assert_eq!(command, "ttyd");
 
-    let page = page_with(address, r#"id="cpu-total">0.0<"#);
+    let page = page_with(address, r#"id="cpu-total">0<"#);
     assert!(page.contains(&command), "no recorded process");
     assert!(page.contains(">200 ms<"), "the top bar lacks the interval");
 

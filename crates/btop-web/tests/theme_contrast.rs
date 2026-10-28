@@ -53,6 +53,9 @@ fn every_shipped_pair_has_both_modes() {
         "flexoki",
         "gruvbox",
         "solarized",
+        "synthwave",
+        "terracotta",
+        "ultraviolet",
     ] {
         assert!(
             ids.contains(&expected),
@@ -127,8 +130,12 @@ fn semantic_tokens_reach_their_wcag_floors_in_every_pair_and_mode() {
                 "warn",
                 "crit",
                 "chart-cpu",
+                "chart-gpu-0",
+                "chart-gpu-1",
+                "chart-gpu-2",
                 "chart-mem-used",
                 "chart-mem-free",
+                "chart-mem-cached",
                 "chart-net-down",
                 "chart-net-up",
                 "chart-proc",
@@ -277,6 +284,39 @@ fn gpu_series_tokens_are_distinct_and_reach_3_to_1() {
                     SERIES[second],
                     hex(other)
                 );
+            }
+        }
+    }
+}
+
+/// DEF-VIEW-50-MEM-TERMS: the Memory bar's used, cache, other (muted) and
+/// free segments sit side by side, so every pair differs by CIEDE2000 15 or
+/// more (17.6 is the measured minimum, free and muted in Everforest dark).
+#[test]
+fn memory_bar_segments_are_distinct() {
+    const SEGMENTS: [&str; 4] = [
+        "chart-mem-used",
+        "chart-mem-cached",
+        "muted",
+        "chart-mem-free",
+    ];
+    for pair in embedded_pairs() {
+        for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
+            let colors = semantic(palette);
+            for first in 0..SEGMENTS.len() {
+                for second in first + 1..SEGMENTS.len() {
+                    let (one, other) = (colors[SEGMENTS[first]], colors[SEGMENTS[second]]);
+                    let difference = lab(one).difference(lab(other));
+                    assert!(
+                        difference >= 15.0,
+                        "{} {mode}: {} {} and {} {} differ by {difference:.1}",
+                        pair.id,
+                        SEGMENTS[first],
+                        hex(one),
+                        SEGMENTS[second],
+                        hex(other)
+                    );
+                }
             }
         }
     }

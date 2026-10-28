@@ -1,11 +1,11 @@
-<header class="ph"><h2 id="mem-stat-title">Memory</h2>{% if snapshot.mem.ram_total.is_some() %}<span class="head-right meta">of {{ crate::collector::bytes(*snapshot.mem.ram_total) }}</span>{% endif %}</header>
+<header class="ph"><h2 id="mem-stat-title">Memory</h2>{% if snapshot.mem.ram_total.is_some() %}<span class="head-right meta" data-tip="Memory total, unit KiB, MiB or GiB&#10;source: /proc/meminfo MemTotal&#10;the host's memory, also in a container">of {{ crate::collector::bytes(*snapshot.mem.ram_total) }}</span>{% endif %}</header>
 <div class="stat-body">
-  <div class="stat-tile">{% if let Some((value, unit)) = snapshot.mem.ram_used_parts() %}<span class="stat-value" data-w="0000" id="mem-used">{{ value }}</span><span class="stat-unit">{{ unit }}</span>{% else %}<span class="stat-na">unavailable</span>{% endif %}</div>
+  <div class="stat-tile" data-tip="Memory used, unit KiB, MiB or GiB&#10;source: /proc/meminfo MemTotal - MemAvailable&#10;in a container: cgroup memory.current - cache&#10;the head shows MemTotal">{% if let Some((value, unit)) = snapshot.mem.ram_used_parts() %}<span class="stat-value" data-w="0000" id="mem-used">{{ value }}</span><span class="stat-unit">{{ unit }}</span>{% else %}<span class="stat-na">unavailable</span>{% endif %}</div>
   <div class="stat-chart" data-chart="mem" role="img" aria-label="Memory used history, 0 to 100 percent">
-    {% if !snapshot.mem.used_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::MEM_HISTORY.width }} {{ crate::chart::MEM_HISTORY.height }}" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="{{ snapshot.mem.used_chart.area }}"></path><path class="line" d="{{ snapshot.mem.used_chart.line }}"></path></svg>{% endif %}
+    {% if !snapshot.mem.used_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::MEM_HISTORY.width }} {{ crate::chart::MEM_HISTORY.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series"><path class="area" d="{{ snapshot.mem.used_chart.area }}"></path><path class="line" d="{{ snapshot.mem.used_chart.line }}"></path></g></svg>{% endif %}
   </div>
   <div class="stat-foot" data-p="3" data-field="mem-stat-foot">
-    {% if let Some(pct) = snapshot.mem.ram_percent %}<span><b data-w="100%">{{ pct|fmt("{:.0}") }}%</b> used</span>{% endif %}
-    {% if let Some(pct) = snapshot.mem.ram_available_percent %}<span><b data-w="100%">{{ pct|fmt("{:.0}") }}%</b> available</span>{% endif %}
+    {% if let Some(pct) = snapshot.mem.ram_percent %}<span data-tip="Memory used, unit percent of MemTotal&#10;source: /proc/meminfo, btop's rounding&#10;used = MemTotal - MemAvailable"><b data-w="100%">{{ pct|fmt("{:.0}") }}%</b> used</span>{% endif %}
+    {% if let Some(pct) = snapshot.mem.ram_available_percent %}<span data-tip="Memory available, unit percent of MemTotal&#10;source: /proc/meminfo MemAvailable&#10;available is free plus cache"><b data-w="100%">{{ pct|fmt("{:.0}") }}%</b> available</span>{% endif %}
   </div>
 </div>

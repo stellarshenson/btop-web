@@ -17,18 +17,130 @@
   var interval = document.getElementById("update-interval");
   // ACC-CONF-61: each cpu frame carries the interval in effect (read below).
   var updateMs = interval ? Number(interval.getAttribute("data-update-ms")) || 250 : 250;
+  // ACC-GRAPH-98-ANIM-CLOCK: the chart window, set from the interval beside it.
+  var windowMs = interval ? Number(interval.getAttribute("data-window-ms")) || 0 : 0;
 
   var lastTrigger = null;
   var paused = false;
   var stale = false;
   var staleTimer = 0;
   var lastFrame = 0;
+  var lastFrameAt = 0; // performance.now() of the last frame, the motion clock
   var pending = [];
   var filterTimer = 0;
   var gpuSelection = [];
 
   function closest(node, selector) {
     return node && node.closest ? node.closest(selector) : null;
+  }
+
+  /* ---------- stat tooltips (ACC-VIEW-80-STAT-TIPS) ---------- */
+
+  // The server writes each stat's text into data-tip; this code only places
+  // the one box. A process cell takes its column header's text, so a table of
+  // hundreds of rows repeats no attribute. The box stays clear of the hovered
+  // stat, every plot box and the viewport edges, and a pointer that stays put
+  // keeps it through the frame swaps.
+  var tip = document.getElementById("tip");
+  var tipAt = null;
+  var tipX = 0;
+  var tipY = 0;
+
+  function tipSource(node) {
+    if (!node || !node.closest) return null;
+    // A plot box carries no tooltip, and neither does its contents.
+    if (node.closest("[data-chart]")) return null;
+    var own = node.closest("[data-tip]");
+    if (own) return { el: own, text: own.getAttribute("data-tip") };
+    var cell = node.closest("td");
+    var table = cell ? cell.closest("table.ptable") : null;
+    if (!table) return null;
+    var head = table.querySelectorAll("thead th")[cell.cellIndex];
+    if (!head || !head.hasAttribute("data-tip")) return null;
+    return { el: cell, text: head.getAttribute("data-tip") };
+  }
+
+  function placeTip(anchor) {
+    var pad = 8;
+    var gap = 6;
+    var box = anchor.getBoundingClientRect();
+    var width = tip.offsetWidth;
+    var height = tip.offsetHeight;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var charts = [];
+    var nodes = document.querySelectorAll("[data-chart]");
+    for (var index = 0; index < nodes.length; index += 1) {
+      var rect = nodes[index].getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) charts.push(rect);
+    }
+    // On screen, clear of the hovered stat and of every plot.
+    function clear(x, y) {
+      if (x < pad || y < pad || x + width > vw - pad || y + height > vh - pad) return false;
+      if (x < box.right + gap && x + width > box.left - gap && y < box.bottom + gap && y + height > box.top - gap) return false;
+      for (var hit = 0; hit < charts.length; hit += 1) {
+        // 1 px of slack: a live frame can shift a chart by a fraction.
+        if (x < charts[hit].right + 1 && x + width > charts[hit].left - 1 && y < charts[hit].bottom + 1 && y + height > charts[hit].top - 1) return false;
+      }
+      return true;
+    }
+    function put(x, y) {
+      tip.style.left = x + "px";
+      tip.style.top = y + "px";
+    }
+    var align = [
+      Math.max(pad, Math.min(box.left, vw - width - pad)),
+      Math.max(pad, Math.min(box.right - width, vw - width - pad)),
+    ];
+    for (var side = 0; side < align.length; side += 1) {
+      for (var away = gap; away < vh + height; away += 6) {
+        if (clear(align[side], box.top - away - height)) return put(align[side], box.top - away - height);
+        if (clear(align[side], box.bottom + away)) return put(align[side], box.bottom + away);
+      }
+    }
+    var y = Math.max(pad, Math.min(box.top, vh - height - pad));
+    for (var across = gap; across < vw + width; across += 6) {
+      if (clear(box.right + across, y)) return put(box.right + across, y);
+      if (clear(box.left - across - width, y)) return put(box.left - across - width, y);
+    }
+    put(pad, pad);
+  }
+
+  function hideTip() {
+    tipAt = null;
+    if (tip) tip.hidden = true;
+  }
+
+  function showTip(source) {
+    if (!tip) return;
+    if (!source) return hideTip();
+    if (tipAt && tipAt.el === source.el && tipAt.text === source.text) return;
+    tipAt = source;
+    tip.textContent = source.text;
+    tip.hidden = false;
+    tip.style.visibility = "hidden";
+    placeTip(source.el);
+    tip.style.visibility = "";
+  }
+
+  // A frame replaces the stat under a still pointer; re-read its text.
+  function refreshTip() {
+    if (!tip || !tipAt || tip.hidden) return;
+    var source = tipSource(document.elementFromPoint(tipX, tipY));
+    if (!source) return hideTip();
+    showTip(source);
+  }
+
+  if (tip) {
+    document.addEventListener("pointermove", function (event) {
+      tipX = event.clientX;
+      tipY = event.clientY;
+      showTip(tipSource(event.target));
+    });
+    document.addEventListener("pointerdown", hideTip);
+    document.documentElement.addEventListener("pointerleave", hideTip);
+    window.addEventListener("blur", hideTip);
+    window.addEventListener("resize", hideTip);
   }
 
   /* ---------- clock and live state ---------- */
@@ -57,6 +169,7 @@
       pauseButton.setAttribute("aria-pressed", String(paused));
       pauseButton.textContent = paused ? "resume" : "pause";
     }
+    syncMotion();
   }
 
   function armStale() {
@@ -73,15 +186,19 @@
     if (event.detail.type === "cpu") {
       var sent = /data-update-ms="(\d+)"/.exec(event.detail.data);
       if (sent) updateMs = Number(sent[1]);
+      var windowSent = /data-window-ms="(\d+)"/.exec(event.detail.data);
+      if (windowSent) windowMs = Number(windowSent[1]);
       var now = Date.now();
       if (lastFrame > 0 && sampleAge) sampleAge.textContent = ((now - lastFrame) / 1000).toFixed(1) + " s";
       lastFrame = now;
+      lastFrameAt = window.performance.now();
       if (stale) {
         stale = false;
         paintLive();
       }
       armStale();
       paintClock();
+      syncMotion();
     }
     var held = procHold && event.detail.type === "proc";
     if (!paused && !held) {
@@ -91,6 +208,82 @@
     event.preventDefault();
     rememberSnapshot(event);
   });
+
+  /* ---------- plot motion on its own clock (ACC-GRAPH-98-ANIM-CLOCK) ---------- */
+
+  // Between readouts every panel chart scrolls left at the display frame rate:
+  // one slot is the plot width times the interval over the chart's window, and
+  // the server draws each new frame exactly one slot further left, so the swap
+  // continues the motion instead of restarting it. Only the drawn series group
+  // moves; the grid under the box, the axes, the labels and the process row
+  // sparklines stay. The server's one-slot tail keeps the curve at the right
+  // edge and holds the newest smoothed knot, never a raw sample.
+  var MOTION_KEY = "btop-web-motion";
+  var motionPref = true;
+  try {
+    motionPref = window.localStorage.getItem(MOTION_KEY) !== "off";
+  } catch (error) {
+    // Storage is optional; motion stays on for this page view.
+  }
+  var reducedMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  var motionFrame = 0;
+
+  function motionAllowed() {
+    return motionPref && windowMs > 0 && lastFrameAt > 0 && !paused && !stale && !document.hidden && !(reducedMotion && reducedMotion.matches);
+  }
+
+  function shiftSeries(progress) {
+    var groups = document.querySelectorAll("[data-chart] g.series, [data-chart] g.gpu-series");
+    for (var index = 0; index < groups.length; index += 1) {
+      var svg = groups[index].ownerSVGElement;
+      var width = svg && svg.viewBox ? svg.viewBox.baseVal.width : 0;
+      groups[index].style.setProperty("--shift", (-progress * width * updateMs / windowMs).toFixed(4) + "px");
+    }
+  }
+
+  // The frame's own timestamp, not the callback's wall time: the step is then
+  // the display cadence itself, evenly spaced whatever the paint costs.
+  function motionStep(now) {
+    motionFrame = 0;
+    if (!motionAllowed()) return;
+    shiftSeries(Math.min(1, Math.max(0, (now - lastFrameAt) / updateMs)));
+    motionFrame = window.requestAnimationFrame(motionStep);
+  }
+
+  // One loop, re-armed only while it is allowed to run.
+  function syncMotion() {
+    if (!motionAllowed()) {
+      if (motionFrame) window.cancelAnimationFrame(motionFrame);
+      motionFrame = 0;
+      return;
+    }
+    if (!motionFrame) motionFrame = window.requestAnimationFrame(motionStep);
+  }
+
+  function syncMotionControls() {
+    var chips = document.querySelectorAll('[data-group="motion"] .opt');
+    for (var index = 0; index < chips.length; index += 1) {
+      var on = chips[index].getAttribute("data-value") === (motionPref ? "on" : "off");
+      chips[index].classList.toggle("on", on);
+      chips[index].setAttribute("aria-checked", String(on));
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    var chip = closest(event.target, '[data-group="motion"] .opt');
+    if (!chip) return;
+    motionPref = chip.getAttribute("data-value") !== "off";
+    try {
+      window.localStorage.setItem(MOTION_KEY, motionPref ? "on" : "off");
+    } catch (error) {
+      // Storage is optional; the choice holds for this page view.
+    }
+    syncMotionControls();
+    syncMotion();
+  });
+
+  if (reducedMotion && reducedMotion.addEventListener) reducedMotion.addEventListener("change", syncMotion);
+  document.addEventListener("visibilitychange", syncMotion);
 
   /* ---------- CONFIG popover ---------- */
 
@@ -367,6 +560,8 @@
 
   /* ---------- GPU selection ---------- */
 
+  var band3 = document.querySelector('.band[data-band="3"]');
+
   function gpuBoxes() {
     return document.querySelectorAll("#p-gpu .legend-item[data-gpu]");
   }
@@ -429,6 +624,7 @@
     var boxes = gpuBoxes();
     if (boxes.length === 0) {
       gpuSelection = [];
+      if (band3) band3.style.removeProperty("--gpu-lanes");
       syncGpuChips(gpuSelection);
       return;
     }
@@ -439,12 +635,14 @@
       for (var index = 0; index < boxes.length; index += 1) selection.push(index);
     }
     gpuSelection = selection;
-    // The legend entry and the plot series of a GPU both carry data-gpu.
+    // The lane of a GPU and its legend entry both carry data-gpu.
     var items = document.querySelectorAll("#p-gpu [data-gpu]");
     for (var index = 0; index < items.length; index += 1) {
       var on = selection.indexOf(Number(items[index].getAttribute("data-gpu"))) !== -1;
       items[index].setAttribute("data-selected", String(on));
     }
+    // Band 3 reserves 16 px per visible lane (app.css, .band[data-band="3"]).
+    if (band3) band3.style.setProperty("--gpu-lanes", String(selection.length));
     syncGpuChips(selection);
   }
 
@@ -949,14 +1147,14 @@
 
   if (procPanel && procWrap) new ResizeObserver(fitProc).observe(procPanel);
 
-  // The GPU legend drops temperature and power by its own height (app.css,
-  // @container gpu-body), which no tier query sees, so the tier chip names the
+  // The GPU legend drops temperature and power by its lane's height (app.css,
+  // @container gpu-lane), which no tier query sees, so the tier chip names the
   // drop (ACC-LAYOUT-21). The gpu fragment swaps only the panel's children.
   var tierChip = document.getElementById("tier-chip");
   var gpuPanel = document.getElementById("p-gpu");
 
   function syncGpuDrop() {
-    var meta = gpuPanel.querySelector(".legend-meta");
+    var meta = gpuPanel.querySelector('.gpu-lane:not([data-selected="false"]) .legend-meta');
     tierChip.classList.toggle("gpu-drop", meta !== null && window.getComputedStyle(meta).display === "none");
   }
 
@@ -969,6 +1167,7 @@
     applyGpuSelection();
     applyProc();
     syncBands();
+    refreshTip();
   }
 
   // ACC-GRAPH-67-SMOOTH-SCALE: a scale change runs on this page's clock. Each
@@ -1004,6 +1203,7 @@
     } else if (type === "mem") {
       syncBands();
     }
+    refreshTip();
   });
 
   paintClock();
@@ -1011,6 +1211,7 @@
   armStale();
   syncLayoutControls();
   syncProcControls();
+  syncMotionControls();
   gpuSelection = readGpuSelection(gpuBoxes().length);
   afterFrames();
 })();

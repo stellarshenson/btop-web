@@ -42,6 +42,8 @@ struct IndexTemplate<'a> {
     host: Option<&'a str>,
     container: Option<&'a str>,
     update_ms: u64,
+    /// The time the charts span at this interval (ACC-GRAPH-98-ANIM-CLOCK).
+    window_ms: u64,
     panels: &'a [(&'a str, &'a str)],
     /// ACC-CONF-61-CONFIG-PAGES: each config page's id and its server rows.
     pages: Vec<(&'static str, Vec<CfgRow>)>,
@@ -78,6 +80,7 @@ pub fn render(state: &AppState, file: Option<&std::path::Path>) -> Result<String
         host: state.host.as_deref(),
         container: state.container.as_deref(),
         update_ms: config.update_ms,
+        window_ms: crate::chart::capacity(config.update_ms) as u64 * config.update_ms,
         panels: &PANELS,
         pages: CONFIG_PAGES
             .iter()

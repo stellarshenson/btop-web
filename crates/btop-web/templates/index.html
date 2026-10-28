@@ -18,14 +18,14 @@
   <span class="brand">btop<span>-web</span></span>
   <span class="u-meta u-ver">{{ version }}</span>
   {% if let Some(host) = host %}<span class="u-meta u-host" data-p="4" data-field="host" title="{{ host }}">{{ host }}</span>{% endif %}
-  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" title="sampling interval">{{ update_ms }} ms</span>
+  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" data-window-ms="{{ window_ms }}" title="sampling interval">{{ update_ms }} ms</span>
   <span class="utility-right">
     <span class="u-meta u-clock hdr-clock" data-p="4" data-field="clock"></span>
-    <span class="chip chip-tier" id="tier-chip"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total and rows (available, cached, free, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total and rows (available, cached, free, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User, CPU gauge, memory gauge, live chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
-    {% if let Some(title) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" title="{{ title }}"><span class="up">container</span></span>{% endif %}
-    <span class="chip chip-live" id="live-chip"><i class="lamp"></i><span class="live-word up" aria-live="polite" data-w="paused">live</span><b class="live-age" id="sample-age" aria-hidden="true" data-w="since 00:00:00"></b></span>
+    <span class="chip chip-tier" id="tier-chip" data-tip="Priority tiers on screen, no unit&#10;source: the viewport size media queries&#10;each tier's title names the fields it drops"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User, CPU gauge, memory gauge, live chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
+    {% if let Some(title) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" data-tip="Container scope, no unit&#10;source: this container's cgroup v2&#10;only its processes, memory and CPUs are read" title="{{ title }}"><span class="up">container</span></span>{% endif %}
+    <span class="chip chip-live" id="live-chip" data-tip="Sampler state, live, paused or stale&#10;age unit: seconds since the last frame&#10;source: the server's SSE frames&#10;two intervals without a frame turn STALE"><i class="lamp"></i><span class="live-word up" aria-live="polite">live</span><b class="live-age" id="sample-age" aria-hidden="true"></b></span>
     {% if readonly %}
-    <span class="chip chip-readonly" aria-describedby="readonly-reason"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
+    <span class="chip chip-readonly" aria-describedby="readonly-reason" data-tip="Server mode, no unit&#10;source: the server's --readonly flag&#10;signals and every write are refused"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
     {% endif %}
     <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config"><span class="up">config</span></button>
   </span>
@@ -70,9 +70,9 @@
     <section class="panel" id="p-proc" data-panel="proc" data-band="4" data-proc-view="{{ initial_proc_view }}" aria-labelledby="proc-title">
       <header class="ph">
         <h2 id="proc-title">Processes</h2>
-        <span class="meta proc-count" id="proc-count">{% if let Some(total) = snapshot.proc.total %}{% if let Some(running) = snapshot.proc.running %}{{ running }}/{% endif %}{{ total }}{% endif %}</span>
+        <span class="meta proc-count" id="proc-count" data-tip="Shown / total processes, unit count&#10;source: this sample's process rows&#10;shown follows the view and the filter">{% if let Some(total) = snapshot.proc.total %}{% if let Some(running) = snapshot.proc.running %}{{ running }}/{% endif %}{{ total }}{% endif %}</span>
         <span class="head-right">
-          <input class="filter" id="filter" type="search" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false" value="{{ initial_filter }}">
+          <input class="opt cfg-in filter" id="filter" type="search" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false" value="{{ initial_filter }}">
         </span>
       </header>
       <div class="proc-wrap" id="proc-table-wrap">
@@ -118,6 +118,13 @@
       <span class="cfg-label">pause</span>
       <div class="cfg-opts">
         <button class="opt" type="button" id="pause-btn" aria-pressed="false">pause</button>
+      </div>
+    </div>
+    <div class="cfg-row">
+      <span class="cfg-label" id="cfg-motion-label" title="plot motion between readouts">motion</span>
+      <div class="cfg-opts" data-group="motion" role="radiogroup" aria-labelledby="cfg-motion-label">
+        <button class="opt on" type="button" role="radio" aria-checked="true" data-value="on">on</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="off">off</button>
       </div>
     </div>
     {% else if *page == "gpu" %}
@@ -187,7 +194,7 @@
     </div>
     {% endif %}
     {% if !rows.is_empty() %}
-    <span class="cfg-label">server · all viewers</span>
+    <span class="cfg-label">{% if *page == "net" %}network scale{% else %}server{% endif %} · all viewers</span>
     <p class="cfg-note">{{ note }}</p>
     {% for row in rows %}{% include "partials/cfg_key.html" %}{% endfor %}
     {% endif %}
@@ -201,6 +208,8 @@
   <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="m" aria-label="medium">m</button>
   <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="l" aria-label="large">l</button>
 </div>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
 
 <script src="assets/app.js"></script>
 </body>

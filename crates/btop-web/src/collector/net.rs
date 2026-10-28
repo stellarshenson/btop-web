@@ -27,25 +27,27 @@
 //! and `lo` only when no other interface exists. `net_iface` still forces any
 //! interface, `lo` included.
 //!
-//! Auto scale (btop `graph_max`, `max_count` and `rescale`): with `net_auto`
-//! the selected interface's last `n` bandwidth samples set the ceiling, their
-//! mean times 1.3 on scale 0 and times 3.0 on scale 1, never below 10 KiB. A
-//! direction counts samples above the ceiling (scale 0) and samples below a
-//! tenth of it (scale 1), and rescales once a count reaches `n`; `rescale`
-//! forces the first pass and every new selection. btop's `n` is 5, a count of
-//! samples designed for its 2000 ms interval, where 5 samples span 10 s; at
-//! 250 ms the same count spans 1.25 s and rescaled 28 times in 4 min of real
-//! traffic (DEF-GRAPH-39-NET-JUMP). On the owner's decision (2026-10-27) the
-//! count keeps btop's 10 s span at any interval: `n = max(5, 10000 /
-//! update_ms)`, 5 at 2000 ms (btop parity), 40 at 250 ms (1 rescale in the
-//! same 4 min).
+//! Auto scale (btop `graph_max`, `max_count` and `rescale`,
+//! ACC-GRAPH-96-NET-AUTOSCALE): with `net_auto` a direction that stays above
+//! its ceiling for five consecutive ticks rises to 1.3 times the mean of those
+//! five samples, and a direction that stays below a tenth of its ceiling for
+//! `net_fall` seconds (300 by default) falls to 3 times the five-sample mean,
+//! never below btop's 10 KiB. Any other tick clears both counts, so each rule
+//! needs the unbroken spell the criterion states; btop instead only decrements
+//! the opposite count. `rescale` forces the first pass and every new selection.
 //!
-//! `net_sync` copies the rescaled ceiling to the other direction and skips
-//! the slower direction's count; the download test compares against the
-//! previous tick's upload speed (btop updates upload after it tests
-//! download), the upload test against the current download speed. With
-//! `net_auto` false the ceilings are the fixed `net_download` and
-//! `net_upload` Mebibits as `(value << 20) / 8` bytes per second.
+//! btop's five-sample counts span 10 s at its 2000 ms interval, and its fall
+//! count also fires after 10 s at 250 ms, which rescaled 28 times in 4 min of
+//! real traffic (DEF-GRAPH-39-NET-JUMP). ACC-GRAPH-96 keeps btop's five-tick
+//! rise at any interval and sets the fall window to five minutes, so a rise
+//! follows a sustained burst and a fall only long calm.
+//!
+//! `net_sync` copies the new ceiling to the other direction and skips the
+//! slower direction's count; the download test compares against the previous
+//! tick's upload speed (btop updates upload after it tests download), the
+//! upload test against the current download speed. With `net_auto` false the
+//! ceilings are the fixed `net_download` and `net_upload` Mebibits as
+//! `(value << 20) / 8` bytes per second, btop's fixed-mode behaviour.
 //!
 //! Smooth scale (ACC-GRAPH-67-SMOOTH-SCALE, a btop-web addition): each
 //! direction's ceiling feeds a [`Scale`], which moves the drawn ceiling and the
@@ -53,11 +55,13 @@
 //! selection starts at its own ceiling without a change. `graph_max_down` and
 //! `graph_max_up` keep btop's values.
 //!
-//! Floor (ACC-GRAPH-71-SCALE-FLOOR, a btop-web addition, owner 2026-10-27):
-//! with `net_auto` the shown ceiling never goes below 1 MiB/s, so idle traffic
-//! draws low and calm instead of filling the box; btop's own floor is 10 KiB.
-//! btop's ceiling still follows its rule and its floor, and a rescale that
-//! would show less than 1 MiB/s stops there, through the same smooth change.
+//! Floor (ACC-GRAPH-96-NET-AUTOSCALE): with `net_auto` the shown ceiling never
+//! goes below `net_floor` Mbit/s (1 by default, 125000 bytes per second), so
+//! idle traffic draws low and calm instead of filling the box; btop's ceiling
+//! still follows its rule and its own 10 KiB floor, and a rescale that would
+//! show less than the floor stops there, through the same smooth change. With
+//! `net_auto` false the shown ceiling is the fixed one, btop's behaviour. The
+//! axis label prints the shown ceiling of each direction.
 //!
 //! Period: every sample, `update_ms` (250 ms by default; btop's 2000).
 //!
@@ -69,6 +73,13 @@
 //! collector departs from btop on the owner's order (2026-10-27): it reads
 //! nothing and returns an empty snapshot, which the page shows as `network
 //! unavailable`.
+//!
+//! Recorded tree (DEF-TEST-53-HOST-IFACE): `BTOP_WEB_PROC_ROOT` other than
+//! `/proc` selects a recorded tree, which has no `getifaddrs(3)`; its
+//! `sys/class/net` entries are the interface list. The kernel's IPv4 and IPv6
+//! addresses and its `IFF_RUNNING` flag are not recorded, so both stay unknown
+//! and the MAC from `<iface>/address` remains the address, as btop falls back
+//! when neither address family exists.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -85,17 +96,23 @@ use crate::config::Config;
 const DOWN: usize = 0;
 const UP: usize = 1;
 
-/// The auto-scale sample count: btop's five samples span 10 s at its 2000 ms;
-/// keep that span at any interval (DEF-GRAPH-39-NET-JUMP, owner 2026-10-27).
-fn scale_samples(update_ms: u64) -> usize {
-    ((10_000 / update_ms.max(1)) as usize).max(5)
-}
+/// btop's rise count and mean window: five consecutive ticks above the
+/// ceiling raise it (ACC-GRAPH-96-NET-AUTOSCALE).
+const AUTO_SAMPLES: usize = 5;
 
 /// btop's lowest graph ceiling, `10 << 10` bytes per second.
 const GRAPH_MIN: u64 = 10 << 10;
 
-/// The lowest auto-scaled ceiling shown, 1 MiB/s (ACC-GRAPH-71-SCALE-FLOOR).
-const SCALE_FLOOR: u64 = 1 << 20;
+/// One Mbit/s in bytes per second; `net_floor` is in Mbit/s.
+const BYTES_PER_MBIT: u64 = 125_000;
+
+/// The consecutive ticks below a tenth of the ceiling that make the auto
+/// scale fall: `net_fall` seconds at `update_ms`, at least one
+/// (ACC-GRAPH-96-NET-AUTOSCALE).
+fn fall_ticks(update_ms: u64, fall_s: i32) -> i32 {
+    let ticks = (fall_s.max(0) as u64 * 1000) / update_ms.max(1);
+    ticks.clamp(1, i32::MAX as u64) as i32
+}
 
 /// btop `net_stat`.
 #[derive(Default)]
@@ -157,7 +174,8 @@ impl Default for NetState {
 /// One `getifaddrs(3)` interface reduced to what `Net::collect` reads.
 struct ObservedInterface {
     name: String,
-    connected: bool,
+    /// btop's `IFF_RUNNING`; unknown (`None`) in a recorded tree.
+    connected: Option<bool>,
     ipv4: Option<String>,
     ipv6: Option<String>,
 }
@@ -188,7 +206,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> NetSnapshot {
     if state.errors >= 3 {
         return state.last.clone().unwrap_or_default();
     }
-    let Ok(observed) = observed_interfaces() else {
+    let Ok(observed) = observed_interfaces(proc_root) else {
         state.errors = state.errors.saturating_add(1);
         return NetSnapshot::default();
     };
@@ -218,7 +236,7 @@ fn sample(
     // The auto-scale counters use the selection from the previous cycle: btop
     // updates them before it re-selects, so a new selection starts at zero.
     let selected = state.selected_iface.clone();
-    let n = scale_samples(config.update_ms);
+    let down_ticks = fall_ticks(config.update_ms, config.net_fall);
     let mut interfaces = Vec::with_capacity(observed.len());
     let mut total_down = 0.0;
     let mut total_up = 0.0;
@@ -241,7 +259,7 @@ fn sample(
             dt_ms,
         );
         if let Some(sample) = down {
-            push_bandwidth(&mut counters.bandwidth[DOWN], sample.speed, n);
+            push_bandwidth(&mut counters.bandwidth[DOWN], sample.speed);
             counters
                 .down_history
                 .push(Some(sample.speed), config.update_ms);
@@ -249,7 +267,7 @@ fn sample(
             total_down_known = true;
         }
         if let Some(sample) = up {
-            push_bandwidth(&mut counters.bandwidth[UP], sample.speed, n);
+            push_bandwidth(&mut counters.bandwidth[UP], sample.speed);
             counters
                 .up_history
                 .push(Some(sample.speed), config.update_ms);
@@ -266,12 +284,18 @@ fn sample(
                     &mut state.max_count[DOWN],
                     sample.speed,
                     state.graph_max[DOWN],
+                    down_ticks,
                 );
             }
             if let Some(sample) = up
                 && !(config.net_sync && counters.up.speed < counters.down.speed)
             {
-                count_scale(&mut state.max_count[UP], sample.speed, state.graph_max[UP]);
+                count_scale(
+                    &mut state.max_count[UP],
+                    sample.speed,
+                    state.graph_max[UP],
+                    down_ticks,
+                );
             }
         }
         let mut ipv4 = iface.ipv4.clone();
@@ -285,7 +309,7 @@ fn sample(
             name: iface.name.clone(),
             ipv4,
             ipv6,
-            connected: Some(iface.connected),
+            connected: iface.connected,
             down_rate: down.map(|sample| sample.speed),
             up_rate: up.map(|sample| sample.speed),
             total_down: down.map(|sample| sample.total),
@@ -336,20 +360,26 @@ fn sample(
         };
     }
 
-    // btop's auto scale: rescale when forced or when a counter reached `n`,
-    // taking the mean of the selected interface's last `n` samples.
+    // btop's auto scale: rescale when forced or when a counter reached its
+    // window, taking the mean of the selected interface's last five samples.
     if config.net_auto {
         'directions: for direction in [DOWN, UP] {
             for scale in 0..2 {
-                if !(state.rescale || state.max_count[direction][scale] >= n as i32) {
+                let limit = if scale == 0 {
+                    AUTO_SAMPLES as i32
+                } else {
+                    down_ticks
+                };
+                if !(state.rescale || state.max_count[direction][scale] >= limit) {
                     continue;
                 }
                 let average = match state.selected_iface.as_deref() {
                     Some(name) => {
                         let counters = &state.interfaces[name];
                         let bandwidth = &counters.bandwidth[direction];
-                        if bandwidth.len() > n {
-                            bandwidth.iter().rev().take(n).sum::<u64>() / n as u64
+                        if bandwidth.len() > AUTO_SAMPLES {
+                            bandwidth.iter().rev().take(AUTO_SAMPLES).sum::<u64>()
+                                / AUTO_SAMPLES as u64
                         } else if direction == DOWN {
                             counters.down.speed.max(0.0) as u64
                         } else {
@@ -381,7 +411,11 @@ fn sample(
             Some(fixed_graph_max(config.net_upload)),
         )
     };
-    let floor = if config.net_auto { SCALE_FLOOR } else { 0 };
+    let floor = if config.net_auto {
+        config.net_floor.max(0) as u64 * BYTES_PER_MBIT
+    } else {
+        0
+    };
     let shown = |graph_max: Option<u64>| graph_max.unwrap_or(0).max(floor) as f64;
     let scale_down = state.scale[DOWN].update(shown(graph_max_down), config.update_ms, NET_PLOT);
     let scale_up = state.scale[UP].update(shown(graph_max_up), config.update_ms, NET_PLOT);
@@ -438,19 +472,20 @@ fn update_counter(counter: &mut Counter, value: Option<u64>, dt_ms: u64) -> Opti
     })
 }
 
-/// btop's per-direction auto-scale counters: a sample above the ceiling pushes
-/// towards the 1.3 factor, a sample below a tenth of it towards the 3.0 factor.
-fn count_scale(max_count: &mut [i32; 2], speed: f64, graph_max: u64) {
+/// btop's per-direction auto-scale counters (ACC-GRAPH-96-NET-AUTOSCALE):
+/// consecutive ticks above the ceiling push the rise count, and consecutive
+/// ticks below a tenth of it push the fall count, which needs `fall_ticks` of
+/// them. Any other tick clears both, so each rule needs an unbroken spell;
+/// btop instead only decrements the opposite count.
+fn count_scale(max_count: &mut [i32; 2], speed: f64, graph_max: u64, fall_ticks: i32) {
     if speed > graph_max as f64 {
-        max_count[0] += 1;
-        if max_count[1] > 0 {
-            max_count[1] -= 1;
-        }
+        max_count[0] = (max_count[0] + 1).min(AUTO_SAMPLES as i32);
+        max_count[1] = 0;
     } else if graph_max > GRAPH_MIN && speed < (graph_max / 10) as f64 {
-        max_count[1] += 1;
-        if max_count[0] > 0 {
-            max_count[0] -= 1;
-        }
+        max_count[1] = (max_count[1] + 1).min(fall_ticks);
+        max_count[0] = 0;
+    } else {
+        *max_count = [0, 0];
     }
 }
 
@@ -461,11 +496,11 @@ fn fixed_graph_max(mebibits: i32) -> u64 {
     (((mebibits as i64) << 20) as u64) / 8
 }
 
-/// btop `net_info::bandwidth`: keep the newest `n + 1` samples for the auto
-/// scale, which reproduces btop's `size() > 5` test as `len() > n`.
-fn push_bandwidth(bandwidth: &mut VecDeque<u64>, speed: f64, n: usize) {
+/// btop `net_info::bandwidth`: keep the newest six samples, so btop's
+/// `size() > 5` test sees five full samples plus the current one.
+fn push_bandwidth(bandwidth: &mut VecDeque<u64>, speed: f64) {
     bandwidth.push_back(speed.max(0.0) as u64);
-    while bandwidth.len() > n + 1 {
+    while bandwidth.len() > AUTO_SAMPLES + 1 {
         bandwidth.pop_front();
     }
 }
@@ -481,8 +516,12 @@ fn epoch_ms() -> u64 {
 
 /// btop enumerates interfaces from `getifaddrs(3)`, including those with no
 /// address. The first entry for a name sets `connected`; the first IPv4 and
-/// first IPv6 address of each family are kept.
-fn observed_interfaces() -> Result<Vec<ObservedInterface>, ()> {
+/// first IPv6 address of each family are kept. A recorded tree has no
+/// `getifaddrs(3)`; its own `sys/class/net` supplies the list.
+fn observed_interfaces(proc_root: &Path) -> Result<Vec<ObservedInterface>, ()> {
+    if proc_root != Path::new("/proc") {
+        return recorded_interfaces(proc_root);
+    }
     let addresses = getifaddrs().map_err(|_| ())?;
     let mut interfaces: Vec<ObservedInterface> = Vec::new();
     for address in addresses {
@@ -494,7 +533,7 @@ fn observed_interfaces() -> Result<Vec<ObservedInterface>, ()> {
             None => {
                 interfaces.push(ObservedInterface {
                     name: address.interface_name.clone(),
-                    connected: address.flags.contains(InterfaceFlags::IFF_RUNNING),
+                    connected: Some(address.flags.contains(InterfaceFlags::IFF_RUNNING)),
                     ipv4: None,
                     ipv6: None,
                 });
@@ -512,6 +551,34 @@ fn observed_interfaces() -> Result<Vec<ObservedInterface>, ()> {
         }
     }
     Ok(interfaces)
+}
+
+/// The interfaces a recorded tree lists: every `sys/class/net` directory, in
+/// name order. Addresses and the running flag are kernel state the tree does
+/// not record, so they stay unknown.
+fn recorded_interfaces(proc_root: &Path) -> Result<Vec<ObservedInterface>, ()> {
+    let net = sys_root(proc_root).join("class/net");
+    let mut names: Vec<String> = std::fs::read_dir(&net)
+        .map_err(|_| ())?
+        .map(|entry| {
+            let entry = entry.map_err(|_| ())?;
+            let is_dir = entry.file_type().map_err(|_| ())?.is_dir();
+            Ok(is_dir.then(|| entry.file_name().to_string_lossy().into_owned()))
+        })
+        .collect::<Result<Vec<_>, ()>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    names.sort();
+    Ok(names
+        .into_iter()
+        .map(|name| ObservedInterface {
+            name,
+            connected: None,
+            ipv4: None,
+            ipv6: None,
+        })
+        .collect())
 }
 
 fn read_counter(path: &Path) -> Option<u64> {
@@ -543,7 +610,7 @@ mod tests {
             .iter()
             .map(|name| ObservedInterface {
                 name: (*name).to_string(),
-                connected: true,
+                connected: Some(true),
                 ipv4: None,
                 ipv6: None,
             })
@@ -580,6 +647,30 @@ mod tests {
         assert!(snapshot.interfaces.is_empty());
         assert_eq!(snapshot.selected_iface, None);
         assert_eq!(snapshot.total_down, None);
+    }
+
+    /// DEF-TEST-53-HOST-IFACE: the interface list comes from the recorded
+    /// tree, so the test passes on a host whose interfaces have other names.
+    /// The fixture names enp0s3 and veth7, neither of which this host has.
+    /// The net collector never reads `/proc`; the path only selects the
+    /// sibling `sys` tree the fixture records.
+    #[test]
+    fn recorded_tree_supplies_the_interface_list() {
+        let snapshot = collect(&fixture("net/host-names/proc"), &default_config());
+        let names: Vec<&str> = snapshot
+            .interfaces
+            .iter()
+            .map(|iface| iface.name.as_str())
+            .collect();
+        assert_eq!(names, ["enp0s3", "veth7"]);
+        assert_eq!(snapshot.selected_iface.as_deref(), Some("enp0s3"));
+        let enp0s3 = &snapshot.interfaces[0];
+        assert_eq!(enp0s3.total_down, Some(5_000_000_000));
+        assert_eq!(enp0s3.total_up, Some(1_000_000_000));
+        // No address family is recorded, so btop's MAC fallback supplies it.
+        assert_eq!(enp0s3.ipv4.as_deref(), Some("52:54:00:12:34:56"));
+        // The running flag is kernel state the tree does not record.
+        assert_eq!(enp0s3.connected, None);
     }
 
     #[test]
@@ -740,22 +831,24 @@ mod tests {
             Some("lo".into())
         );
         let mut down = observed(&["lo", "eth0", "eth1"]);
-        down[1].connected = false;
+        down[1].connected = Some(false);
         assert_eq!(pick(down, ""), Some("eth1".into()));
     }
 
+    /// ACC-GRAPH-96: five consecutive ticks above the ceiling raise it to 1.3
+    /// times their mean; `net_sync` copies the ceiling to upload.
     #[test]
-    fn auto_scale_rescales_up_from_the_last_five_samples() {
+    fn auto_scale_rescales_up_after_five_consecutive_samples() {
         let root = fixture("net/auto-scale");
         let mut state = NetState::default();
-        // btop's 2000 ms interval: five samples, btop parity.
+        // btop's 2000 ms interval: btop parity.
         let mut config = default_config();
         config.update_ms = 2000;
         let start = 1_700_000_000_000;
         for (index, step) in ["s0", "s1", "s2", "s3", "s4"].iter().enumerate() {
             let at = start + index as u64 * 1_000;
             let snapshot = feed(&mut state, &root, step, at, &config);
-            // Four samples sit above the floor; five are needed to rescale.
+            // Four samples sit above the ceiling; the fifth is the first to count.
             assert_eq!(snapshot.graph_max_down, Some(GRAPH_MIN), "{step}");
         }
         let snapshot = feed(&mut state, &root, "s5", start + 5_000, &config);
@@ -767,13 +860,16 @@ mod tests {
         assert_eq!(snapshot.graph_max_down, Some(390_000));
     }
 
+    /// ACC-GRAPH-96: the fall needs `net_fall` consecutive ticks below a tenth
+    /// of the ceiling, and the new ceiling is 3 times the five-sample mean,
+    /// never under btop's 10 KiB.
     #[test]
-    fn auto_scale_rescales_down_with_the_30_factor_and_the_10_kib_floor() {
+    fn auto_scale_rescales_down_after_the_fall_window() {
         let root = fixture("net/auto-scale");
         let mut state = NetState::default();
-        // btop's 2000 ms interval: five samples, btop parity.
         let mut config = default_config();
         config.update_ms = 2000;
+        config.net_fall = 10; // five ticks at 2 s
         let start = 1_700_000_000_000;
         for (index, step) in ["s0", "s1", "s2", "s3", "s4", "s5", "s6"]
             .iter()
@@ -882,37 +978,73 @@ mod tests {
         assert_eq!(snapshot.graph_max_up, Some(52_000));
     }
 
-    /// DEF-GRAPH-39-NET-JUMP: at 250 ms the auto scale counts 40 samples,
-    /// btop's 10 s span, where btop's five would rescale after 1.25 s.
+    /// ACC-GRAPH-96: five consecutive ticks raise the ceiling at any interval;
+    /// DEF-GRAPH-39's counted 10 s span is gone. At 250 ms a rise takes 1.25 s.
     #[test]
-    fn auto_scale_at_250_ms_keeps_btops_10_s_span() {
-        let root = std::env::temp_dir().join(format!("btop-web-net-span-{}", std::process::id()));
-        let stats = root.join("sys/class/net/eth0/statistics");
-        std::fs::create_dir_all(&stats).expect("temp tree");
+    fn auto_scale_at_250_ms_rises_after_five_ticks() {
+        let mut tree = Tree::new("rise", 250);
         let mut state = NetState::default();
-        let config = default_config();
+        let mut config = default_config();
+        config.net_fall = 2;
         assert_eq!(config.update_ms, 250);
-        let (mut rx, mut at) = (0_u64, 1_700_000_000_000_u64);
-        let mut tick = |state: &mut NetState, bytes: u64| {
-            rx += bytes;
-            at += 250;
-            std::fs::write(stats.join("rx_bytes"), rx.to_string()).expect("rx");
-            std::fs::write(stats.join("tx_bytes"), "0").expect("tx");
-            sample(state, &root.join("sys"), at, &observed(&["eth0"]), &config).graph_max_down
-        };
-        assert_eq!(tick(&mut state, 0), Some(GRAPH_MIN));
-        // 100 kB/s: 39 counts keep the floor, the 40th takes 1.3 x the mean.
-        for count in 1..40 {
-            assert_eq!(tick(&mut state, 25_000), Some(GRAPH_MIN), "count {count}");
+        assert_eq!(
+            tree.tick(&mut state, 0, &config).graph_max_down,
+            Some(GRAPH_MIN)
+        );
+        for count in 1..5 {
+            assert_eq!(
+                tree.tick(&mut state, 100_000, &config).graph_max_down,
+                Some(GRAPH_MIN),
+                "count {count}"
+            );
         }
-        assert_eq!(tick(&mut state, 25_000), Some(130_000));
-        // 1 kB/s is below a tenth of the ceiling: 39 counts keep it, the 40th
-        // takes 3.0 x the mean, which is under the floor.
-        for count in 1..40 {
-            assert_eq!(tick(&mut state, 250), Some(130_000), "count {count}");
+        assert_eq!(
+            tree.tick(&mut state, 100_000, &config).graph_max_down,
+            Some(130_000)
+        );
+    }
+
+    /// ACC-GRAPH-96: the fall window is `net_fall` seconds of ticks, not a
+    /// sample count; btop's five ticks were 10 s at its own interval.
+    #[test]
+    fn the_fall_window_is_configured_in_seconds() {
+        assert_eq!(fall_ticks(250, 300), 1200);
+        assert_eq!(fall_ticks(2000, 300), 150);
+        assert_eq!(fall_ticks(250, 1), 4);
+        assert_eq!(fall_ticks(2000, 0), 1);
+    }
+
+    /// ACC-GRAPH-96: `net_floor` sets the lowest shown ceiling in Mbit/s, so
+    /// zero leaves btop's 10 KiB and 1 shows 125000 bytes per second; with
+    /// `net_auto` off the fixed ceiling is shown whatever the floor says.
+    #[test]
+    fn the_configured_floor_sets_the_shown_ceiling() {
+        for (floor, shown) in [(0, GRAPH_MIN), (1, 125_000), (2, 250_000)] {
+            let mut config = default_config();
+            config.update_ms = 2000;
+            config.net_floor = floor;
+            let snapshot = sample(
+                &mut NetState::default(),
+                &fixture("sys"),
+                1_700_000_000_000,
+                &observed(&["eth0"]),
+                &config,
+            );
+            assert_eq!(snapshot.scale_down.label_max, Some(shown), "floor {floor}");
+            assert_eq!(snapshot.scale_up.label_max, Some(shown), "floor {floor}");
         }
-        assert_eq!(tick(&mut state, 250), Some(GRAPH_MIN));
-        let _ = std::fs::remove_dir_all(&root);
+        let mut config = default_config();
+        config.net_auto = false;
+        config.net_floor = 10;
+        config.net_download = 250;
+        let snapshot = sample(
+            &mut NetState::default(),
+            &fixture("sys"),
+            1_700_000_000_000,
+            &observed(&["eth0"]),
+            &config,
+        );
+        assert_eq!(snapshot.scale_down.label_max, Some(32_768_000));
     }
 
     #[test]
@@ -932,102 +1064,158 @@ mod tests {
         assert_eq!(snapshot.graph_max_up, Some(6_553_600));
     }
 
-    /// ACC-GRAPH-67 and ACC-GRAPH-71: btop's rescale to 390 kB stays under the
-    /// 1 MiB/s floor, so the shown ceiling holds the floor and no change runs;
-    /// a fixed ceiling never runs one.
+    /// ACC-GRAPH-96: each rule needs an unbroken spell. A tick between a tenth
+    /// of the ceiling and the ceiling clears both counts, so a rise or a fall
+    /// interrupted by one starts again instead of continuing.
     #[test]
-    fn a_rescale_under_the_floor_and_a_fixed_ceiling_run_no_change() {
-        let root = fixture("net/auto-scale");
-        for net_auto in [true, false] {
-            let mut state = NetState::default();
-            let mut config = default_config();
-            config.update_ms = 2000;
-            config.net_auto = net_auto;
-            let start = 1_700_000_000_000;
-            let mut snapshot = NetSnapshot::default();
-            for (index, step) in ["s0", "s1", "s2", "s3", "s4", "s5"].iter().enumerate() {
-                snapshot = feed(
-                    &mut state,
-                    &root,
-                    step,
-                    start + index as u64 * 1_000,
-                    &config,
-                );
-                assert!(snapshot.scale_down.style.is_empty(), "{step}");
+    fn a_tick_between_the_thresholds_clears_both_counts() {
+        let mut tree = Tree::new("spell", 250);
+        let mut state = NetState::default();
+        let mut config = default_config();
+        config.net_fall = 2; // eight ticks at 250 ms
+        tree.tick(&mut state, 0, &config);
+        // Rise to 130 kB/s after five ticks.
+        for _ in 1..5 {
+            tree.tick(&mut state, 100_000, &config);
+        }
+        assert_eq!(
+            tree.tick(&mut state, 100_000, &config).graph_max_down,
+            Some(130_000)
+        );
+        // Four ticks above 130 kB/s, one between the thresholds, four more:
+        // no rise, because the middle tick cleared the count.
+        for _ in 0..4 {
+            tree.tick(&mut state, 200_000, &config);
+        }
+        tree.tick(&mut state, 50_000, &config);
+        for _ in 0..4 {
+            assert_eq!(
+                tree.tick(&mut state, 200_000, &config).graph_max_down,
+                Some(130_000)
+            );
+        }
+        // The fifth in a row rises from the five-sample mean 200 kB/s.
+        assert_eq!(
+            tree.tick(&mut state, 200_000, &config).graph_max_down,
+            Some(260_000)
+        );
+        // Four ticks below a tenth of 260 kB/s, one middle tick, seven more:
+        // no fall; the eighth in a row falls to 3 x 10 kB/s.
+        for _ in 0..4 {
+            assert_eq!(
+                tree.tick(&mut state, 10_000, &config).graph_max_down,
+                Some(260_000)
+            );
+        }
+        tree.tick(&mut state, 50_000, &config);
+        for _ in 0..7 {
+            assert_eq!(
+                tree.tick(&mut state, 10_000, &config).graph_max_down,
+                Some(260_000)
+            );
+        }
+        assert_eq!(
+            tree.tick(&mut state, 10_000, &config).graph_max_down,
+            Some(30_000)
+        );
+    }
+
+    /// ACC-GRAPH-96: with `net_auto` the shown ceiling never goes below
+    /// `net_floor` (1 Mbit/s by default) while btop's ceiling follows its own
+    /// rule; a burst rises through a change, and after the fall window the
+    /// shown ceiling moves down over several frames and stops at the floor.
+    #[test]
+    fn the_shown_ceiling_never_goes_below_the_floor() {
+        const FLOOR: u64 = 125_000;
+        let mut tree = Tree::new("floor", 250);
+        let mut state = NetState::default();
+        let mut config = default_config();
+        config.net_fall = 2; // eight ticks at 250 ms
+        let mut snapshot = tree.tick(&mut state, 0, &config);
+        assert_eq!(state.graph_max[DOWN], GRAPH_MIN);
+        assert_eq!(snapshot.scale_down.label_max, Some(FLOOR));
+        // 2 MB/s for five ticks: btop's ceiling rises to 2.6 MB/s.
+        for _ in 1..5 {
+            snapshot = tree.tick(&mut state, 2_000_000, &config);
+            assert_eq!(snapshot.scale_down.label_max, Some(FLOOR));
+        }
+        snapshot = tree.tick(&mut state, 2_000_000, &config);
+        assert_eq!(snapshot.graph_max_down, Some(2_600_000));
+        assert_eq!(snapshot.scale_down.label_max, Some(FLOOR));
+        assert_eq!(snapshot.scale_down.draw_max, 2_600_000.0);
+        assert!(!snapshot.scale_down.style.is_empty());
+        for _ in 0..8 {
+            snapshot = tree.tick(&mut state, 2_000_000, &config);
+        }
+        assert_eq!(snapshot.scale_down.label_max, Some(2_600_000));
+        assert!(snapshot.scale_down.style.is_empty());
+        // 10 kB/s is below a tenth of 2.6 MB/s: after the eight-tick window
+        // btop's ceiling falls to 3 x 10 kB/s, under the 1 Mbit/s shown floor.
+        for _ in 0..7 {
+            snapshot = tree.tick(&mut state, 10_000, &config);
+            assert_eq!(snapshot.graph_max_down, Some(2_600_000));
+            assert_eq!(snapshot.scale_down.label_max, Some(2_600_000));
+        }
+        let mut labels = Vec::new();
+        for _ in 0..8 {
+            snapshot = tree.tick(&mut state, 10_000, &config);
+            labels.push(snapshot.scale_down.label_max.expect("label"));
+        }
+        assert_eq!(state.graph_max[DOWN], 30_000);
+        assert_eq!(labels[0], 2_600_000, "{labels:?}");
+        assert!(
+            labels.windows(2).all(|pair| pair[1] <= pair[0]),
+            "{labels:?}"
+        );
+        assert!(
+            labels[1] > FLOOR && labels[1] < 2_600_000,
+            "one frame: {labels:?}"
+        );
+        assert_eq!(labels.last(), Some(&FLOOR), "{labels:?}");
+        assert!(labels.iter().all(|label| *label >= FLOOR), "{labels:?}");
+    }
+
+    /// A temporary sysfs tree whose `eth0` download counter advances by
+    /// `rate * update_ms / 1000` bytes per tick; removed on drop.
+    struct Tree {
+        root: PathBuf,
+        rx: u64,
+        at: u64,
+    }
+
+    impl Tree {
+        fn new(name: &str, update_ms: u64) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "btop-web-net-{name}-{}-{update_ms}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(root.join("sys/class/net/eth0/statistics")).expect("temp tree");
+            Self {
+                root,
+                rx: 0,
+                at: 1_700_000_000_000,
             }
-            if net_auto {
-                assert_eq!(snapshot.graph_max_down, Some(390_000));
-                assert_eq!(snapshot.scale_down.label_max, Some(SCALE_FLOOR));
-                assert_eq!(snapshot.scale_down.draw_max, SCALE_FLOOR as f64);
-            } else {
-                assert_eq!(snapshot.scale_down.label_max, snapshot.graph_max_down);
-            }
+        }
+
+        fn tick(&mut self, state: &mut NetState, rate: u64, config: &Config) -> NetSnapshot {
+            self.rx += rate * config.update_ms / 1000;
+            self.at += config.update_ms;
+            let stats = self.root.join("sys/class/net/eth0/statistics");
+            std::fs::write(stats.join("rx_bytes"), self.rx.to_string()).expect("rx");
+            std::fs::write(stats.join("tx_bytes"), "0").expect("tx");
+            sample(
+                state,
+                &self.root.join("sys"),
+                self.at,
+                &observed(&["eth0"]),
+                config,
+            )
         }
     }
 
-    /// ACC-GRAPH-71-SCALE-FLOOR at btop's 2000 ms and at 250 ms: idle traffic
-    /// keeps the shown ceiling at 1 MiB/s while btop's ceiling follows it; a
-    /// burst above the floor rises through a change, and the fall afterwards
-    /// moves smoothly and stops at the floor.
-    #[test]
-    fn the_shown_ceiling_never_goes_below_the_floor() {
-        for update_ms in [2000_u64, 250] {
-            let root = std::env::temp_dir().join(format!(
-                "btop-web-net-floor-{}-{update_ms}",
-                std::process::id()
-            ));
-            let stats = root.join("sys/class/net/eth0/statistics");
-            std::fs::create_dir_all(&stats).expect("temp tree");
-            let mut state = NetState::default();
-            let mut config = default_config();
-            config.update_ms = update_ms;
-            let n = scale_samples(update_ms);
-            let (mut rx, mut at) = (0_u64, 1_700_000_000_000_u64);
-            let mut tick = |state: &mut NetState, rate: u64| {
-                rx += rate * update_ms / 1000;
-                at += update_ms;
-                std::fs::write(stats.join("rx_bytes"), rx.to_string()).expect("rx");
-                std::fs::write(stats.join("tx_bytes"), "0").expect("tx");
-                sample(state, &root.join("sys"), at, &observed(&["eth0"]), &config)
-            };
-            tick(&mut state, 0);
-            // 100 kB/s: btop rescales to 130 kB, the shown ceiling holds 1 MiB/s.
-            for _ in 0..2 * n {
-                let snapshot = tick(&mut state, 100_000);
-                assert_eq!(snapshot.scale_down.label_max, Some(SCALE_FLOOR));
-                assert!(snapshot.scale_down.style.is_empty());
-            }
-            assert_eq!(state.graph_max[DOWN], 130_000);
-            // 2 MB/s for n ticks: the ceiling rises to 2.6 MB/s from the floor.
-            for _ in 1..n {
-                tick(&mut state, 2_000_000);
-            }
-            let snapshot = tick(&mut state, 2_000_000);
-            assert_eq!(snapshot.graph_max_down, Some(2_600_000), "{update_ms} ms");
-            assert_eq!(snapshot.scale_down.label_max, Some(SCALE_FLOOR));
-            assert_eq!(snapshot.scale_down.draw_max, 2_600_000.0);
-            assert!(!snapshot.scale_down.style.is_empty());
-            // 100 kB/s again: btop falls to 300 kB; the shown ceiling falls from
-            // 2.6 MB/s over several frames and stops at the floor.
-            for _ in 1..n {
-                tick(&mut state, 100_000);
-            }
-            let mut labels = Vec::new();
-            for _ in 0..8 {
-                let snapshot = tick(&mut state, 100_000);
-                assert_eq!(snapshot.graph_max_down, Some(300_000));
-                labels.push(snapshot.scale_down.label_max.expect("label"));
-            }
-            assert_eq!(labels[0], 2_600_000, "{update_ms} ms: {labels:?}");
-            assert!(
-                labels.windows(2).all(|pair| pair[1] <= pair[0]),
-                "{labels:?}"
-            );
-            assert_eq!(labels.last(), Some(&SCALE_FLOOR), "{labels:?}");
-            if update_ms == 250 {
-                assert!(labels[1] > SCALE_FLOOR, "one frame: {labels:?}");
-            }
-            let _ = std::fs::remove_dir_all(&root);
+    impl Drop for Tree {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
         }
     }
 }

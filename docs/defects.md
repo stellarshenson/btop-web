@@ -206,43 +206,95 @@ What the panels render and how an unavailable value is drawn
   - log: 2026-10-27T19:22:19Z @kj added
   - log: 2026-10-27T19:26:41Z @kj not reproduced on 7fec8c28: server stopped 4 s and restarted on the same port; chip live again after 1-6 s direct, 1 s via lab proxy, live for 94 s after; the 14:28:10 stale start matches a make build by the container-scope spec agent
   - log: 2026-10-28T09:41:51Z @kj rejected: not reproduced: after a server restart the page is live again in 1-6 s direct and 1 s through the lab proxy; owner agreed 2026-10-28 to refile if it recurs
-- [ ] `DEF-VIEW-45-STAT-FOOT` **Footer items move** - MEDIUM; the footer items of the Processes, CPU and Memory tiles (top, 80% cpu, 80% mem; frequency, load; used, available) shift left and right every update; owner screenshot paste-20261028-110553.png; fix: each item keeps a fixed position
+- [x] `DEF-VIEW-45-STAT-FOOT` **Footer items move** - MEDIUM; the footer items of the Processes, CPU and Memory tiles (top, 80% cpu, 80% mem; frequency, load; used, available) shift left and right every update; owner screenshot paste-20261028-110553.png; fix: each item keeps a fixed position
+  - evidence: 14 footer items over 5 s moved 0.0 px while 4 changed text; batch-2 final gate 2 and merge smoke; build 9c91f603 live on 40290
   - related: ACC-LAYOUT-74-RESERVED-WIDTH
   - repro: watch the Processes tile footer for 10 s at 1440x900; 80% cpu and 80% mem move as the top process name and values change
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T10:07:43Z @kj likely cause: .stat-foot in app.css is a flex row with justify-content: space-between, so each item's x depends on the widths of its neighbours
   - log: 2026-10-28T10:07:43Z @kj added
-- [ ] `DEF-VIEW-46-LEGEND-SHIFT` **GPU legend text moves** - MEDIUM; in the GPU legend the VRAM text after the load % moves when the load changes between one, two and three digits (0%, 10%, 100%); owner screenshot paste-20261028-111021.png
+  - log: 2026-10-28T15:38:33Z @kj closed
+- [x] `DEF-VIEW-46-LEGEND-SHIFT` **GPU legend text moves** - MEDIUM; in the GPU legend the VRAM text after the load % moves when the load changes between one, two and three digits (0%, 10%, 100%); owner screenshot paste-20261028-111021.png
+  - evidence: GPU legend reserved widths; batch-2 verify-1 gate 1: name, load, VRAM, temperature and power all shown uncut at 1440x900 and 1024x768, no legend overflow
   - related: ACC-LAYOUT-74-RESERVED-WIDTH
   - repro: watch the GPU legend while a GPU load crosses 10%; the VRAM text shifts right
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T10:11:50Z @kj likely cause: .legend-value prints the % inline with no reserved width, so the VRAM span starts where the % text ends
   - log: 2026-10-28T10:11:50Z @kj added
-- [ ] `DEF-VIEW-47-CELL-SHIFT` **Process table values move other text** - MEDIUM; in the process table, changing Cpu% and MemB values move other text; in the screenshot the Cpu% value sits about 3 px higher in rows that show the small CPU graph, and the graph's x follows the value width; owner screenshot paste-20261028-120438.png
+  - log: 2026-10-28T15:38:33Z @kj closed
+- [x] `DEF-VIEW-47-CELL-SHIFT` **Process table values move other text** - MEDIUM; in the process table, changing Cpu% and MemB values move other text; in the screenshot the Cpu% value sits about 3 px higher in rows that show the small CPU graph, and the graph's x follows the value width; owner screenshot paste-20261028-120438.png
+  - evidence: process table values move no other text; batch-2 verify-1 gate 5: maximum movement 0.281 px over 391 sizes
   - related: ACC-LAYOUT-74-RESERVED-WIDTH
   - repro: watch the process table Cpu% and MemB cells for 20 s at 1440x900 while values change between 0.0 and two digits
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T11:06:09Z @kj cause unknown; reproduce first; table-layout is fixed, so the movement is likely inside the Cpu% cell (graph and value inline)
   - log: 2026-10-28T11:06:09Z @kj added
-- [ ] `DEF-VIEW-48-GPU-FACT` **Processes tile shows gpu unavailable** - MEDIUM; in container mode the Processes tile always reads 'gpu unavailable'; a permanent unavailable fact breaks ACC-VIEW-23-RELEVANT; fix: count this container's processes that use a GPU, or omit the fact when it cannot be read; owner screenshot paste-20261028-120926.png item 1
+  - log: 2026-10-28T15:38:33Z @kj closed
+- [x] `DEF-VIEW-48-GPU-FACT` **Processes tile shows gpu unavailable** - MEDIUM; in container mode the Processes tile always reads 'gpu unavailable'; a permanent unavailable fact breaks ACC-VIEW-23-RELEVANT; fix: count this container's processes that use a GPU, or omit the fact when it cannot be read; owner screenshot paste-20261028-120926.png item 1
+  - evidence: gpu fact reads a number ('gpu 1'); batch-2 final gate 2; holder scan costs +12.3 percent CPU per tick inside the 9-18 percent band
   - repro: open the page in the container at 1440x900; Processes tile facts read 'gpu unavailable'
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T11:14:28Z @kj likely cause: the count comes from NVML process lists, whose pids are host pids that the container's /proc cannot map
   - log: 2026-10-28T11:14:28Z @kj added
   - log: 2026-10-28T11:20:53Z @kj owner chose 2026-10-28: count this container's processes holding a GPU device (/dev/nvidia0-N) open, without btop-web itself; sample less often if the cost is measurable
   - log: 2026-10-28T11:44:20Z @kj owner 2026-10-28: count holders of every GPU node that applies (/dev/nvidiaN, WSL2 /dev/dxg, AMD /dev/kfd and /dev/dri/renderD*); prefer maintained libraries for GPU access; unreadable processes give a lower bound 'n+'
-- [ ] `DEF-VIEW-49-FILTER-STYLE` **Process filter box looks unstyled** - MINOR; the process filter input looks like a bare wireframe box with no house style; it should match the JupyterLab input and house chip style in all themes, dark and light; owner screenshot paste-20261028-120926.png item 2
+  - log: 2026-10-28T15:38:33Z @kj closed
+- [x] `DEF-VIEW-49-FILTER-STYLE` **Process filter box looks unstyled** - MINOR; the process filter input looks like a bare wireframe box with no house style; it should match the JupyterLab input and house chip style in all themes, dark and light; owner screenshot paste-20261028-120926.png item 2
+  - evidence: filter input matches the config input on 17 computed properties, contrast 4.99:1 or better in all 10 variants; batch-2 verify-1 gate 4
   - repro: look at the filter box in the Processes panel header at 1440x900 dark
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T11:14:28Z @kj likely cause: app.css gives the input only a border, no background, padding or focus style
   - log: 2026-10-28T11:14:28Z @kj added
-- [ ] `DEF-VIEW-50-MEM-TERMS` **Memory terms confusing** - MEDIUM; the Memory panel shows total 503 GiB, used 8.21, available 494, free 481 and cached 12.3 with no visible relation, so the reader cannot tell why available, free and total differ; owner screenshot paste-20261028-120926.png item 3
+  - log: 2026-10-28T15:38:33Z @kj closed
+- [x] `DEF-VIEW-50-MEM-TERMS` **Memory terms confusing** - MEDIUM; the Memory panel shows total 503 GiB, used 8.21, available 494, free 481 and cached 12.3 with no visible relation, so the reader cannot tell why available, free and total differ; owner screenshot paste-20261028-120926.png item 3
+  - evidence: four-segment memory bar used/cache/other/free sums to 100.000 percent with available = free + cache; batch-2 final gate 2
   - repro: open the Memory panel at 1440x900 and compare the header total with the available, free and cached rows
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T11:14:28Z @kj likely cause: btop's rows are shown without their relation (available = free + reclaimable cache); in container mode some rows may mix host and cgroup values; reproduce first
   - log: 2026-10-28T11:14:28Z @kj added
   - log: 2026-10-28T11:20:53Z @kj owner chose 2026-10-28: stacked bar used + cache + free = total with a legend; available shown once as free + cache; swap below
   - log: 2026-10-28T11:44:20Z @kj owner 2026-10-28: four segments; total = system MemTotal; used = this container's used; other = used by everything else; free = the system's free memory (MemFree); no in-container notion of free
+  - log: 2026-10-28T15:38:33Z @kj closed
+- [x] `DEF-VIEW-55-CHIP-BLANK` **LIVE chip holds a blank band** - MINOR; the top-bar LIVE chip reserves the width of 'PAUSED since HH:MM:SS', so while live it shows a wide empty band between LIVE and the sample age; empty space is a defect (DEF-LAYOUT-15); screenshot /tmp/claude-1000/-home-lab-workspace-private-btop-web/29fd4ba6-8941-4eba-8147-0d90c052614e/scratchpad/look-dark-1440.png
+  - evidence: worst internal blank run 4.00 px over 20 s; chip and eight neighbours drift 0.000 px across LIVE, PAUSED and STALE; both times reachable
+  - repro: open the batch-2 build at 1440x900 while live and look at the LIVE chip
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-28T13:56:47Z @kj acc-74 reserves the widest state text for the whole chip instead of for the changing value
+  - log: 2026-10-28T13:56:47Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `DEF-VIEW-56-NUMBER-INDENT` **CPU big number indented** - MEDIUM; the CPU tile's big number is right-aligned in a slot as wide as 100.0, so 1.0 starts about 45 px right of the panel title and the other tiles' numbers; screenshot /tmp/claude-1000/-home-lab-workspace-private-btop-web/29fd4ba6-8941-4eba-8147-0d90c052614e/scratchpad/look-dark-1440.png
+  - evidence: CPU gauge block within 0.055 px of its axis at injected 1, 14 and 100; tile value at the content edge with no reserve indent; drift 0.000 px over 20 s
+  - related: ACC-VIEW-81-NUMBER-ALIGN
+  - repro: open the batch-2 build at 1440x900 with CPU below 10%; compare the CPU number's left edge with Memory and Processes
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-28T13:56:47Z @kj acc-74 reserves the widest form left of a short value; the unit position is kept at the cost of a blank band before the number
+  - log: 2026-10-28T13:56:47Z @kj added
+  - log: 2026-10-28T14:08:22Z @kj owner 15:06 (/tmp/paste-files/paste-20261028-150656.png): the shifted percentage looks bad; same blank band in the CPU gauge centre (14.0%) and before cores busy 9.0 of 64; owner asked for design alternatives
+  - log: 2026-10-28T14:08:23Z @kj edited severity "MINOR" -> "MEDIUM"
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `DEF-VIEW-57-MEM-INDENT` **Memory numbers indented** - MEDIUM; the Memory tile's used number (slot 0000) and the Memory panel's percentages (slot 100%) and MiB values (slot 0000 MiB) are right-aligned in their reserved slots, so short values start after a blank band, as in DEF-VIEW-56-NUMBER-INDENT
+  - evidence: memory gauge 0.000 px off axis; unit and used range hold; legend right edges spread 0.000 px; numeric table columns stay right-aligned
+  - related: ACC-VIEW-81-NUMBER-ALIGN, DEF-VIEW-56-NUMBER-INDENT - same cause
+  - repro: open the page with memory used below 1000 GiB and below 10%; compare each Memory value's left edge with its label
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-28T14:10:19Z @kj acc-74 [data-w] sets text-align: right (app.css:118), so the reserve sits before the value; mem_stat.html and mem_gauge.html use it
+  - log: 2026-10-28T14:10:19Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
+- [ ] `DEF-VIEW-59-ASSET-CACHE` **New build keeps the old stylesheet in the browser** - MEDIUM; app.css, app.js and the theme scripts are served with no Cache-Control, ETag or Last-Modified, so a browser may reuse a stylesheet from an older build after a deploy; serve assets with a validator so a new build shows at once
+  - repro: deploy a build that changes app.css, keep the browser open, and load the page; the old stylesheet can be reused
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T16:06:14Z @kj added
+  - log: 2026-10-28T16:06:58Z @kj edited text "Assets are served with no Cache-Control, ETag or Last-Modified, so a browser reuses the stylesheet it already has while the HTML comes from the new build; after the 0.6.30 deploy the filter input still showed its old yellow placeholder until a reload; serve assets with a validator" -> "app.css, app.js and the theme scripts are served with no Cache-Control, ETag or Last-Modified, so a browser may reuse a stylesheet from an older build after a deploy; serve assets with a validator so a new build shows at once"; repro "deploy a build that changes app.css, then open the page without clearing the cache; the old styles show under the new version" -> "deploy a build that changes app.css, keep the browser open, and load the page; the old stylesheet can be reused"
+  - log: 2026-10-28T16:06:58Z @kj measured 2026-10-28: the yellow block in the owner's screenshot is a highlight over the word (pure #fcfd55 with black text, red outline drawn on the image), not the input's style; the running 0.6.30 build renders the placeholder as #909293 in dark Default
+  - log: 2026-10-28T19:20:04Z @kj owner saw on 0.6.30: text above the GPU panel, no lane boundary, legend overflow, misplaced memory gauge, no tabs while the squares are gone; proxy and direct CSS are byte-identical (sha 3c5d1c4d), so a stale copy would sit in his browser; the same build opened on port 50561
+- [ ] `DEF-VIEW-60-LANE-GAP` **GPU lane border crowds the legend text** - MINOR; The lane boundary rule sits against the first legend character, so border and text touch; the boundary needs clear spacing from the GPU name and from the bars on both sides at every width
+  - repro: open the GPU panel at 1440x900; the vertical lane border touches the legend text
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T19:24:04Z @kj added
+- [ ] `DEF-VIEW-62-FILTER-YELLOW` **Filter placeholder renders yellow** - MINOR; The process filter's placeholder reads yellow instead of the faint grey measured at #909293; the stylesheet has one placeholder rule in --muted and no focus background, so establish what paints it before changing the style
+  - repro: open the page in the owner's browser; the filter placeholder shows a yellow block around the word
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T19:24:04Z @kj added
 
 ## Process collection `PROC`
 
@@ -279,6 +331,23 @@ Recorded fixtures that stand in for the host
   - repro: run with BTOP_WEB_PROC_ROOT=crates/btop-web/tests/fixtures/cpu/unavailable/proc and open the CPU panel
   - log: 2026-10-25T03:14:08Z @kj added
   - log: 2026-10-25T03:49:02Z @kj closed
+- [x] `DEF-TEST-52-HOST-MOUNT` **Mount test depends on the lab host** - MAJOR; GitHub CI run 40689486618 fails collector::mem::tests::only_physical_filters_by_proc_filesystems (mem.rs:992): the fixture lists /gpu-bookings, the collector calls statvfs on that real path, which exists only on the lab host, so the runner drops the mount
+  - evidence: mem tests 20/20 with every fixture mountpoint renamed to a path absent here; make ci 255 tests; tmp/workflows/btop-web-batch3/checkpoints/verify-1.json
+  - related: ACC-BUILD-3-CI
+  - repro: run the library tests on a machine without /gpu-bookings; the assertion at mem.rs:992 fails
+  - test-tags: UNIT
+  - root-cause: 2026-10-28T12:41:48Z @kj mem.rs:306 calls statvfs on the live mountpoint during fixture tests; the test asserts a mount whose live path exists only here; breaks the fixtures-not-live-host rule
+  - log: 2026-10-28T12:41:48Z @kj added
+  - log: 2026-10-28T12:52:52Z @kj fix d-52 ready (wf_7f7efcc2-1ad): statvfs resolves mountpoints under the recorded tree root, live /proc maps to /; mem tests pass 20 of 20 with every asserted mountpoint absent on the host, HEAD fails 3; make ci 246
+  - log: 2026-10-28T18:03:54Z @kj closed
+- [x] `DEF-TEST-53-HOST-IFACE` **Network tests need a host eth0** - MEDIUM; net::collect lists interfaces through the host's getifaddrs even for a recorded tree, so tests/e2e.rs:282 and tests/http.rs:462 and :1072 pass only on a host with eth0; a developer machine with enp* names fails make ci
+  - evidence: net tests 16/16 and the page test pass from the recorded tree with enp0s3 and veth7 on this eth0 host; new fixture added
+  - related: DEF-TEST-52-HOST-MOUNT
+  - repro: run make ci on a Linux host whose interfaces are named enp0s3 and lo only
+  - test-tags: UNIT, FUNCTIONAL
+  - root-cause: 2026-10-28T12:52:52Z @kj net.rs reads interface names from getifaddrs, not from the fixture's sys/class/net, when BTOP_WEB_PROC_ROOT points at a recorded tree
+  - log: 2026-10-28T12:52:52Z @kj added
+  - log: 2026-10-28T18:03:54Z @kj closed
 
 ## Libraries `LIB`
 
@@ -326,6 +395,14 @@ Page fit, density and use of space
   - test-tags: FUNCTIONAL
   - log: 2026-10-27T11:51:35Z @kj added
   - log: 2026-10-27T13:27:20Z @kj closed
+- [x] `DEF-LAYOUT-58-VERSION-WIDTH` **Longer version overflows the 360 px top bar** - MINOR; each rebuild bumps the patch version; at 0.6.100 (72 bumps from 0.6.28) the version is 7 characters and the CONFIG chip ends about 2.9 px past a 360 px viewport in PAUSED with READ-ONLY on; 0.6.28 already uses 2.1 px of the bar's 4 px right padding
+  - evidence: at 360x640 with version 0.6.100, PAUSED and READ-ONLY, no scroll, version fully visible, CONFIG right edge 356.0 at the bar content edge
+  - related: ACC-BUILD-84-AUTO-PATCH, ACC-LAYOUT-62-VERSION
+  - repro: set the version to 0.6.100, open the page at 360x740, pause it with READ-ONLY on; measure the CONFIG chip's right edge
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-28T14:25:42Z @kj the drop-p2 tier keeps the version, interval, live chip, READ-ONLY and CONFIG at fixed gaps; docs/design/notes.md:464 predicted it
+  - log: 2026-10-28T14:25:42Z @kj added
+  - log: 2026-10-28T18:03:55Z @kj closed
 
 ## Graphs and sparklines `GRAPH`
 
@@ -360,12 +437,33 @@ Line graphs, sparklines and history charts: interpolation, marks, scale and obst
   - log: 2026-10-27T13:51:44Z @kj investigated wf_43b1b0ae-82c: replay 64/64 rescales exact; fix proposal n = max(5, 10000/update_ms) gives 1 rescale in 4 min; evidence tmp/workflows/btop-web-net-jump/record.md, checkpoints/refute.json
   - log: 2026-10-27T18:20:32Z @kj owner decided 2026-10-27: auto scale counts over btop's 10 s span at any interval, n = max(5, 10000/update_ms); steady left edge: once the window is full the line starts at the first complete bucket, every chart
   - log: 2026-10-28T02:00:20Z @kj closed; reason: evidence names the measured result and the checkpoint
-- [ ] `DEF-GRAPH-51-GPU-LANES` **GPU lines share one plot** - MEDIUM; the GPU load graph draws every GPU in one plot, so lines overlap (three GPUs at 0% show as one line); each GPU needs its own lane on the shared time axis; owner screenshot paste-20261028-120926.png item 4
+- [x] `DEF-GRAPH-51-GPU-LANES` **GPU lines share one plot** - MEDIUM; the GPU load graph draws every GPU in one plot, so lines overlap (three GPUs at 0% show as one line); each GPU needs its own lane on the shared time axis; owner screenshot paste-20261028-120926.png item 4
+  - evidence: one lane per GPU; batch-2 verify-1 gate 1: 3 lanes, 3 chart boxes, each legend entry centred on its plot within 0.01 px, one shared axis
+  - related: ACC-GRAPH-78-GPU-LANES
   - repro: open the GPU panel with three idle GPUs; one line is visible
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-28T11:14:28Z @kj by design: ACC-GRAPH-43-GPU-LOAD specified one plot with one series per GPU; the owner now wants one lane per GPU
   - log: 2026-10-28T11:14:28Z @kj added
   - log: 2026-10-28T11:44:20Z @kj owner 2026-10-28: replace the one shared GPU graph with three separate graphs, one per GPU, each 0-100%; the legend keeps temperature and power at 1024x768 too
+  - log: 2026-10-28T15:38:34Z @kj closed
+- [x] `DEF-GRAPH-54-LANES-MERGED` **GPU graphs still read as one** - MAJOR; the three GPU lane boxes sit 2 px apart and their vertical grid lines run on without a break, so the panel still reads as one graph; each GPU graph needs a visible boundary of its own; screenshot /tmp/claude-1000/-home-lab-workspace-private-btop-web/29fd4ba6-8941-4eba-8147-0d90c052614e/scratchpad/look-dark-1440.png
+  - evidence: three lanes with equal 4 px gaps and a 1 px rule, vertical grid inside each lane, 0 and 100 percent strokes 2.5-3.5 px clear of the edges, at three sizes dark and light
+  - related: ACC-GRAPH-78-GPU-LANES - the criterion this defect breaks
+  - repro: open the batch-2 build at 1440x900 and look at the GPU panel
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-28T13:56:47Z @kj d-51 separates the lanes only by a 2 px gap; same grid colour and no frame per lane
+  - log: 2026-10-28T13:56:47Z @kj added
+  - log: 2026-10-28T14:03:10Z @kj owner confirmed on the live page 15:02 (/tmp/paste-files/paste-20261028-150223.png): one must see where one lane ends and the next begins; GPU 0 at 0% draws on its lane's bottom edge, 7 px above GPU 1's 100% line at the next lane's top edge, so the two lines read as one pair
+  - log: 2026-10-28T14:03:10Z @kj edited severity "MEDIUM" -> "MAJOR"
+  - log: 2026-10-28T18:03:54Z @kj closed
+- [ ] `DEF-GRAPH-61-NET-LANES` **Network plot does not separate download and upload** - MEDIUM; The network plot draws download and upload in one undivided box; each needs its own lane with a visible boundary, as the GPU panel has, on the shared time axis
+  - repro: open the Network panel; the two series share one plot with no boundary between them
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T19:24:04Z @kj added
+- [ ] `DEF-GRAPH-63-GRID-UNITS` **Grids carry no unit labels or corner total** - MEDIUM; The GPU and network grids show no value labels, so the reader cannot tell the scale; label a few horizontal grid lines with their value and unit and print the total scale in the plot corner
+  - repro: open the GPU and Network panels; no grid line is labelled and no corner states the scale
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T19:24:04Z @kj added
 
 ## Theme `THEME`
 
