@@ -9,3 +9,7 @@
 .DS_Store
 .playwright-mcp/
 .ipynb_checkpoints/
+
+# runtime files of the local fixture and live servers
+*.pid
+live-server.log
