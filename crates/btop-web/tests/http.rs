@@ -203,12 +203,26 @@ async fn page_has_every_panel_and_theme_option() {
         "synthwave",
         "terracotta",
         "ultraviolet",
+        "cyberpunk",
     ] {
         assert!(
             page.contains(&format!("value=\"{theme}\"")),
             "theme picker lacks {theme}"
         );
     }
+    // ACC-THEME-101-CYBERPUNK: the pair lists last, so the picker carries a
+    // ninth option and a number 0-7 already stored in a config keeps its theme.
+    let at = page.find("id=\"theme-picker\"").expect("theme picker");
+    let select = &page[at..at + page[at..].find("</select>").expect("closed picker")];
+    let options: Vec<&str> = select
+        .match_indices("value=\"")
+        .map(|(start, needle)| {
+            let value = &select[start + needle.len()..];
+            &value[..value.find('"').expect("option end")]
+        })
+        .collect();
+    assert_eq!(options.len(), 9, "theme options: {options:?}");
+    assert_eq!(options[8], "cyberpunk", "theme options: {options:?}");
     assert!(
         page.contains("--surface:"),
         "theme variables are not inlined"
@@ -454,6 +468,59 @@ async fn page_renders_the_05_panel_set() {
     }
 }
 
+/// DEF-VIEW-55-CHIP-BLANK: the live chip is painted in the browser, so the
+/// server markup, app.css and app.js must agree on the three state names.
+/// The markup supplies the targets and the polite live word, the stylesheet
+/// colours PAUSED and STALE, and the script derives the state, writes the
+/// word, formats the STALE time and re-arms the stale timer at two intervals.
+#[tokio::test]
+async fn live_chip_carries_the_live_paused_and_stale_hooks() {
+    let page = String::from_utf8(get(&app(Some(fixture_snapshot()), true), "/").await.2)
+        .expect("utf-8 page");
+    let at = page
+        .find(r#"<span class="chip chip-live" id="live-chip""#)
+        .expect("live chip");
+    let chip = &page[at..at + page[at..].find("</b></span>").expect("chip end")];
+    for marker in [
+        r#"class="chip chip-live""#,
+        r#"data-tip="Sampler state, live, paused or stale"#,
+        r#"<i class="lamp"></i>"#,
+        r#"<span class="live-word up" aria-live="polite">live</span>"#,
+        r#"<b class="live-age" id="sample-age" aria-hidden="true">"#,
+    ] {
+        assert!(
+            chip.contains(marker),
+            "the live chip lacks {marker}: {chip}"
+        );
+    }
+    let asset = |name: &str| {
+        std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets")
+                .join(name),
+        )
+        .expect(name)
+    };
+    let css: String = asset("app.css").split_whitespace().collect();
+    for rule in [
+        ".chip-live.paused,.chip-live.stale{--chip-hue:var(--warn);border-color:var(--warn);}",
+        ".chip-live.paused.lamp,.chip-live.stale.lamp{background:var(--warn);}",
+    ] {
+        assert!(css.contains(rule), "app.css lacks {rule}");
+    }
+    let js = asset("app.js");
+    for hook in [
+        r#"var state = stale ? "stale" : paused ? "paused" : "live";"#,
+        r#"liveChip.classList.toggle("paused", state === "paused");"#,
+        r#"liveChip.classList.toggle("stale", state === "stale");"#,
+        r#"if (words[index].textContent !== state) words[index].textContent = state;"#,
+        r#"sampleAge.textContent = "since " + new Date(lastFrame).toTimeString().slice(0, 8);"#,
+        "}, 2 * updateMs);",
+    ] {
+        assert!(js.contains(hook), "app.js lacks {hook}");
+    }
+}
+
 /// ACC-GRAPH-24-UNOBSCURED: no number, label or control sits inside a plot
 /// box, on the page or in any SSE fragment; gauges are not plot boxes.
 #[tokio::test]
@@ -518,6 +585,12 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
                 !tag.contains("data-chart"),
                 "{name}: a plot carries a tooltip"
             );
+            // DEF-VIEW-74: a browser title beside the house box is a second
+            // box.
+            assert!(
+                !tag.contains(" title=\""),
+                "{name}: a tooltip carries a browser title: {tag}"
+            );
             let value = &tag[tag.find("data-tip=\"").expect("tip") + 10..];
             let value = &value[..value.find('"').expect("tip end")];
             let lines: Vec<&str> = value.split("&#10;").collect();
@@ -543,6 +616,47 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
         page.contains(r#"<div class="tip" id="tip" role="tooltip" hidden></div>"#),
         "the page lacks the shared tooltip element"
     );
+}
+
+/// ACC-VIEW-80-STAT-TIPS: the anchors batch 3 gave a tooltip each still carry
+/// one: the top-bar chips, every stat tile and gauge, the memory bar and its
+/// rows, the network header, interface and legend, the GPU header, legend
+/// value and bars, every core row and the four numeric process column
+/// headers. The tip text itself is held by
+/// `stat_tips_are_short_and_name_unit_and_source`; this test holds presence,
+/// which a dropped attribute would otherwise take with it.
+#[tokio::test]
+async fn stat_tips_sit_on_every_tip_anchor() {
+    let page = String::from_utf8(get(&app(Some(fixture_snapshot()), true), "/").await.2)
+        .expect("utf-8 page");
+    for anchor in [
+        r#"id="tier-chip" data-tip="Priority tiers on screen"#,
+        r#"id="live-chip" data-tip="Sampler state"#,
+        r#"data-tip="Server mode, no unit"#,
+        r#"class="stat-tile" data-tip="CPU total"#,
+        r#"class="stat-tile" data-tip="Memory used"#,
+        r#"class="stat-tile" data-tip="Process total"#,
+        r#"data-gauge="cpu" data-tip="CPU total"#,
+        r#"data-gauge="mem" data-tip="Memory used"#,
+        r#"class="mem-bar" data-tip="Memory bar"#,
+        r#"class="mem-row" data-tip="Memory used"#,
+        r#"class="mem-row" data-tip="Reclaimable cache"#,
+        r#"data-field="net-interface" data-tip="Selected interface"#,
+        r#"data-field="net-axis-note" data-tip="Plot scale"#,
+        r#"class="legend-item" data-tip="Download rate"#,
+        r#"class="legend-item" data-tip="Upload rate"#,
+        r#"data-field="gpu-count" data-tip="GPU count"#,
+        r#"class="legend-value" data-tip="GPU 0 utilisation"#,
+        r#"class="gpu-bars" data-tip="GPU 0 bars"#,
+        r#"class="core-row" data-tip="Core cpu0"#,
+        r#"id="proc-count" data-tip="Shown / total processes"#,
+        r#"<th class="num" scope="col" data-tip="Pid"#,
+        r#"data-field="proc-threads" scope="col" data-tip="Threads"#,
+        r#"<th class="num" scope="col" data-tip="Resident memory"#,
+        r#"<th class="num" scope="col" data-tip="CPU use of the process"#,
+    ] {
+        assert!(page.contains(anchor), "no tooltip on {anchor}");
+    }
 }
 
 /// ACC-GRAPH-67-SMOOTH-SCALE: each network plot draws its area and line in
@@ -577,6 +691,111 @@ async fn network_plots_draw_in_a_series_group() {
             );
         }
     }
+}
+
+/// DEF-GRAPH-61-NET-LANES: the network panel stacks the download lane above
+/// the upload lane with one visible boundary between them, and both lanes
+/// share one time axis.
+#[tokio::test]
+async fn network_panel_draws_two_lanes_with_a_boundary() {
+    let snapshot = fixture_snapshot();
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let events = fragments(&snapshot);
+    for html in page_and_event(&page, &events, "net") {
+        let down = html
+            .find(r#"data-chart="net-down""#)
+            .expect("download lane");
+        let boundary = html.find(r#"class="net-boundary""#).expect("lane boundary");
+        let up = html.find(r#"data-chart="net-up""#).expect("upload lane");
+        assert!(
+            down < boundary,
+            "the boundary is not after the download lane"
+        );
+        assert!(boundary < up, "the boundary is not before the upload lane");
+        assert_eq!(
+            html.matches(r#"class="net-boundary""#).count(),
+            1,
+            "one boundary between the two lanes"
+        );
+        assert_eq!(
+            html.matches(r#"data-field="net-x-axis""#).count(),
+            1,
+            "one shared time axis"
+        );
+    }
+}
+
+/// DEF-GRAPH-63-GRID-UNITS: every plot labels its grid lines with their value
+/// and unit and states the total scale at its top corner, in a gutter outside
+/// the [data-chart] box (ACC-GRAPH-24): percent levels for the GPU lanes, the
+/// shown ceiling, its half and zero for the network lanes.
+#[tokio::test]
+async fn plots_label_their_grid_lines_and_total_scale() {
+    let snapshot = fixture_snapshot();
+    let down = snapshot.net.down_scale_labels();
+    let up = snapshot.net.up_scale_labels();
+    // The rendered labels carry their unit: percent, or btop's B/K/M/G suffix.
+    for label in down.iter().chain(up.iter()) {
+        let unit = label.chars().last().expect("a label");
+        assert!("BKMGT".contains(unit), "{label} has no unit");
+    }
+    let gutter = |ceiling: &str, half: &str| {
+        format!(
+            r#"<div class="plot-scale" aria-hidden="true"><span class="scale-total">{ceiling}</span><span class="scale-mid" style="--at:50">{half}</span><span class="scale-zero">0B</span></div>"#
+        )
+    };
+    let (down_gutter, up_gutter) = (gutter(&down[0], &down[1]), gutter(&up[0], &up[1]));
+    let gpu_gutter = r#"<div class="plot-scale" aria-hidden="true"><span class="scale-total">100%</span><span class="scale-mid" style="--at:75">75%</span><span class="scale-mid" style="--at:50">50%</span><span class="scale-mid" style="--at:25">25%</span><span class="scale-zero">0%</span></div>"#;
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let events = fragments(&snapshot);
+    let [_, gpu_event] = page_and_event(&page, &events, "gpu");
+    let [_, net_event] = page_and_event(&page, &events, "net");
+    for (name, html) in [("page", page.as_str()), ("gpu event", gpu_event)] {
+        let lanes = elements_with(html, "data-chart")
+            .into_iter()
+            .filter(|(tag, _)| tag.contains(r#"data-chart="gpu""#))
+            .count();
+        assert!(lanes > 0, "{name} has no GPU lane");
+        assert_eq!(
+            html.matches(gpu_gutter).count(),
+            lanes,
+            "{name}: one scale gutter per GPU lane"
+        );
+        assert!(
+            html.find(gpu_gutter).expect("GPU gutter")
+                < html.find(r#"data-chart="gpu""#).expect("GPU plot"),
+            "{name}: the GPU gutter is not before its plot"
+        );
+    }
+    for (name, html) in [("page", page.as_str()), ("net event", net_event)] {
+        let down_at = html.find(r#"data-chart="net-down""#).expect("down plot");
+        let up_at = html.find(r#"data-chart="net-up""#).expect("up plot");
+        assert_eq!(
+            html[..down_at].matches(&down_gutter).count(),
+            1,
+            "{name}: one download gutter before its plot"
+        );
+        // The two directions can share a ceiling in a quiet fixture, so the
+        // segments, not the whole-document counts, place each gutter.
+        assert_eq!(
+            html[down_at..up_at].matches(&up_gutter).count(),
+            1,
+            "{name}: one upload gutter between the two plots"
+        );
+    }
+    // No counter, no ceiling: the gutter carries no text, so the word
+    // "unavailable" never reaches the plot (ACC-GRAPH-24).
+    let empty = String::from_utf8(get(&app(Some(unavailable_snapshot()), true), "/").await.2)
+        .expect("utf-8 page");
+    assert_eq!(
+        empty
+            .matches(r#"<span class="scale-total"></span>"#)
+            .count(),
+        2,
+        "the empty network scale prints no word"
+    );
 }
 
 /// DEF-TEST-53-HOST-IFACE: the page names the interface the recorded tree
@@ -776,16 +995,19 @@ async fn page_carries_the_starting_proc_view() {
     }
 }
 
-/// ACC-VIEW-58-PROC-VIEW: the config menu offers the three views and the
-/// tree-node option as house-chip radios.
+/// ACC-VIEW-58-PROC-VIEW, ACC-VIEW-103-TREE-DEPTH: the config menu offers the
+/// three views and the tree display level as house-chip radios.
 #[tokio::test]
-async fn config_offers_process_view_and_tree_nodes() {
+async fn config_offers_process_view_and_tree_level() {
     let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
         .expect("utf-8 page");
     let config = &page[page.find(r#"id="config""#).expect("config popover")..];
     for (group, values) in [
         ("proc-view", &["top", "all", "tree"][..]),
-        ("proc-nodes", &["collapsed", "expanded"][..]),
+        (
+            "proc-level",
+            &["1", "2", "3", "4", "5", "6", "7", "8", "9"][..],
+        ),
     ] {
         let (tag, inner) = elements_with(config, "data-group")
             .into_iter()
@@ -883,6 +1105,12 @@ async fn gpu_panel_draws_one_lane_per_device() {
             .filter(|(tag, _)| tag.starts_with(r#"<div class="legend-item""#))
             .collect();
         assert_eq!(lanes.len(), 3, "{name}: one lane per device");
+        assert_eq!(
+            gpu.matches(r#"class="gpu-boundary""#).count(),
+            lanes.len() - 1,
+            "{name}: one lane boundary per gap between {} lanes",
+            lanes.len()
+        );
         assert_eq!(entries.len(), 3, "{name}: one legend entry per device");
         let view_box = format!(r#"viewBox="0 0 {} {}""#, lane.width, lane.height);
         for (index, (tag, inner)) in lanes.iter().enumerate() {
@@ -911,6 +1139,20 @@ async fn gpu_panel_draws_one_lane_per_device() {
                 inner.contains(&format!(r#"class="legend-item" data-gpu="{index}""#))
                     && inner.contains(&format!("sw-gpu-{index}")),
                 "{name}: lane {index} holds its legend entry"
+            );
+            // ACC-VIEW-82-GPU-TAB: the edge tab is the entry's first markup
+            // and carries the series colour class the CSS strip paints.
+            let entry = entries[index].1;
+            let tab = format!(r#"<i class="sw sw-gpu-{}"></i>"#, index % 3);
+            let tab_at = entry
+                .find(&tab)
+                .unwrap_or_else(|| panic!("{name}: GPU {index} has no {tab}: {entry}"));
+            assert!(
+                entry[..tab_at].trim().is_empty()
+                    && entry[tab_at + tab.len()..]
+                        .trim_start()
+                        .starts_with(r#"<span class="legend-name">"#),
+                "{name}: GPU {index} edge tab is not the entry's first markup: {entry}"
             );
         }
         assert!(lanes[0].1.contains("<path"), "{name}: GPU 0 draws a line");
@@ -1014,7 +1256,8 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
                 r#"<path class="g-fill warn" d="{}">"#,
                 gauge_arc(Some(50.0))
             ),
-            r#"<text class="g-value" x="54" y="66">80<tspan class="g-unit">%</tspan>"#.to_string(),
+            r#"<text class="g-value" x="54" y="66">80<tspan class="g-unit" dx="2.65">%</tspan>"#
+                .to_string(),
             r#"aria-label="CPU total 80 percent""#.to_string(),
             r#"<span class="stat-value crit" data-w="100" id="cpu-total">80</span>"#.to_string(),
         ] {
@@ -1029,7 +1272,7 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
         assert!(html.contains(&arc), "the memory arc is not the EMA");
         let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
         let readout = format!(
-            r#"<text class="g-value" x="54" y="66">{} <tspan class="g-unit">{}</tspan>"#,
+            r#"<text class="g-value" x="54" y="66">{}<tspan class="g-unit" dx="2.65">{}</tspan>"#,
             value, unit
         );
         assert!(
@@ -1039,6 +1282,47 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
         assert!(
             html.contains(r#"<b data-w="100%">70%</b> used"#),
             "the memory foot is not raw"
+        );
+    }
+}
+
+/// ACC-LAYOUT-74-RESERVED-WIDTH: the memory numbers batch 3 re-aligned keep
+/// their widest form, so a change of digits moves no unit or following word:
+/// the tile's value, the used and available percents, the gauge's percent
+/// cells and the available value. The CPU tile, gauge readout, cores busy,
+/// load, GPU legend, network scale and process counts are pinned by their own
+/// tests.
+#[tokio::test]
+async fn reserved_widths_sit_on_the_memory_values() {
+    let snapshot = fixture_snapshot();
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
+    let used = snapshot.mem.ram_percent.expect("used percent");
+    let available = snapshot
+        .mem
+        .ram_available_percent
+        .expect("available percent");
+    for html in page_and_event(&page, &fragments(&snapshot), "mem") {
+        for marker in [
+            format!(
+                r#"<span class="stat-value" data-w="0000" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#
+            ),
+            format!(r#"<b data-w="100%">{used:.0}%</b> used"#),
+            format!(r#"<b data-w="100%">{available:.0}%</b> available"#),
+            format!(
+                r#"<b data-w="0000 MiB">{}</b>"#,
+                snapshot.mem.ram_available_label()
+            ),
+        ] {
+            assert!(html.contains(&marker), "lacks {marker}");
+        }
+        let cells = html.matches(r#"class="pct""#).count();
+        assert!(cells > 0, "no memory percent cells");
+        assert_eq!(
+            html.matches(r#"<span class="pct" data-w="100%">"#).count(),
+            cells,
+            "a memory percent cell does not reserve its width"
         );
     }
 }
@@ -1118,7 +1402,7 @@ async fn cpu_gauge_says_total_and_shows_load_per_core_and_cores_busy() {
         for marker in [
             r#"<text class="g-label" x="54" y="78">total</text>"#,
             "<span>load per core</span><b>0.50 0.25 0.15</b><small>1 &middot; 5 &middot; 15 min</small>",
-            "1.00 means one running or waiting task per core",
+            "1.00 means one runnable or blocked task per core",
             // ACC-LAYOUT-74-RESERVED-WIDTH: the busy cores reserve the core
             // count in their format, so "of 64" keeps its place.
             r#"<span>cores busy</span><b><span data-w="64.0">16.0</span> <small>of 64</small></b>"#,
@@ -1155,20 +1439,25 @@ async fn container_page_shows_only_container_values() {
     assert!(snapshot.container);
     let (_sender, receiver) = watch::channel(Some(snapshot.clone()));
     let mut state = AppState::new(receiver, true);
-    state.container = Some(container.title().into());
+    state.container = Some(container.tip().into());
     let page = String::from_utf8(get(&btop_web::app(state), "/").await.2).expect("utf-8 page");
 
     let start = page
         .find(r#"<span class="chip chip-container" data-p="2" data-field="container-chip""#)
         .expect("CONTAINER chip");
-    let chip = &page[start..start + page[start..].find("</span></span>").expect("chip end")];
-    assert!(chip.ends_with(r#"<span class="up">container"#), "{chip}");
+    let chip = &page[start..start + page[start..].find(">").expect("chip tag end")];
+    // DEF-VIEW-74: the chip's detector and cgroup path live in its one
+    // tooltip; a title would make the browser draw a second box.
     let cgroup = container.cgroup.expect("cgroup").display().to_string();
     assert!(
-        page.contains(&format!(
-            "docker container, detected by 1 /.dockerenv, cgroup {cgroup}."
+        chip.contains(&format!(
+            "detected by 1 /.dockerenv&#10;docker container, cgroup {cgroup}"
         )),
-        "chip title lacks the cgroup path"
+        "chip tip lacks the detector and cgroup path: {chip}"
+    );
+    assert!(
+        !chip.contains(" title="),
+        "chip also carries a title: {chip}"
     );
 
     let events = fragments(&snapshot);
@@ -1820,6 +2109,66 @@ async fn assets_carry_a_content_hash_etag_and_revalidate() {
     assert_eq!(served.as_ref(), body.as_slice());
 }
 
+/// ACC-THEME-106-LABS-FONT: the GalaxaLabsTron display face is embedded and
+/// served as a font asset; the stylesheet carries its @font-face and switches
+/// only the Default trial and the cyberpunk pair from the system UI face.
+#[tokio::test]
+async fn display_font_is_embedded_and_used_by_default_and_cyberpunk() {
+    let app = app(Some(Snapshot::default()), true);
+    let (status, headers, body) = get(&app, "/assets/fonts/GalaxaLabsTron-VF.ttf").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        content_type(&headers).starts_with("font/"),
+        "{}",
+        content_type(&headers)
+    );
+    let embedded = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts/GalaxaLabsTron-VF.ttf"),
+    )
+    .expect("font asset");
+    assert_eq!(body, embedded, "the route serves the embedded bytes");
+
+    let css = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
+        .expect("app.css");
+    for line in [
+        "@font-face {",
+        "font-family: \"GalaxaLabsTron\";",
+        "font-weight: 400 900;",
+        "font-display: swap;",
+        "src: url(\"fonts/GalaxaLabsTron-VF.ttf\") format(\"truetype\");",
+    ] {
+        assert!(css.contains(line), "app.css lacks {line}");
+    }
+    // The display face reaches only the stat values and the panel headings.
+    let rule = |selector: &str| {
+        let start = css
+            .find(selector)
+            .unwrap_or_else(|| panic!("app.css lacks {selector}"));
+        let end = start + css[start..].find('}').expect("rule end");
+        &css[start..end]
+    };
+    for selector in [".stat-value {", ".ph h2 {"] {
+        assert!(
+            rule(selector).contains("font-family: var(--font-display)"),
+            "{selector} does not use the display face"
+        );
+    }
+    // One base token, then the Default and cyberpunk theme rules; no other
+    // pair sets the face, so every other theme keeps --ui.
+    let flat: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(
+            "[data-theme=\"default\"], [data-theme=\"cyberpunk\"] { --font-display: \"GalaxaLabsTron\", var(--ui); }"
+        ),
+        "the Default and cyberpunk theme blocks do not set the display face"
+    );
+    assert_eq!(
+        flat.matches("--font-display:").count(),
+        2,
+        "an unlisted theme sets the display face"
+    );
+}
+
 #[tokio::test]
 async fn events_route_answers_with_an_event_stream() {
     let request = Request::builder()
@@ -1971,6 +2320,61 @@ async fn config_menu_is_a_tablist_of_seven_pages() {
     }
 }
 
+/// ACC-VIEW-104-CONFIG-DIM: the page carries exactly one scrim element,
+/// app.css dims the page with it in both modes, and app.js shows it with the
+/// popover.
+#[tokio::test]
+async fn config_menu_dims_the_page_behind_it() {
+    let page = page_of(&app(Some(Snapshot::default()), true)).await;
+    assert_eq!(
+        page.matches(r#"<div class="scrim" id="config-scrim""#)
+            .count(),
+        1,
+        "the page lacks the single config scrim"
+    );
+    let asset = |name: &str| {
+        std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets")
+                .join(name),
+        )
+        .expect(name)
+    };
+    let css = asset("app.css");
+    let rule = |selector: &str| {
+        let start = css
+            .find(selector)
+            .unwrap_or_else(|| panic!("app.css lacks {selector}"));
+        let end = start + css[start..].find('}').expect("rule end");
+        &css[start..end]
+    };
+    let scrim = rule(".scrim {");
+    for declaration in [
+        "position: fixed;",
+        "inset: 0;",
+        "z-index: 35;",
+        "background: color-mix(in srgb, #000 35%, transparent);",
+    ] {
+        assert!(
+            scrim.contains(declaration),
+            "the scrim rule lacks {declaration}"
+        );
+    }
+    assert!(
+        rule(":root[data-mode=\"light\"] .scrim {")
+            .contains("background: color-mix(in srgb, var(--surface) 35%, transparent);"),
+        "the light-mode scrim does not fade toward the surface token"
+    );
+    let js = asset("app.js");
+    for hook in [
+        r#"var scrim = document.getElementById("config-scrim");"#,
+        "scrim.hidden = false;",
+        "scrim.hidden = true;",
+    ] {
+        assert!(js.contains(hook), "app.js lacks {hook}");
+    }
+}
+
 #[tokio::test]
 async fn config_pages_hold_their_options() {
     let page = page_of(&app(Some(fixture_snapshot()), true)).await;
@@ -2006,7 +2410,7 @@ async fn config_pages_hold_their_options() {
             "proc",
             &[
                 r#"data-group="proc-view""#,
-                r#"data-group="proc-nodes""#,
+                r#"data-group="proc-level""#,
                 r#"id="proc-sort""#,
                 r#"data-group="proc-dir""#,
             ],
@@ -2046,6 +2450,59 @@ async fn config_pages_hold_their_options() {
         !inner("layout").contains("data-key"),
         "layout has only the view group"
     );
+}
+
+/// ACC-VIEW-108-NUM-MOTION: the general page's number row offers the six
+/// effects as house-chip radios, each titled in plain words; none is on for a
+/// browser with no stored choice.
+#[tokio::test]
+async fn config_offers_the_number_animation_effects() {
+    let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
+        .expect("utf-8 page");
+    let config = &page[page.find(r#"id="config""#).expect("config popover")..];
+    let (tag, inner) = elements_with(config, "data-group")
+        .into_iter()
+        .find(|(tag, _)| attribute(tag, "data-group") == Some("num-motion"))
+        .expect("num-motion group");
+    assert_eq!(attribute(tag, "role"), Some("radiogroup"));
+    assert_eq!(
+        attribute(tag, "aria-labelledby"),
+        Some("cfg-num-motion-label")
+    );
+    assert!(
+        config.contains(r#"<span class="cfg-label" id="cfg-num-motion-label""#),
+        "the row has no label"
+    );
+    assert!(
+        config.contains(">number</span>"),
+        "the row is not named number"
+    );
+    let options = [
+        ("none", "none", "none - instant update", true),
+        ("spring", "spring", "spring up", false),
+        ("blur", "blur", "motion blur (echoes)", false),
+        ("odometer", "odometer", "odometer", false),
+        (
+            "spring-blur",
+            "spring blur",
+            "spring up with motion blur",
+            false,
+        ),
+        ("segment", "segment flip", "segment flip", false),
+    ];
+    assert_eq!(inner.matches("<button").count(), options.len(), "{inner}");
+    for (value, label, title, on) in options {
+        let class = if on { "opt on" } else { "opt" };
+        let checked = if on { "true" } else { "false" };
+        let marker = format!(
+            r#"<button class="{class}" type="button" role="radio" aria-checked="{checked}" data-value="{value}" title="{title}">{label}</button>"#
+        );
+        assert!(
+            inner.contains(&marker),
+            "the number row lacks {value}: {inner}"
+        );
+    }
+    assert_eq!(inner.matches("class=\"opt on\"").count(), 1, "{inner}");
 }
 
 /// ACC-VIEW-75-PANEL-MENU: one right-click menu of Off, S, M and L, after
@@ -2257,15 +2714,21 @@ async fn config_post_without_a_file_applies_until_restart() {
     );
 }
 
-/// ACC-GRAPH-96: the network scale rows reach the server through the same
-/// config POST, change the live config, and a reloaded page shows them.
+/// ACC-GRAPH-96: every network scale setting reaches the server through the
+/// same config POST, changes the live config, is written to the file and a
+/// reloaded page shows it: the auto flag, the floor, the fall window, the
+/// sync flag and the two manual ceilings.
 #[tokio::test]
 async fn network_scale_rows_persist_through_the_config_path() {
     let path = temp_conf("network-scale", &default_config_text());
     let (app, live) = config_app(false, Config::defaults(), Some(path.clone()));
     for (body, key, value) in [
+        ("key=net_auto&value=false", "net_auto", "False"),
         ("key=net_floor&value=2", "net_floor", "2"),
         ("key=net_fall&value=60", "net_fall", "60"),
+        ("key=net_sync&value=false", "net_sync", "False"),
+        ("key=net_download&value=50", "net_download", "50"),
+        ("key=net_upload&value=20", "net_upload", "20"),
     ] {
         let (status, fragment) = post_config(&app, body, Some(ORIGIN)).await;
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -2273,10 +2736,26 @@ async fn network_scale_rows_persist_through_the_config_path() {
         assert!(fragment.contains("saved to"), "{fragment}");
     }
     let written = std::fs::read_to_string(&path).expect("file");
-    assert!(written.contains("net_floor = 2\n"), "{written}");
-    assert!(written.contains("net_fall = 60\n"), "{written}");
+    for line in [
+        "net_auto = False",
+        "net_floor = 2",
+        "net_fall = 60",
+        "net_sync = False",
+        "net_download = 50",
+        "net_upload = 20",
+    ] {
+        assert!(written.contains(&format!("{line}\n")), "{written}");
+    }
     let page = page_of(&app).await;
-    assert!(page.contains(r#"id="cfg-net_floor" value="2""#), "{page}");
-    assert!(page.contains(r#"id="cfg-net_fall" value="60""#), "{page}");
+    for marker in [
+        r#"id="cfg-net_auto-off" aria-pressed="true""#,
+        r#"id="cfg-net_floor" value="2""#,
+        r#"id="cfg-net_fall" value="60""#,
+        r#"id="cfg-net_sync-off" aria-pressed="true""#,
+        r#"id="cfg-net_download" value="50""#,
+        r#"id="cfg-net_upload" value="20""#,
+    ] {
+        assert!(page.contains(marker), "the reloaded page lacks {marker}");
+    }
     assert!(page.contains("network scale · all viewers"));
 }

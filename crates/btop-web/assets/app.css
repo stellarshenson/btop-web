@@ -35,9 +35,27 @@
   initial-value: 22px;
 }
 
+/* ACC-THEME-106-LABS-FONT: the display face ships in the binary and loads
+   from this stylesheet's own folder, so /assets/fonts/ answers it with no
+   network request. `swap` paints the system face first; the 400-900 range
+   lets the one file serve every display weight. */
+@font-face {
+  font-family: "GalaxaLabsTron";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("fonts/GalaxaLabsTron-VF.ttf") format("truetype");
+}
+
 :root {
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --font-display: var(--ui);
+  /* ACC-THEME-101-CYBERPUNK: the three decoration tokens; every pair except
+     cyberpunk resolves them to none */
+  --deco-glow: none;
+  --deco-trace: none;
+  --deco-corner: none;
   --e: min(100vw, 160vh);
   --bar-h: clamp(22px, calc(19.327px + var(--e) * 0.004808), 26px);
   --head-h: clamp(22px, calc(12.404px + var(--e) * 0.009615), 26px);
@@ -47,6 +65,11 @@
   --row-h: clamp(19px, calc(15.327px + var(--e) * 0.004808), 22px);
   --gap: clamp(5px, calc(1.327px + var(--e) * 0.004808), 8px);
   --pad: var(--gap);
+  /* the one gap between a live number and its unit, every stat tile and
+     gauge; the gauge readouts carry it as a 2.65-unit tspan dx, which renders
+     the same 4 px at their scale of 1.5088 - SVG text cannot read custom
+     properties (DEF-VIEW-68-UNIT-GAP, DEF-VIEW-69-GAUGE-GAP) */
+  --unit-gap: 4px;
   --fs-12: clamp(11px, calc(8.788px + var(--e) * 0.002404), 12px);
   --fs-11: clamp(10px, calc(7.788px + var(--e) * 0.002404), 11px);
   --fs-10: clamp(9px, calc(6.788px + var(--e) * 0.002404), 10px);
@@ -56,6 +79,10 @@
   /* the GPU mini bars reserve 48 px inside the legend, so the legend keeps the
      width the value line needs at every tier (ACC-VIEW-79-GPU-BARS) */
   --gpu-legend-w: 224px;
+  /* the plot scale gutter: four characters of fs-9 ("100%", "999M") and the
+     10 px gap to the plot box. Labels right-align on it, so a ceiling that
+     changes width moves no plot (DEF-GRAPH-63-GRID-UNITS, ACC-LAYOUT-74) */
+  --scale-w: 27px;
   --filter-w: clamp(92px, calc(63.019px + var(--e) * 0.048077), 132px);
   --lh-name: calc(var(--fs-10) * 1.25);
   --lh-val: calc(var(--lg-v) * 1.1);
@@ -89,6 +116,55 @@
   --status-crit: var(--crit);
 }
 
+/* ACC-THEME-106-LABS-FONT: the display face belongs to Default (trial) and
+   cyberpunk; every other pair keeps the system UI font. */
+[data-theme="default"],
+[data-theme="cyberpunk"] {
+  --font-display: "GalaxaLabsTron", var(--ui);
+}
+
+/* ACC-THEME-101-CYBERPUNK: the decoration library, three tokens defined once.
+   The glow paints above and below the panel border, outside it; the trace and
+   the corner brackets are SVG data URIs painted on the panel's own
+   pseudo-elements in the 4 px padding rim, outside the content box, under
+   every child, so no text, legend value, plot line or [data-chart] box is
+   painted over (ACC-GRAPH-24, DEF-GRAPH-18). The glow keeps off the left and
+   right edges because a clipped process command reports a line box that runs
+   past the panel's right border, and the clearance check reads layout boxes,
+   not painted pixels. Only this pair sets them; every other pair keeps the
+   `none` fallback in :root. Static paint, no animation. The clearance counts
+   per protected area are measured by the clip-aware check:
+   tmp/workflows/btop-web-font-embed/verify/cyber-check.json. */
+[data-theme="cyberpunk"] {
+  --deco-glow:
+    0 -1px 0 0 color-mix(in srgb, var(--accent) 55%, transparent),
+    0 -3px 3px -3px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 1px 0 0 color-mix(in srgb, var(--accent) 55%, transparent),
+    0 3px 3px -3px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+[data-theme="cyberpunk"][data-mode="dark"] {
+  --deco-trace:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='4' viewBox='0 0 160 4'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.5' stroke-width='1'%3E%3Cpath d='M0 2h58M70 2h48M134 2h26'/%3E%3Cpath d='M96 2v2'/%3E%3C/g%3E%3Cg fill='%2322d3ee' fill-opacity='.7'%3E%3Ccircle cx='58' cy='2' r='1.5'/%3E%3Ccircle cx='134' cy='2' r='1.5'/%3E%3C/g%3E%3C/svg%3E") left top / auto 4px repeat-x,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='4' viewBox='0 0 160 4'%3E%3Cg fill='none' stroke='%2322d3ee' stroke-opacity='.5' stroke-width='1'%3E%3Cpath d='M0 2h58M70 2h48M134 2h26'/%3E%3Cpath d='M96 2v2'/%3E%3C/g%3E%3Cg fill='%2322d3ee' fill-opacity='.7'%3E%3Ccircle cx='58' cy='2' r='1.5'/%3E%3Ccircle cx='134' cy='2' r='1.5'/%3E%3C/g%3E%3C/svg%3E") left bottom / auto 4px repeat-x;
+  --deco-corner:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M0 0h12v1H1v3H0z' fill='%23ff4d9d' fill-opacity='.85'/%3E%3C/svg%3E") left top / 12px 4px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M0 0h12v4H11V1H0z' fill='%23ff4d9d' fill-opacity='.85'/%3E%3C/svg%3E") right top / 12px 4px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M0 0h1v3h11v1H0z' fill='%23ff4d9d' fill-opacity='.85'/%3E%3C/svg%3E") left bottom / 12px 4px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M11 0h1v4H0V3h11z' fill='%23ff4d9d' fill-opacity='.85'/%3E%3C/svg%3E") right bottom / 12px 4px no-repeat;
+}
+
+[data-theme="cyberpunk"][data-mode="light"] {
+  --deco-trace:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='4' viewBox='0 0 160 4'%3E%3Cg fill='none' stroke='%230e7490' stroke-opacity='.45' stroke-width='1'%3E%3Cpath d='M0 2h58M70 2h48M134 2h26'/%3E%3Cpath d='M96 2v2'/%3E%3C/g%3E%3Cg fill='%230e7490' fill-opacity='.6'%3E%3Ccircle cx='58' cy='2' r='1.5'/%3E%3Ccircle cx='134' cy='2' r='1.5'/%3E%3C/g%3E%3C/svg%3E") left top / auto 4px repeat-x,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='4' viewBox='0 0 160 4'%3E%3Cg fill='none' stroke='%230e7490' stroke-opacity='.45' stroke-width='1'%3E%3Cpath d='M0 2h58M70 2h48M134 2h26'/%3E%3Cpath d='M96 2v2'/%3E%3C/g%3E%3Cg fill='%230e7490' fill-opacity='.6'%3E%3Ccircle cx='58' cy='2' r='1.5'/%3E%3Ccircle cx='134' cy='2' r='1.5'/%3E%3C/g%3E%3C/svg%3E") left bottom / auto 4px repeat-x;
+  --deco-corner:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M0 0h12v1H1v3H0z' fill='%23b3134f' fill-opacity='.7'/%3E%3C/svg%3E") left top / 12px 4px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M0 0h12v4H11V1H0z' fill='%23b3134f' fill-opacity='.7'/%3E%3C/svg%3E") right top / 12px 4px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M0 0h1v3h11v1H0z' fill='%23b3134f' fill-opacity='.7'/%3E%3C/svg%3E") left bottom / 12px 4px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='4' viewBox='0 0 12 4'%3E%3Cpath d='M11 0h1v4H0V3h11z' fill='%23b3134f' fill-opacity='.7'/%3E%3C/svg%3E") right bottom / 12px 4px no-repeat;
+}
+
 *,
 *::before,
 *::after {
@@ -116,17 +192,12 @@ body {
 
 /* reserved width (ACC-LAYOUT-74-RESERVED-WIDTH): a live value is as wide as
    its widest form, data-w, set by a hidden zero-height copy, so nothing
-   beside it moves; tabular figures make every digit as wide as 0. The value
-   starts at its label's left edge and the reserve falls after the number, so
-   its unit and following words keep one x (ACC-VIEW-87-NUMBER-PLACE) */
+   beside it moves; tabular figures make every digit as wide as 0. The digits
+   sit against the right edge and the empty reserve falls before the number,
+   so a short value keeps its unit and following words at one x
+   (DEF-VIEW-68-UNIT-GAP) */
 [data-w] {
   display: inline-block;
-  text-align: left;
-}
-
-/* the memory legend's percent cells and its available value are a stacked
-   column, so they keep one right edge (ACC-VIEW-87-NUMBER-PLACE) */
-.mem-rows [data-w] {
   text-align: right;
 }
 
@@ -135,6 +206,81 @@ body {
   display: block;
   height: 0;
   visibility: hidden;
+}
+
+/* ACC-VIEW-108-NUM-MOTION: the number effects. A value keeps its reserved
+   width: the tween rewrites its own text, an echo is an absolute layer behind
+   it, and an odometer cell is absolute over a hidden copy of the text, so no
+   neighbour moves. Tabular figures give 0 the advance and height of every
+   other digit, so a rolled 0 lines up with the rest of the number. */
+[data-num-host] {
+  position: relative;
+  isolation: isolate;
+}
+
+.num-tween,
+.num-base,
+.num-echo,
+.num-odo {
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+}
+
+.num-base {
+  visibility: hidden;
+}
+
+.num-echo {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.num-odo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.num-odo-cell {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+}
+
+.num-odo-strip,
+.num-odo-static,
+.num-odo-strip > span {
+  display: block;
+  text-align: left;
+  white-space: pre;
+}
+
+/* Segment flip: cells and segments are absolute over the hidden text, so the
+   seven-segment boxes take the tabular advance and move nothing. */
+.num-seg-row,
+.num-seg-cell {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.num-seg,
+.num-seg-dot {
+  position: absolute;
+  background: currentColor;
+}
+
+.num-seg {
+  border-radius: 0.5px;
+}
+
+.num-seg-dot {
+  border-radius: 50%;
 }
 
 button,
@@ -414,6 +560,38 @@ select.opt option {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 2px;
+  /* ACC-THEME-101-CYBERPUNK: the glow paints outside the border; the two
+     pseudo-elements below need the panel as their containing block and a
+     stacking context so z-index -1 stays above the panel's own background */
+  position: relative;
+  isolation: isolate;
+  box-shadow: var(--deco-glow);
+}
+
+/* ACC-THEME-101-CYBERPUNK: the trace and the corner brackets, one static
+   layer each, under the panel's content and clipped to the panel, so the
+   embroidery stays on the 4 px padding rim outside the content box. Every
+   pair but cyberpunk has `background: none` from the :root tokens. */
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--deco-trace);
+}
+
+.panel::after {
+  background: var(--deco-corner);
+}
+
+/* ACC-THEME-101-CYBERPUNK: the pair gives every panel the 4 px rim the trace
+   and the brackets paint on; content then starts outside it, so no decoration
+   lands in a text line box or a [data-chart] box. Every other pair keeps the
+   panel's content against the border. */
+[data-theme="cyberpunk"] .panel {
+  padding: 4px;
 }
 
 [data-panel="cpu-stat"] {
@@ -535,6 +713,7 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .ph h2 {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--fs-12);
   font-weight: 600;
   line-height: 1;
@@ -601,6 +780,39 @@ html[data-off~="proc"] [data-panel="proc"],
     linear-gradient(var(--grid-line), var(--grid-line)) 0 25% / 100% 1px no-repeat,
     linear-gradient(var(--grid-line), var(--grid-line)) 0 50% / 100% 1px no-repeat,
     linear-gradient(var(--grid-line), var(--grid-line)) 0 75% / 100% 1px no-repeat;
+}
+
+/* DEF-GRAPH-63-GRID-UNITS: each plot's scale sits in a gutter left of its box,
+   never over it (ACC-GRAPH-24). The total scale holds the plot's top corner;
+   the labels inside mark the value where they sit, --at from the floor. The
+   gutter has a fixed width and the labels right-align on it with tabular
+   figures, so a ceiling that changes width moves no plot or label beside it
+   (ACC-LAYOUT-74-RESERVED-WIDTH) */
+.plot-scale {
+  position: relative;
+  margin: 3px 0;
+  font-size: var(--fs-9);
+  line-height: 1;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.plot-scale > span {
+  position: absolute;
+  right: 0;
+}
+
+.plot-scale > .scale-total {
+  top: 0;
+}
+
+.plot-scale > .scale-mid {
+  top: calc(100% - var(--at) * 1%);
+  transform: translateY(-50%);
+}
+
+.plot-scale > .scale-zero {
+  bottom: 0;
 }
 
 /* ACC-GRAPH-98-ANIM-CLOCK: between readouts app.js translates a chart's drawn
@@ -690,7 +902,7 @@ html[data-off~="proc"] [data-panel="proc"],
   min-height: 0;
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--unit-gap);
   padding: 0 10px;
   overflow: hidden;
   white-space: nowrap;
@@ -703,6 +915,7 @@ html[data-off~="proc"] [data-panel="proc"],
 }
 
 .stat-value {
+  font-family: var(--font-display);
   font-size: var(--stat-size);
   font-weight: 600;
   line-height: 1.2;
@@ -811,6 +1024,16 @@ html[data-off~="proc"] [data-panel="proc"],
   gap: 4px;
 }
 
+/* a network lane: its scale gutter and its plot box, the gutter outside the
+   box (DEF-GRAPH-63-GRID-UNITS, ACC-GRAPH-24) */
+.net-plot-row {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--scale-w) minmax(0, 1fr);
+  column-gap: 10px;
+}
+
 .net-plot {
   flex: 1 1 0;
   min-height: 0;
@@ -818,6 +1041,22 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .net-plot .chart .line {
   stroke-width: 2;
+}
+
+/* DEF-GRAPH-61-NET-LANES: the download lane and the upload lane read as two
+   graphs, as the GPU lanes do (ACC-GRAPH-99-LANE-BORDER). Each plot box sits
+   3 px inside its lane, so the grid stops at the lane edge, and one 1 px rule
+   in the panel-border token at 55% over the surface is centred in the 10 px
+   between the boxes; the negative margin cancels the plot insets */
+#p-net .net-plot {
+  margin: 3px 0;
+}
+
+#p-net .net-boundary {
+  flex: none;
+  height: 1px;
+  margin: -2.5px 0;
+  background: color-mix(in srgb, var(--border) 55%, var(--surface));
 }
 
 .xaxis {
@@ -856,6 +1095,11 @@ html[data-off~="proc"] [data-panel="proc"],
   left: auto;
   right: 0;
   transform: none;
+}
+
+/* the time axis starts at the plot column, past the scale gutter */
+.net-plots > .xaxis {
+  margin-left: calc(var(--scale-w) + 10px);
 }
 
 .net-legend {
@@ -931,14 +1175,28 @@ html[data-off~="proc"] [data-panel="proc"],
   gap: 4px;
 }
 
-/* DEF-GRAPH-54-LANES-MERGED, ACC-GRAPH-78-GPU-LANES: each lane reads as its
-   own graph. Lanes sit 4 px apart and a lane followed by another visible lane
-   carries a 1 px rule at its foot; the rule is painted, not a border, so the
-   short lane at 1024x768 keeps its legend fields. The plot box, and with it
-   the grid, stops 3 px inside the lane, so the vertical grid lines and the
-   0% and 100% strokes never lie on the lane boundary */
-#p-gpu .gpu-lane[data-selected="true"]:has(~ .gpu-lane[data-selected="true"]) {
-  background: linear-gradient(var(--border), var(--border)) 0 100% / 100% 1px no-repeat;
+/* DEF-GRAPH-54-LANES-MERGED, ACC-GRAPH-78-GPU-LANES, ACC-GRAPH-99-LANE-BORDER:
+   each lane reads as its own graph. Lanes sit 4 px apart and a lane followed
+   by another visible lane carries a 1 px rule centred in that gap, in the
+   panel-border token at 55% over the surface: the ACC-THEME-66 weight, above
+   the grid and below every data line and text, a quiet divider rather than a
+   data line (DEF-VIEW-60-LANE-GAP). The rule is an element in the gap, not a
+   border, so the short lane at 1024x768 keeps its legend fields and its text
+   and bars clear the rule on both sides. The plot box, and with it the grid,
+   stops 3 px inside the lane, so the vertical grid lines and the 0% and 100%
+   strokes never lie on the lane boundary */
+#p-gpu .gpu-boundary {
+  position: absolute;
+  right: 0;
+  bottom: -2.5px;
+  left: 0;
+  display: none;
+  height: 1px;
+  background: color-mix(in srgb, var(--border) 55%, var(--surface));
+}
+
+#p-gpu .gpu-lane[data-selected="true"]:has(~ .gpu-lane[data-selected="true"]) .gpu-boundary {
+  display: block;
 }
 
 #p-gpu .net-plot {
@@ -952,10 +1210,12 @@ html[data-off~="proc"] [data-panel="proc"],
 }
 
 .gpu-lane {
+  position: relative;
   flex: 1 1 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--gpu-legend-w);
+  /* the scale gutter, the plot, then the legend */
+  grid-template-columns: var(--scale-w) minmax(0, 1fr) var(--gpu-legend-w);
   grid-template-rows: minmax(0, 1fr);
   column-gap: 10px;
   container: gpu-lane / size;
@@ -965,6 +1225,7 @@ html[data-off~="proc"] [data-panel="proc"],
    under its labels */
 #p-gpu .net-body > .xaxis {
   margin-right: calc(var(--gpu-legend-w) + 10px);
+  margin-left: calc(var(--scale-w) + 10px);
 }
 
 #p-gpu .net-legend {
@@ -1505,6 +1766,19 @@ html[data-off~="proc"] [data-panel="proc"],
   font-size: var(--fs-11);
 }
 
+.ptable col.proc-program {
+  width: 150px;
+}
+
+/* DEF-VIEW-65-TREE-GLYPHS: the tree prefix takes three mono cells per level
+   plus the four-cell branch; the Program column widens with the display level
+   so no glyph clips at the 10 px type step, and the name ellipsizes into what
+   is left. 0.602em is DejaVu Sans Mono's advance, the widest face in stack;
+   the 17 px is the cell's 16 px padding and 1 px of rounding */
+.proc-wrap[data-tree] .ptable col.proc-program {
+  width: max(150px, calc((var(--tree-level, 3) * 3 + 4) * 0.602em + 17px));
+}
+
 .ptable th {
   position: sticky;
   top: 0;
@@ -1614,20 +1888,42 @@ html[data-off~="proc"] [data-panel="proc"],
   content: "\25b2";
 }
 
-/* btop's tree prefix, one mono cell per level, and the triangle toggle */
+/* btop's tree prefix, one three-character mono slot per level, and the
+   triangle toggle in the branch slot; the slots' spaces are significant */
 .ptable .tree {
   font-family: var(--mono);
   color: var(--muted);
+  white-space: pre;
 }
 
 .ptable .twisty {
-  padding: 0 2px 0 0;
+  padding: 0;
   border: 0;
   background: none;
   color: inherit;
   font: inherit;
   line-height: inherit;
   cursor: pointer;
+}
+
+/* ACC-VIEW-104-CONFIG-DIM: while the config popover is open one scrim dims
+   the top bar and every panel. Dark mode lays 35% black over the page; light
+   mode lays 35% of the theme's own surface, which fades the page toward the
+   background instead of blackening it. The popover (z-index 40) stays above
+   the scrim, so its own contrast is unchanged. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: color-mix(in srgb, #000 35%, transparent);
+}
+
+:root[data-mode="light"] .scrim {
+  background: color-mix(in srgb, var(--surface) 35%, transparent);
+}
+
+.scrim[hidden] {
+  display: none;
 }
 
 /* config popover: the only theme, mode, GPU, pause and layout controls, and
@@ -1885,6 +2181,11 @@ select.opt {
   #p-gpu .legend-value {
     font-size: 13px;
   }
+
+  /* the corner total and the zero stay; the quarter labels would collide */
+  #p-gpu .plot-scale > .scale-mid {
+    display: none;
+  }
 }
 
 @container gpu-lane (height < 37px) {
@@ -1908,8 +2209,14 @@ select.opt {
 @container gpu-lane (height < 25px) {
   /* a lane this short keeps its plot area: a 3 px inset each side would leave
      almost none */
-  #p-gpu .net-plot {
+  #p-gpu .net-plot,
+  #p-gpu .plot-scale {
     margin: 1px 0;
+  }
+
+  /* one line of labels fits; the corner total is the one that stays */
+  #p-gpu .plot-scale > .scale-zero {
+    display: none;
   }
 
   #p-gpu .legend-item {
@@ -2013,6 +2320,12 @@ select.opt {
     display: inline;
   }
 
+  /* the scale keeps its total and zero; the middle label would crowd the
+     narrowed plot it sits beside (DEF-GRAPH-63-GRID-UNITS) */
+  .plot-scale > .scale-mid {
+    display: none;
+  }
+
   :root {
     --band-min-1: calc(var(--head-h) + var(--tile-h) + 16px);
     --band-min-2: max(calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 1px) + 12px), calc(var(--head-h) + 112px));
@@ -2043,9 +2356,15 @@ select.opt {
     min-width: calc(7ch + 16px);
   }
 
-  /* the tree prefix would widen Program past the panel: the name ellipsizes instead */
+  /* the tree prefix would widen Program past the panel: the name ellipsizes
+     instead, and the cell keeps the prefix's width so no glyph clips at any
+     level (DEF-VIEW-65-TREE-GLYPHS) */
   .ptable td:has(> .tree) {
     max-width: 0;
+  }
+
+  .proc-wrap[data-tree] .ptable td:has(> .tree) {
+    min-width: calc((var(--tree-level, 3) * 3 + 4) * 0.602em + 17px);
   }
 }
 
@@ -2084,6 +2403,25 @@ select.opt {
     --gpu-legend-w: 192px;
     --band-min-2: calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 1px) + 12px);
     --band-min-3: calc(var(--head-h) + 60px);
+  }
+
+  /* the scale gutter goes on a phone: its 37 px would come out of a plot box
+     this narrow, and the panel's axis note has dropped by this tier too */
+  .plot-scale {
+    display: none;
+  }
+
+  .gpu-lane {
+    grid-template-columns: minmax(0, 1fr) var(--gpu-legend-w);
+  }
+
+  .net-plot-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #p-gpu .net-body > .xaxis,
+  .net-plots > .xaxis {
+    margin-left: 0;
   }
 
   /* the version stays (ACC-LAYOUT-62-VERSION) and the bar fits 360 px in

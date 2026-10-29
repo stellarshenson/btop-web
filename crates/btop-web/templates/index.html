@@ -22,7 +22,7 @@
   <span class="utility-right">
     <span class="u-meta u-clock hdr-clock" data-p="4" data-field="clock"></span>
     <span class="chip chip-tier" id="tier-chip" data-tip="Priority tiers on screen, no unit&#10;source: the viewport size media queries&#10;each tier's title names the fields it drops"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User, CPU gauge, memory gauge, live chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
-    {% if let Some(title) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" data-tip="Container scope, no unit&#10;source: this container's cgroup v2&#10;only its processes, memory and CPUs are read" title="{{ title }}"><span class="up">container</span></span>{% endif %}
+    {% if let Some(chip_tip) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" data-tip="{{ chip_tip|safe }}"><span class="up">container</span></span>{% endif %}
     <span class="chip chip-live" id="live-chip" data-tip="Sampler state, live, paused or stale&#10;age unit: seconds since the last frame&#10;source: the server's SSE frames&#10;two intervals without a frame turn STALE"><i class="lamp"></i><span class="live-word up" aria-live="polite">live</span><b class="live-age" id="sample-age" aria-hidden="true"></b></span>
     {% if readonly %}
     <span class="chip chip-readonly" aria-describedby="readonly-reason" data-tip="Server mode, no unit&#10;source: the server's --readonly flag&#10;signals and every write are refused"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
@@ -90,6 +90,7 @@
 <p class="sr-only" id="readonly-reason">The server refuses process signals, priority changes and every mutating request.</p>
 {% endif %}
 
+<div class="scrim" id="config-scrim" aria-hidden="true" hidden></div>
 <div class="config" id="config" role="dialog" aria-label="Config" hidden>
   <div class="cfg-tabs" role="tablist" aria-label="Config pages">
     {% for (page, _) in pages %}<button class="opt cfg-tab{% if loop.first %} on{% endif %}" type="button" role="tab" id="cfg-tab-{{ page }}" aria-controls="cfg-page-{{ page }}" aria-selected="{{ loop.first }}" tabindex="{% if loop.first %}0{% else %}-1{% endif %}">{{ page }}</button>{% endfor %}
@@ -127,6 +128,17 @@
         <button class="opt" type="button" role="radio" aria-checked="false" data-value="off">off</button>
       </div>
     </div>
+    <div class="cfg-row">
+      <span class="cfg-label" id="cfg-num-motion-label" title="number change animation">number</span>
+      <div class="cfg-opts" data-group="num-motion" role="radiogroup" aria-labelledby="cfg-num-motion-label">
+        <button class="opt on" type="button" role="radio" aria-checked="true" data-value="none" title="none - instant update">none</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="spring" title="spring up">spring</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="blur" title="motion blur (echoes)">blur</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="odometer" title="odometer">odometer</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="spring-blur" title="spring up with motion blur">spring blur</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="segment" title="segment flip">segment flip</button>
+      </div>
+    </div>
     {% else if *page == "gpu" %}
     <span class="cfg-label">view · this browser</span>
     <div class="cfg-row">
@@ -146,10 +158,17 @@
       </div>
     </div>
     <div class="cfg-row">
-      <span class="cfg-label" id="proc-nodes-label" title="tree nodes">tree</span>
-      <div class="cfg-opts" data-group="proc-nodes" role="radiogroup" aria-labelledby="proc-nodes-label">
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="collapsed">collapsed</button>
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="expanded">expanded</button>
+      <span class="cfg-label" id="proc-level-label" title="tree rows down to this depth; a node still folds on its triangle">depth</span>
+      <div class="cfg-opts" data-group="proc-level" role="radiogroup" aria-labelledby="proc-level-label">
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="1">1</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="2">2</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="3">3</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="4">4</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="5">5</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="6">6</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="7">7</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="8">8</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="9">9</button>
       </div>
     </div>
     <div class="cfg-row">

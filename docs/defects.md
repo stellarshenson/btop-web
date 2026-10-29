@@ -280,21 +280,87 @@ What the panels render and how an unavailable value is drawn
   - root-cause: 2026-10-28T14:10:19Z @kj acc-74 [data-w] sets text-align: right (app.css:118), so the reserve sits before the value; mem_stat.html and mem_gauge.html use it
   - log: 2026-10-28T14:10:19Z @kj added
   - log: 2026-10-28T18:03:55Z @kj closed
-- [ ] `DEF-VIEW-59-ASSET-CACHE` **New build keeps the old stylesheet in the browser** - MEDIUM; app.css, app.js and the theme scripts are served with no Cache-Control, ETag or Last-Modified, so a browser may reuse a stylesheet from an older build after a deploy; serve assets with a validator so a new build shows at once
+- [x] `DEF-VIEW-59-ASSET-CACHE` **New build keeps the old stylesheet in the browser** - MEDIUM; app.css, app.js and the theme scripts are served with no Cache-Control, ETag or Last-Modified, so a browser may reuse a stylesheet from an older build after a deploy; serve assets with a validator so a new build shows at once
+  - evidence: verify-1 gate 3: /assets carries a quoted sha256 ETag and no-cache, 304 on a matching If-None-Match, and a fresh tab revalidated and applied a changed app.css after a rebuild without a hard reload; commit 9161885
   - repro: deploy a build that changes app.css, keep the browser open, and load the page; the old stylesheet can be reused
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T16:06:14Z @kj added
   - log: 2026-10-28T16:06:58Z @kj edited text "Assets are served with no Cache-Control, ETag or Last-Modified, so a browser reuses the stylesheet it already has while the HTML comes from the new build; after the 0.6.30 deploy the filter input still showed its old yellow placeholder until a reload; serve assets with a validator" -> "app.css, app.js and the theme scripts are served with no Cache-Control, ETag or Last-Modified, so a browser may reuse a stylesheet from an older build after a deploy; serve assets with a validator so a new build shows at once"; repro "deploy a build that changes app.css, then open the page without clearing the cache; the old styles show under the new version" -> "deploy a build that changes app.css, keep the browser open, and load the page; the old stylesheet can be reused"
   - log: 2026-10-28T16:06:58Z @kj measured 2026-10-28: the yellow block in the owner's screenshot is a highlight over the word (pure #fcfd55 with black text, red outline drawn on the image), not the input's style; the running 0.6.30 build renders the placeholder as #909293 in dark Default
   - log: 2026-10-28T19:20:04Z @kj owner saw on 0.6.30: text above the GPU panel, no lane boundary, legend overflow, misplaced memory gauge, no tabs while the squares are gone; proxy and direct CSS are byte-identical (sha 3c5d1c4d), so a stale copy would sit in his browser; the same build opened on port 50561
-- [ ] `DEF-VIEW-60-LANE-GAP` **GPU lane border crowds the legend text** - MINOR; The lane boundary rule sits against the first legend character, so border and text touch; the boundary needs clear spacing from the GPU name and from the bars on both sides at every width
+  - log: 2026-10-28T20:25:45Z @kj closed
+- [x] `DEF-VIEW-60-LANE-GAP` **GPU lane border crowds the legend text** - MINOR; The lane boundary rule sits against the first legend character, so border and text touch; the boundary needs clear spacing from the GPU name and from the bars on both sides at every width
+  - evidence: GPU lane boundary is a 1 px full-width rule, 1.84:1 dark and 1.74:1 light in all 8 pairs, above the grid and below data lines; verify-1.json gate 1
   - repro: open the GPU panel at 1440x900; the vertical lane border touches the legend text
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:24:04Z @kj added
-- [ ] `DEF-VIEW-62-FILTER-YELLOW` **Filter placeholder renders yellow** - MINOR; The process filter's placeholder reads yellow instead of the faint grey measured at #909293; the stylesheet has one placeholder rule in --muted and no focus background, so establish what paints it before changing the style
+  - log: 2026-10-28T22:02:43Z @kj closed
+- [x] `DEF-VIEW-62-FILTER-YELLOW` **Filter placeholder renders yellow** - MINOR; The process filter's placeholder reads yellow instead of the faint grey measured at #909293; the stylesheet has one placeholder rule in --muted and no focus background, so establish what paints it before changing the style
+  - evidence: 16/16 pair and mode combos paint the placeholder in --muted; Ctrl+F under Xvfb reproduces the yellow as the browser's find-in-page highlight, no app rule paints it; verify-1.json gate 4
   - repro: open the page in the owner's browser; the filter placeholder shows a yellow block around the word
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:24:04Z @kj added
+  - log: 2026-10-28T22:02:43Z @kj closed
+- [ ] `DEF-VIEW-64-TOOLTIP-DELAY` **Tooltip opens immediately on hover** - MEDIUM; The stat tooltip shows on the first pointermove over a stat; it must wait 3 s of rest on the same stat, and a move off, a click or a re-render must cancel the pending wait
+  - repro: hover any stat in the top bar or a panel header; the tooltip box appears at once
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T20:47:53Z @kj added
+- [ ] `DEF-VIEW-65-TREE-GLYPHS` **Tree glyphs render malformed** - MINOR; Tree glyphs are mixed and misaligned: one root paints U+250C, another root U+25BE, a depth-1 row U+2502 U+2514, and the vertical bar runs past the last sibling; the column clips at 10 px
+  - root-cause: 2026-10-28T20:56:34Z @kj btop 1.3.0 btop_shared.cpp:188 uses fixed 3-char slots: ' │ ' per depth, then ' ├─ ' or ' └─ ' for the last child, '[+]─'/'[-]─' for a node with children, ' ┌─ ' first root; ours glues a bare │ per level and puts the twisty in the branch slot
+  - repro: process panel, tree view: compare the glyph before each row with its depth in data-raw
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T20:55:26Z @kj added
+  - log: 2026-10-28T20:55:44Z @kj seen again at 391/391 rows: depth-1 children paint a leading vertical bar (U+2502 U+251C) although their parent is the root, and the twisty sits inside the prefix instead of its own column
+  - log: 2026-10-28T21:08:56Z @kj owner keeps the triangle as the fold marker: adopt btop's three-character slots and corner branches, with U+25BE/U+25B8 in the branch slot instead of [+]/[-]
+  - log: 2026-10-28T21:09:10Z @kj scope is the glyph column only - the characters and their alignment; the fold stays the triangle, no other tree behaviour changes and no new control
+  - log: 2026-10-28T21:09:22Z @kj triangle takes a trailing space: U+25B8/U+25BE then space before the name, as in '▾ conda'
+  - log: 2026-10-28T21:09:30Z @kj gap after the triangle is tuned in CSS, smaller than a full space (around 0.2em), not a literal space character
+  - log: 2026-10-28T21:09:39Z @kj the gap is perceptible, not zero and not a full space - triangle, small gap, name
+  - log: 2026-10-28T21:09:52Z @kj use a half-space character after the triangle (U+2002 en space, U+2009 thin space if the font lacks it), measured in the browser so it renders narrower than a normal space
+- [ ] `DEF-VIEW-66-TREE-COLLAPSED` **Collapsed tree hides almost every process without a cue** - MEDIUM; With tree nodes collapsed the panel showed 3 of 325 processes with nothing on screen saying 322 rows were hidden; the list reads as broken
+  - repro: CONFIG, procs tree, tree nodes collapsed, expand the root: 3 rows
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T20:55:26Z @kj added
+- [ ] `DEF-VIEW-67-SPARKLINE-TONE` **Zero process shows a grey sparkline with visible history** - MINOR; A row reading 0.0 keeps a visible sparkline of its decayed history, painted in the zero tone (grey); tone follows the current value while the shape follows the window, so the bar reads as a leftover
+  - repro: process list: find a row at 0.0 whose history had a spike; grey bar, no colour
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T21:13:09Z @kj added
+- [ ] `DEF-VIEW-68-UNIT-GAP` **Stat number sits far from its unit** - MINOR; The CPU tile shows 3 at the left edge of a reserve as wide as 100, leaving a wide gap before the %; the digits must sit against the unit, with the reserve falling before the number
+  - overrides: ACC-VIEW-87-NUMBER-PLACE
+  - root-cause: 2026-10-28T21:30:49Z @kj [data-w] in app.css reserves the widest form as a hidden ::before after the number and left-aligns the digits (ACC-VIEW-87-NUMBER-PLACE), so a short value leaves its reserve between the digits and the unit
+  - repro: CPU panel, a one-digit total: the % stands about 30 px right of the digits
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T21:30:49Z @kj added
+- [ ] `DEF-VIEW-69-GAUGE-GAP` **Gauge unit spacing differs between CPU and Memory** - MINOR; The CPU gauge sets the percent sign against the digits while the Memory gauge leaves a small gap before GiB; both gauges must place the unit at the same distance, from one spacing token
+  - related: DEF-VIEW-68-UNIT-GAP
+  - repro: CPU and Memory panels side by side at 1440x900: 2% is tight, 21.1 GiB has a gap
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T21:36:43Z @kj added
+- [x] `DEF-VIEW-70-ANIM-STATIC` **Animation page shows no motion in the owner's browser** - MAJOR; The ten-concept page animates in headless Chromium (25-34 running animations, 8 of 8 distinct frames) but the owner sees a static page; cause unknown, the served snapshot was also stale until 22:44
+  - evidence: root cause found by the owner: his OS turns animations off, so Chrome reports prefers-reduced-motion reduce and the page obeyed it; the rebuilt page shows a motion-state chip and a FORCE MOTION button, which he used and saw the animations
+  - repro: Open proxy/41887 in the owner's Chrome, 0.25x, any interval: numbers update, nothing transitions
+  - log: 2026-10-28T21:44:52Z @kj added
+  - log: 2026-10-28T21:47:15Z @kj closed: closed - environment, page behaves as specified
+- [x] `DEF-VIEW-71-PARTICLE-MORPH` **Particle concepts restart from scratch instead of morphing** - MINOR; Block assemble and Particle collapse sample dots from the new digits only, so each change builds a new number from empty space; the dots must start on the previous digits and travel to the new ones so the value morphs
+  - evidence: blocks and particles start on the old digits and travel: first-quarter old IoU 0.60-0.75, last-quarter new IoU 0.56-0.84, middle max 0.69; 44 checks pass; served on 41887 sha256 dad8bc85
+  - repro: Watch card 02 or 07 at 0.25x through one value change: the old digits vanish, the new ones assemble from scattered dots
+  - log: 2026-10-28T21:47:15Z @kj added
+  - log: 2026-10-28T22:17:43Z @kj closed
+- [ ] `DEF-VIEW-72-MOTION-GATE` **Plots stay static because the OS turns animations off** - MAJOR; app.js motionAllowed() also requires prefers-reduced-motion to be unset, so the owner's machine, which sets it for every page, freezes the charts even with CONFIG motion on; the app's own motion toggle must be the only switch
+  - repro: CONFIG motion is on, CONFIG mode dark; a plot does not scroll between samples while the OS animation setting is off
+  - log: 2026-10-28T21:50:51Z @kj added
+- [ ] `DEF-VIEW-73-LOAD-CRYPTIC` **CPU footer load is three unlabelled integers** - MEDIUM; The CPU footer keeps its three numbers; the hover tooltip, which appears after 3 seconds, must explain them in plain words: tasks runnable or blocked on I/O, averaged over 1, 5 and 15 minutes, not a count of cores; today's tip says only load average, unit tasks
+  - repro: look at the CPU panel footer at 1440x900: load 40 37 32
+  - log: 2026-10-28T21:56:01Z @kj added
+  - log: 2026-10-28T21:56:41Z @kj amended text "templates/partials/cpu_stat.html prints load 40 37 32: no word names the metric, no time span names each value, and {:.0} drops the two decimals the collector keeps, so no reader can tell what the numbers are" -> "The CPU footer keeps its three numbers; the hover tooltip, which appears after 3 seconds, must explain them in plain words: tasks runnable or blocked on I/O, averaged over 1, 5 and 15 minutes, not a count of cores; today's tip says only load average, unit tasks"
+- [ ] `DEF-VIEW-74-DOUBLE-TIP` **Container chip shows two tooltips at once** - MEDIUM; templates/index.html gives the CONTAINER chip both a data-tip, drawn by the house tooltip, and a title, drawn by the browser; hovering shows two boxes with different text. An element with data-tip must carry no title
+  - repro: hover the CONTAINER chip for a moment: the scope box and the browser's title box appear together
+  - root-cause: 2026-10-28T22:07:46Z @kj the chip carries title={{ title }} alongside data-tip in the same element
+  - log: 2026-10-28T22:07:46Z @kj added
+- [ ] `DEF-VIEW-75-TIP-DWELL` **Tooltip needs cursor movement and opens away from the pointer** - MAJOR; Measured on the live build: the box opens 3.1 s after the pointer arrives with no further movement, but it flips away from the pointer - 68 px above a stat value and 219 px left of the Memory total fact - so it reads as not appearing at the cursor; the placement must follow the pointer and flip only at the viewport edge
+  - repro: hover the Memory used value, keep moving the mouse slightly, then stop: the box appears late and away from the cursor
+  - log: 2026-10-28T23:42:36Z @kj added
+  - log: 2026-10-28T23:43:57Z @kj amended text "On the live page the stat tooltip appears only after several seconds of moving the cursor, and away from it; it must open 3 s after the pointer rests on a stat, at the pointer, and small movement inside the same stat must not restart the wait" -> "Measured on the live build: the box opens 3.1 s after the pointer arrives with no further movement, but it flips away from the pointer - 68 px above a stat value and 219 px left of the Memory total fact - so it reads as not appearing at the cursor; the placement must follow the pointer and flip only at the viewport edge"; reason: measured reproduction differs from the first report; the placement is the confirmed cause
 
 ## Process collection `PROC`
 
@@ -456,14 +522,18 @@ Line graphs, sparklines and history charts: interpolation, marks, scale and obst
   - log: 2026-10-28T14:03:10Z @kj owner confirmed on the live page 15:02 (/tmp/paste-files/paste-20261028-150223.png): one must see where one lane ends and the next begins; GPU 0 at 0% draws on its lane's bottom edge, 7 px above GPU 1's 100% line at the next lane's top edge, so the two lines read as one pair
   - log: 2026-10-28T14:03:10Z @kj edited severity "MEDIUM" -> "MAJOR"
   - log: 2026-10-28T18:03:54Z @kj closed
-- [ ] `DEF-GRAPH-61-NET-LANES` **Network plot does not separate download and upload** - MEDIUM; The network plot draws download and upload in one undivided box; each needs its own lane with a visible boundary, as the GPU panel has, on the shared time axis
+- [x] `DEF-GRAPH-61-NET-LANES` **Network plot does not separate download and upload** - MEDIUM; The network plot draws download and upload in one undivided box; each needs its own lane with a visible boundary, as the GPU panel has, on the shared time axis
+  - evidence: download above upload, one boundary equal to the GPU rule in 32/32 cases, shared x axis, header scale equals the gutter totals; verify-1.json gate 2
   - repro: open the Network panel; the two series share one plot with no boundary between them
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:24:04Z @kj added
-- [ ] `DEF-GRAPH-63-GRID-UNITS` **Grids carry no unit labels or corner total** - MEDIUM; The GPU and network grids show no value labels, so the reader cannot tell the scale; label a few horizontal grid lines with their value and unit and print the total scale in the plot corner
+  - log: 2026-10-28T22:02:43Z @kj closed
+- [x] `DEF-GRAPH-63-GRID-UNITS` **Grids carry no unit labels or corner total** - MEDIUM; The GPU and network grids show no value labels, so the reader cannot tell the scale; label a few horizontal grid lines with their value and unit and print the total scale in the plot corner
+  - evidence: 160 gutters sit outside their chart box, 384 label contrast checks reach 4.52:1, 32/32 probes move no plot; verify-1.json gate 3
   - repro: open the GPU and Network panels; no grid line is labelled and no corner states the scale
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:24:04Z @kj added
+  - log: 2026-10-28T22:02:43Z @kj closed
 
 ## Theme `THEME`
 
@@ -535,4 +605,22 @@ Palette tokens, variants and contrast across the shipped pairs
   - test-tags: MANUAL
   - log: 2026-10-27T05:55:54Z @kj added
   - log: 2026-10-27T07:29:40Z @kj closed
+
+## Performance `PERF`
+
+CPU, memory and wire cost of the server and the page against their recorded baselines
+
+- log: 2026-10-29T00:22:32Z @kj category created
+
+- [ ] `DEF-PERF-76-SERVER-COST` **Server costs 2.2x its recorded CPU per tick** - MEDIUM; one SSE client at 250 ms now costs 19.5 ms of server CPU per tick, 7.8 percent of one core, against the 6.66 and 8.8 ms recorded on 2026-10-26; the GPU sweep adds about 40 ms once a second and the process set is 374 rows
+  - repro: attach one SSE client to the deployed build at 250 ms for 60 s and read utime+stime from /proc/<pid>/stat; tmp/workflows/btop-web-vs-btop/checkpoints/measure.json
+  - root-cause: 2026-10-29T00:22:32Z @kj unknown; likely the NVML sweep at most once a second plus the 374-row process walk, both inside the tick
+  - log: 2026-10-29T00:22:32Z @kj added
+  - log: 2026-10-29T00:40:31Z @kj second measurement 2026-10-29: 18.2 ms per tick idle and 19.2 ms with one client, against 8.3 and 8.8 ms recorded on 2026-10-26, so growth is 2.1 to 2.2 times; the 1.92 ms figure is collection only, not the whole tick
+  - log: 2026-10-29T01:12:33Z @kj cause: process walk 9.3 ms of 18.2 per tick over 390 rows, all GPU work 5.5 (holder fd walk 3.0-3.4), fixed collection 3.3, load count 1.4, one client 0.8, charts under 0.3; the sweep claim was 2-5x too high
+- [ ] `DEF-PERF-77-PAGE-COST` **One open tab uses half a core in headless Chromium** - MEDIUM; one headless tab of the dashboard spends 33.1 s of renderer CPU per 60 s, 0.55 of one core, with 14.7 s of main-thread tasks and 59.7 fps; headless Chromium rasterises on the CPU, so a GPU-accelerated browser may cost less; unmeasured
+  - repro: open the dashboard in headless Chromium at 1440x900 for 60 s and read the renderer process CPU from /proc; tmp/workflows/btop-web-perf/checkpoints/measure.json
+  - root-cause: 2026-10-29T00:40:43Z @kj unknown; likely software rasterisation of four chart swaps per second plus the number-effect frame loop; a GPU-accelerated run and a per-feature profile are needed
+  - log: 2026-10-29T00:40:43Z @kj added
+  - log: 2026-10-29T01:12:33Z @kj cause: at 1440x900 the tab uses 26.34 s renderer CPU per 60 s; chart scroll from a 60 fps style loop 13.26 s, event stream 11.45 s with the process panel 6.35, stale page 1.63; number effects off, spring blur adds 28.33
 

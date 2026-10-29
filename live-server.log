@@ -1,0 +1,2 @@
+[2m2026-10-29T01:16:21.659962Z[0m [32m INFO[0m [2mbtop_web[0m[2m:[0m ACC-SCOPE-64: panels show only this container [3mscope[0m[2m=[0mcontainer [3mruntime[0m[2m=[0mdocker [3msignal[0m[2m=[0m"1 /.dockerenv" [3mcgroup[0m[2m=[0m/sys/fs/cgroup [3mnetwork[0m[2m=[0m"own namespace"
+[2m2026-10-29T01:16:21.740491Z[0m [32m INFO[0m [2mbtop_web[0m[2m:[0m btop-web listening [3mlisten[0m[2m=[0m127.0.0.1:57627 [3mupdate_ms[0m[2m=[0m250 [3mtheme[0m[2m=[0m"default" [3mproc_root[0m[2m=[0m/proc [3mreadonly[0m[2m=[0mtrue

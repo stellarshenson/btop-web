@@ -22,10 +22,10 @@ btop-web serves [btop](https://github.com/aristocratos/btop) 1.3.0's telemetry t
 
 - **Page** - ten panels, one viewport, desktop or phone; only the process table scrolls
 - **Metrics** - btop's source, formula, units, field name; a missing value reads `unavailable`, not 0
-- **Plots** - server-built SVG histories with a 1 s exponential moving average (EMA), scrolling; a load plot per GPU; network down, up
-- **Readouts** - gauge numbers centred on the gauge axis, every other live value with its widest form reserved; every stat shows value, unit and source on hover, a plot none
+- **Plots** - server-built SVG histories, 1 s EMA, scrolling; a lane per GPU and per network direction, split by a 1 px `--border` rule at 55 %; grid lines and corner total labelled in a 27 px gutter (GPU 0/25/50/75/100 %, network 0B, half, ceiling)
+- **Readouts** - gauge numbers on the gauge axis, every other live value reserving its widest form; every stat shows value, unit and source on hover, a plot none
 - **Processes** - views `top`, `all`, `tree`; sortable; filterable; a CPU history on active rows
-- **Display** - eight themes, light and dark, auto/light/dark mode, panel config menu; GPU legend edge tab, LOAD, MEM and PWR mini bars
+- **Display** - eight themes, light and dark, auto/light/dark mode, config menu; GPU legend edge tab, LOAD, MEM and PWR mini bars
 
 ## 2. Quick start
 
@@ -37,7 +37,7 @@ make run
 
 Open <http://127.0.0.1:40290>.
 
-Port 40290 is 1024 plus `btop-web` folded as `v = (v * 256 + byte) mod 64512`; `--config` or `BTOP_WEB_LISTEN` overrides it.
+Port 40290 is `btop-web` folded (`v = (v * 256 + byte) mod 64512`) plus 1024; `--config` or `BTOP_WEB_LISTEN` overrides it.
 
 ### 2.1 Container
 
@@ -54,7 +54,7 @@ docker run --rm -p 40290:40290 -v "$PWD/btop-web.conf:/etc/btop-web.conf:ro" \
 - **Bind** - loopback by default; set `listen = 0.0.0.0:40290`
 - **Scope** - cgroup v2 CPU, memory, swap, processes, cpuset cores, passed-in GPUs
 - **Unavailable** - CPU frequency, temperature, disk IO, network on a shared host namespace
-- **Detection** - the log prints `scope=container` with runtime, signal, cgroup and network, or `scope=host`; a CONTAINER chip names the three
+- **Detection** - the log prints `scope=container` with runtime, signal, cgroup and network, or `scope=host`; a CONTAINER chip names them
 
 ## 3. Configuration
 
@@ -84,11 +84,11 @@ Unknown keys are ignored; an invalid value stops startup with file and line. Oth
 
 CONFIG opens seven pages: general, cpu, gpu, mem, net, proc, layout.
 
-- **Display options** - theme, mode, pause, motion, GPU, process view, tree nodes, sort, layout; per browser; layout resets to defaults
-- **Server options** - 36 keys; read-only shows text
-- **`--no-readonly`** - each becomes a form, validated and applied in two ticks
-- **File write** - the line is rewritten by temp file and rename; without `-c` it ends at restart
-- **Origin** - `POST /config` with a mismatched `Origin` gets 403
+- **Display options** - theme, mode, pause, motion, GPU, process view, tree depth, sort, layout; per browser; layout resets
+- **Server options** - 38 keys; read-only shows text
+- **`--no-readonly`** - each becomes a form, validated, applied in two ticks
+- **File write** - temp file and rename; without `-c` it ends at restart
+- **Origin** - a mismatched `Origin` gets 403
 - **btop file** - `~/.config/btop/btop.conf` is untouched
 - **Precedence** - `-u`, `--theme`, `--proc-view` and `BTOP_WEB_*` outrank the file
 
@@ -107,15 +107,15 @@ No SPA, no JSON API.
 
 ## 5. Smooth graph scrolling
 
-- **Sampler** - one sampler in `collector/mod.rs` publishes a `Snapshot` per `update_ms` on a watch channel; all clients share it
-- **History** - `chart.rs` keeps 240 s (960 samples at 250 ms) and smooths each series with a fixed 1 s EMA, alpha = 1 - exp(-update_ms / 1000); readouts stay raw
+- **Sampler** - one sampler publishes a `Snapshot` per `update_ms` on a watch channel; all clients share it
+- **History** - `chart.rs` keeps 240 s (960 samples at 250 ms) and smooths each series with a 1 s EMA, alpha = 1 - exp(-update_ms / 1000); readouts stay raw
 - **Animation clock** - one `requestAnimationFrame` loop in `app.js` slides each drawn series left by elapsed / `update_ms` x slot; the next frame lands one slot on
 - **Path** - each bucket's largest sample is a vertex; the server extends the newest knot one slot at the right edge; PCHIP from `spline1d` adds vertices only when a slot is at least 2 viewBox units wide, which 250 ms does not reach
-- **Setting** - CONFIG, general, `motion` on/off, per browser, on by default; PAUSED, STALE, a hidden tab and reduced motion stop the loop
-- **Rescale** - a network plot or the Processes count graph moves to a new ceiling over at least 1 s (`chart.rs` `Scale`); the network ceiling rises after five consecutive ticks, falls after `net_fall` seconds below a tenth, never below `net_floor` Mbit/s, shared under `net_sync`
+- **Setting** - CONFIG, general, `motion` on/off; PAUSED, STALE and a hidden tab stop the loop, never the OS reduced-motion query
+- **Rescale** - a network plot or the Processes count graph moves to a new ceiling over at least 1 s (`chart.rs` `Scale`); `net_floor`, `net_fall` and `net_sync` set the thresholds
 - **SSE** - `routes/events.rs` sends five named fragments per snapshot; a slow client skips ahead
 
-Measured: the sampler costs 8.3-8.8 ms per tick; at 60 fps the animation clock costs 33.1 % of one core against 15.0 % without motion.
+Measured: the sampler costs 8.3-8.8 ms per tick; at 60 fps the animation clock costs 33.1 % of one core against 15.0 % idle.
 
 ## 6. Development
 
@@ -134,8 +134,9 @@ Build commands and gates; `make help` lists all.
 - **Static build** - the NVIDIA panel needs a host glibc equal to the build host's; NVML loads at runtime
 - **AMD** - DRM sysfs by default; `FEATURES=rocm` adds ROCm SMI, needs `librocm_smi64`
 - **CI** - ubuntu-latest runs fmt-check, clippy, test, cargo-deny, coverage, zizmor, Docker build
-- **Tests** - `make ci` runs 263 tests: 198 library, 5 end-to-end, 50 HTTP, 10 theme contrast
-- **Fixtures** - collector tests use recorded roots; mount paths and the interface list resolve inside the tree; e2e sets `BTOP_WEB_PROC_ROOT` on the binary
+- **Tests** - `make ci` runs 269 tests: 198 library, 5 end-to-end, 55 HTTP, 11 theme contrast
+- **Fixtures** - collector tests use recorded roots; mount paths and the interface list resolve inside the tree; e2e sets `BTOP_WEB_PROC_ROOT`
+- **Filter placeholder** - a yellow block on the placeholder is Chromium's find-in-page highlight, not the page's paint
 
 ## 7. Repository layout
 

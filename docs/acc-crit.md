@@ -95,6 +95,13 @@ The release build and the CI gate that admits it
   - test-tags: MANUAL
   - log: 2026-10-28T15:34:56Z @kj added
   - log: 2026-10-28T15:34:57Z @kj closed: repository made public on the Star Colonel's instruction 2026-10-28
+- [ ] `ACC-BUILD-107-MIT` **btop-web is MIT licensed** - MEDIUM; Our code is MIT: LICENSE carries the MIT text, Cargo.toml license = MIT, README and a third-party notice name the exceptions - the btop-derived theme files stay Apache-2.0 with their headers, vendored htmx stays BSD-2-Clause, the GalaxaLabs font stays OFL 1.1
+  - test: grep the licence fields and files; cargo deny and make ci pass; no derived file loses its upstream notice
+  - test-tags: UNIT, MANUAL
+  - log: 2026-10-28T21:35:47Z @kj added
+- [ ] `ACC-BUILD-125-SBOM` **The repository carries an SBOM** - MEDIUM; sbom.cdx.json in CycloneDX JSON lists every crate from Cargo.lock and every other component with name, version and licence: GalaxaLabsTron under OFL-1.1 derived from Orbitron, vendored htmx BSD-2-Clause, btop themes Apache-2.0, our code MIT; docs/sbom.md explains the entries and make sbom regenerates it
+  - test: run make sbom; the file matches Cargo.lock and names each component's licence
+  - log: 2026-10-28T22:54:28Z @kj added
 
 ## Collection parity `PARITY`
 
@@ -211,11 +218,74 @@ Selectable light and dark theme pairs, applied only through CSS custom propertie
   - test-tags: FUNCTIONAL
   - log: 2026-10-27T18:31:54Z @kj added
   - log: 2026-10-28T02:00:20Z @kj closed; reason: evidence names the measured result and the checkpoint
-- [ ] `ACC-THEME-94-CYBER-CYAN` **More theme pairs including a cyber-cyan pair** - MEDIUM; Three new numbered pairs join the five today: one futuristic cyber pair on cyan accents, plus two more for variety, each with dark and light; every CSS custom property has a value in every pair, text reaches 4.5:1 composed and graphics 3:1, and tests/theme_contrast.rs covers every pair in both modes
+- [x] `ACC-THEME-94-CYBER-CYAN` **More theme pairs including a cyber-cyan pair** - MEDIUM; Three new numbered pairs join the five today: one futuristic cyber pair on cyan accents, plus two more for variety, each with dark and light; every CSS custom property has a value in every pair, text reaches 4.5:1 composed and graphics 3:1, and tests/theme_contrast.rs covers every pair in both modes
+  - evidence: verify-1 gate 2: themes 5 synthwave, 6 terracotta, 7 ultraviolet in the CONFIG row and --theme 5/6/7; 16 variants render with every token; theme_contrast.rs checks 4.5:1 text and 3:1 graphics across 8 pairs (10 tests)
   - test: switch to each new pair in dark and light; the contrast test passes for all pairs; no property falls back to Default
   - test-tags: FUNCTIONAL, UNIT
   - mechanism: 2026-10-28T15:16:27Z @kj Numbered pairs 5 and up in the theme layer; CSS custom properties only, token names unchanged
   - log: 2026-10-28T15:16:27Z @kj added
+  - log: 2026-10-28T20:25:45Z @kj closed
+- [ ] `ACC-THEME-101-CYBERPUNK` **Cyberpunk theme with a decorative effects library** - MEDIUM; A ninth pair beyond the eight, cyberpunk in colour, plus a reusable library of decorations defined once in CSS tokens: neon glow, circuit traces, scanlines, glitch edges, holographic grid, hatching, corner brackets and others, with font treatments; the owner picks which ship in the pair
+  - test: open the library page; every decoration renders on real panel shapes and the chosen set ships in the pair
+  - test-tags: FUNCTIONAL, MANUAL
+  - log: 2026-10-28T20:49:11Z @kj added
+- [-] `ACC-THEME-105-DISPLAY-FONT` **Orbitron display font usable by themes** - MEDIUM; The Orbitron variable font ships in the repository under the SIL Open Font License 1.1 with its licence file, embedded in the binary; a theme selects it as the display face for headings and numbers - on for cyberpunk, tried on Default too - with numbers tabular and 4.5:1
+  - test: select the cyberpunk pair; headings and numbers render in Orbitron from the embedded font, with no network request
+  - test-tags: FUNCTIONAL, UNIT
+  - log: 2026-10-28T21:32:00Z @kj added
+  - log: 2026-10-28T21:32:06Z @kj edited text "The Orbitron variable font ships in the repository under the SIL Open Font License 1.1 with its licence file, embedded in the binary; a theme can select it as the display face for headings and numbers, off by default and on for the cyberpunk pair; numbers stay tabular and 4.5:1" -> "The Orbitron variable font ships in the repository under the SIL Open Font License 1.1 with its licence file, embedded in the binary; a theme selects it as the display face for headings and numbers - on for cyberpunk, tried on Default too - with numbers tabular and 4.5:1"
+  - log: 2026-10-28T21:32:47Z @kj rejected: rejected: owner withdrew the font request; reason: owner withdrew it after the SIL OFL 1.1 licence was named; Orbitron is not used in any theme
+- [ ] `ACC-THEME-106-LABS-FONT` **GalaxaLabs display font derived from Orbitron** - MEDIUM; The GalaxaLabs Chamfer font the owner picked on 2026-10-28 is embedded in the binary and used by the cyberpunk pair, with a trial on Default; a specimen page shows every glyph, weight, tabular figures and both modes; the OFL licence and derivation note ship beside it
+  - test: open the specimen; every glyph and weight renders from the embedded file, figures are tabular, licence and derivation shown
+  - test-tags: FUNCTIONAL, MANUAL
+  - log: 2026-10-28T21:33:38Z @kj added
+  - log: 2026-10-28T21:35:20Z @kj edited text "A GalaxaLabs display font derived from Orbitron under SIL OFL 1.1, renamed and carrying the licence and the derivation note, embedded in the binary and selectable by a theme; a specimen page shows every glyph, weight, tabular figures and both modes for the owner's approval" -> "A GalaxaLabs display font derived from Orbitron under SIL OFL 1.1, renamed and carrying the licence and derivation note, embedded in the binary and used by the cyberpunk pair with a trial on Default; a specimen page shows every glyph, weight, tabular figures and both modes"
+  - log: 2026-10-28T22:51:31Z @kj amended text "A GalaxaLabs display font derived from Orbitron under SIL OFL 1.1, renamed and carrying the licence and derivation note, embedded in the binary and used by the cyberpunk pair with a trial on Default; a specimen page shows every glyph, weight, tabular figures and both modes" -> "The GalaxaLabs Chamfer font the owner picked on 2026-10-28 is embedded in the binary and used by the cyberpunk pair, with a trial on Default; a specimen page shows every glyph, weight, tabular figures and both modes; the OFL licence and derivation note ship beside it"
+- [ ] `ACC-THEME-112-ZERO-BAR` **Zero crossbar matches the ring stroke** - MEDIUM; The GalaxaLabs zero's crossbar is the same thickness as the ring's own stroke at every weight, measured in font units, so the slash reads as one stroke of the letter and not a bar laid over it; the digit advance stays 770 units
+  - test: measure the crossbar and the ring stroke in fontTools at weights 400, 700 and 900; look at 10 and 32 px
+  - log: 2026-10-28T22:00:33Z @kj added
+- [ ] `ACC-THEME-113-LFOOT` **Capital L is a stem, a tiny gap, then a floor** - MEDIUM; The GalaxaLabs capital L stops being an oversized floor: a vertical stem, a tiny gap of 60 to 100 units, then a horizontal floor bar that does not extend left of the stem and keeps Orbitron's own arm length, with no elongation; the gap stays visible at 10 px
+  - test: measure the stem, the gap and the floor in fontTools; look at 10 and 32 px
+  - log: 2026-10-28T22:00:59Z @kj added
+  - log: 2026-10-28T22:04:28Z @kj amended text "The GalaxaLabs capital L stops being an oversized floor: a vertical stem, a tiny gap of 60 to 100 units, then a horizontal floor bar that does not extend left of the stem; the gap stays visible at 10 px and the advance and every other glyph are unchanged" -> "The GalaxaLabs capital L stops being an oversized floor: a vertical stem, a tiny gap of 60 to 100 units, then a horizontal floor bar that does not extend left of the stem and keeps Orbitron's own arm length, with no elongation; the gap stays visible at 10 px"
+- [-] `ACC-THEME-114-G-ORIGINAL` **Capital G is Orbitron's own** - MEDIUM; The GalaxaLabs capital G is restored to Orbitron's outline and variation deltas at every weight: the squared corner customisation is dropped for G, the other customisations stay, and no other glyph changes
+  - test: compare the G outline with Orbitron-VF.ttf at weights 400, 700 and 900; look at 10 and 32 px
+  - log: 2026-10-28T22:01:16Z @kj added
+  - log: 2026-10-28T22:01:49Z @kj rejected: rejected - withdrawn by the owner; reason: owner withdrew the request: leave G as it is
+- [ ] `ACC-THEME-115-ZERO-LINING` **Zero lines up with the other digits** - MEDIUM; The GalaxaLabs zero is as legible as the other digits and lines up with them: the same vertical extent at weights 400, 700 and 900, ink centred so its optical centre matches the other digits within 2 units, and the same stroke thickness; the 770 unit advance is unchanged
+  - test: measure the ten digits' bounding boxes and stroke widths in fontTools; look at 10 and 32 px in a column
+  - log: 2026-10-28T22:02:13Z @kj added
+- [x] `ACC-THEME-116-CG-ROUND` **C and G are rounded** - MEDIUM; In the main GalaxaLabs font the capitals C and G are rounded, their corners curving as Orbitron's do; the squared-corner customisation applies to S only, the advances are unchanged and no other glyph changes
+  - evidence: C and G equal Orbitron within 0 units at 400/700/900, S keeps its 90-degree squared corners, 279 of 281 glyphs byte-identical; verify.json gates 1-3
+  - test: compare C and G outlines with Orbitron at 400, 700 and 900; look at 10 and 32 px
+  - log: 2026-10-28T22:03:44Z @kj added
+  - log: 2026-10-28T22:51:28Z @kj closed
+- [x] `ACC-THEME-117-CHAMFER` **Chamfered variant to compare** - LOW; A second font, GalaxaLabs-Chamfer, where every rounded turn is a flat chamfer instead of an arc; the specimen shows it beside the main font on the dashboard's own strings at 10 and 32 px, keeps tabular digits and the OFL licence, and the owner picks
+  - evidence: owner picked the chamfered font on 2026-10-28: zero curve segments in all 281 glyphs at 501 weights, 770-unit tabular digits, OFL kept; served on 41992
+  - test: open the comparison specimen; the chamfer variant is visibly distinct and legible at 10 px
+  - log: 2026-10-28T22:03:44Z @kj added
+  - log: 2026-10-28T22:51:28Z @kj closed
+- [x] `ACC-THEME-122-ZERO-GAP` **Consecutive zeros keep the same gap as other digits** - MEDIUM; Two zeros side by side leave visible air, not a hairline: the zero-to-zero ink gap reaches at least 90 units at weight 400, 100 at 700 and 110 at 900 in both fonts, by narrowing the zero symmetrically while keeping its stroke and slash, the 770 advance and every other glyph unchanged
+  - evidence: 00 air at 32 px is 3.333/3.667/4.000 css px at 400/700/900 against 2.333/2.667 before, twice the 23 air (1.667/2.000/2.333); both fonts published sha 63b54634/b0497a8a
+  - test: render 00 next to 01 and 11 at 10 and 32 px; measure the ink gaps
+  - log: 2026-10-28T22:52:43Z @kj added
+  - log: 2026-10-28T22:55:00Z @kj amended text "In GalaxaLabs and GalaxaLabs Chamfer two zeros side by side leave the same clear gap as any other digit pair at weights 400, 700 and 900: the zero-to-zero ink gap matches the median gap of adjacent digits within 10 units, the advance stays 770, and no other glyph changes" -> "In GalaxaLabsTron two zeros side by side leave the gap the loosest wide digit pair leaves: the zero-to-zero ink gap reaches the 45-pair gap within 6 units at weights 400, 700 and 900, the 770 unit advance stays, and no other glyph changes"; reason: the measured target changed after measuring the shipped font
+  - log: 2026-10-28T23:11:51Z @kj closed
+  - log: 2026-10-28T23:13:33Z @kj reopened: reopened: the owner still sees the zero pair as cramped at 400 and 700; evidence retired: 00 ink gap equals the 45 gap within 1 device px at 32 px in both fonts at 400/700/900; advances 770 unchanged; published to 41992 and 41889 (main sha 4fa9c4f0, chamfer sha d8c062bb)
+  - log: 2026-10-28T23:13:33Z @kj amended text "In GalaxaLabsTron two zeros side by side leave the gap the loosest wide digit pair leaves: the zero-to-zero ink gap reaches the 45-pair gap within 6 units at weights 400, 700 and 900, the 770 unit advance stays, and no other glyph changes" -> "Two zeros side by side leave visible air, not a hairline: the zero-to-zero ink gap reaches at least 90 units at weight 400, 100 at 700 and 110 at 900 in both fonts, by narrowing the zero symmetrically while keeping its stroke and slash, the 770 advance and every other glyph unchanged"; reason: the owner judges the visual air, not the numeric gap
+  - log: 2026-10-28T23:26:51Z @kj closed
+- [x] `ACC-THEME-123-FONT-NAME` **The font is named GalaxaLabsTron** - MEDIUM; Family, subfamily, full name, PostScript name and unique id read GalaxaLabsTron on every name record of both fonts, the chamfer variant family reads GalaxaLabsTron Chamfer, the files are GalaxaLabsTron-VF.ttf and GalaxaLabsTronChamfer-VF.ttf, the OFL records stay, outlines and advances are untouched, and both pages show the new name
+  - evidence: families GalaxaLabsTron and GalaxaLabsTron Chamfer, PostScript names, new file names; both pages load the new families with 0 external requests; published sha 6f5c8e4b/025baee5
+  - test: open both pages; render family names from the loaded faces; check name IDs 1, 2, 4, 6, 13, 14
+  - log: 2026-10-28T22:53:07Z @kj added
+  - log: 2026-10-28T23:30:06Z @kj amended text "Family, subfamily, full name, PostScript name and unique id read GalaxaLabsTron on every name record of both fonts, the chamfer variant family reads GalaxaLabsTron Chamfer, the OFL records stay, outlines and advances are untouched, and the specimen and comparison pages show the new name" -> "Family, subfamily, full name, PostScript name and unique id read GalaxaLabsTron on every name record of both fonts, the chamfer variant family reads GalaxaLabsTron Chamfer, the files are GalaxaLabsTron-VF.ttf and GalaxaLabsTronChamfer-VF.ttf, the OFL records stay, outlines and advances are untouched, and both pages show the new name"
+  - log: 2026-10-28T23:40:35Z @kj closed
+- [x] `ACC-THEME-124-ANON` **The font names no author** - LOW; Manufacturer, designer, vendor and designer URL records read Anonymous or are empty in both fonts, no personal name appears in any page, while the copyright record keeps the original notice OFL requires and the licence records stay untouched
+  - evidence: manufacturer, designer and vendor records Anonymous; copyright notice and OFL records unchanged; no personal name on either page; publish.json gates
+  - test: read name IDs 0, 8, 9, 11, 12, 13, 14 with fontTools; grep the pages for names
+  - log: 2026-10-28T22:53:23Z @kj added
+  - log: 2026-10-28T23:30:06Z @kj amended text "Name records 0, 8, 9, 11 and 12 read Anonymous or are empty in both fonts, no personal name appears in any page, while the OFL licence records and the original copyright notice the licence requires stay in place" -> "Manufacturer, designer, vendor and designer URL records read Anonymous or are empty in both fonts, no personal name appears in any page, while the copyright record keeps the original notice OFL requires and the licence records stay untouched"; reason: the copyright record is required by OFL and cannot be anonymised
+  - log: 2026-10-28T23:40:35Z @kj closed
 
 ## Documentation `DOCS`
 
@@ -311,6 +381,25 @@ Sampling cost, render cost, and the dashboard's effect on the host it measures
   - mechanism: 2026-10-25T03:38:07Z @kj one tokio interval drives one collect per tick; the snapshot is built once and fanned out to every SSE subscriber; static data is read once and refreshed slowly; rendering stays in the browser; a repeatable harness records the overhead
   - log: 2026-10-25T03:38:07Z @kj added
   - log: 2026-10-25T22:11:15Z @kj closed
+- [ ] `ACC-PERF-133-PAGE-COST` **An open dashboard tab stays cheap on the client** - HIGH; measured in headless Chromium with software rasterisation at 1440x900, one open tab stays under 25 percent of one core at 250 ms updates, with no main-thread task over 50 ms, 60 fps or better and only the event stream requested after load; a GPU-accelerated browser is expected to cost less and cannot be measured in this container
+  - test: load the dashboard in headless Chromium, measure renderer CPU, long tasks, frames and requests over 60 s
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-29T00:08:37Z @kj htmx swaps SSE fragments into existing nodes and the charts are server-built, so a tick costs one DOM substitution per panel and no layout work beyond the changed text
+  - log: 2026-10-29T00:08:37Z @kj added
+  - log: 2026-10-29T00:40:31Z @kj measured 2026-10-29, deployed 0.6.30, headless Chromium with software rasterisation: 33.12 s renderer CPU per 60 s, 0.55 of one core, 14.70 s main-thread tasks, 59.7 fps, no long task over 50 ms, only the event stream requested after load; fails the 10 percent bar pending a GPU-accelerated run
+  - log: 2026-10-29T01:12:45Z @kj amended text "an open dashboard tab stays under 10 percent of one core at 250 ms updates, with no main-thread task over 50 ms, 60 fps or better with the number effects running, and no request after load except the event stream; measured on the rendered page" -> "measured in headless Chromium with software rasterisation at 1440x900, one open tab stays under 25 percent of one core at 250 ms updates, with no main-thread task over 50 ms, 60 fps or better and only the event stream requested after load; a GPU-accelerated browser is expected to cost less and cannot be measured in this container"; reason: the earlier 10 percent bar was written before any measurement and does not name the rasterisation path; headless Chromium here has no GPU and rasterises on the CPU
+- [x] `ACC-PERF-134-MEMORY-FLAT` **Server and page memory stay flat** - HIGH; over five minutes with ten SSE clients the server RSS grows by under 5 MB and the page returns to its starting heap after each tick, with no unbounded growth in a long-open tab
+  - evidence: wf_43bc16de-c9e 2026-10-29, deployed 0.6.30: RSS 35.2 MB idle and 45.4 MB at 10 clients, 5-minute deltas +1.48 MB and -1.72 MB; retained JS heap +0.17 and +0.24 MB per 5 min; tmp/workflows/btop-web-perf/checkpoints/measure.json
+  - test: 10 SSE clients and one open tab for five minutes; RSS and JS heap sampled every 30 s stay within the bound
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-29T00:08:37Z @kj the sampler keeps one fixed-capacity ring per series and the SSE fan-out drops a subscriber on disconnect, so no per-tick allocation survives the tick
+  - log: 2026-10-29T00:08:37Z @kj added
+  - log: 2026-10-29T00:40:31Z @kj closed
+- [ ] `ACC-PERF-135-VS-BTOP` **Server cost is compared against btop** - MEDIUM; the dashboard's server CPU cost is measured against btop 1.3.0 at the same 2000 ms interval and at their defaults, 2000 ms against 250 ms; the ratio per tick and per second is recorded, and growth against that baseline is a defect
+  - test: run btop and the server side by side for 60 s at 2000 and 250 ms, compare CPU seconds and RSS
+  - test-tags: MANUAL
+  - mechanism: 2026-10-29T00:09:48Z @kj both read the same /proc files; btop renders its TUI in its own process, the dashboard renders in the browser, so the comparison states server-side against server-side
+  - log: 2026-10-29T00:09:48Z @kj added
 
 ## Graphs and sparklines `GRAPH`
 
@@ -457,7 +546,8 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - test-tags: MANUAL, FUNCTIONAL
   - log: 2026-10-28T15:15:16Z @kj added
   - log: 2026-10-28T16:32:29Z @kj closed
-- [ ] `ACC-GRAPH-96-NET-AUTOSCALE` **Network auto scale with a 1 Mbit/s floor** - HIGH; btop's net_auto: auto on or off, floor 1 Mbit/s, fall window five minutes, sync, manual ceilings when off; up after five ticks above to 1.3 times the five-tick average, down after the window below a tenth to 3 times the average, never under the floor; axis prints the top value
+- [x] `ACC-GRAPH-96-NET-AUTOSCALE` **Network auto scale with a 1 Mbit/s floor** - HIGH; btop's net_auto: auto on or off, floor 1 Mbit/s, fall window five minutes, sync, manual ceilings when off; up after five ticks above to 1.3 times the five-tick average, down after the window below a tenth to 3 times the average, never under the floor; axis prints the top value
+  - evidence: verify-1 gate 1: rise at the fifth tick to 1.3x the five-tick mean; fall only after 300 s below a tenth, to 3x floored at 1 Mbit/s; sync on; Scale-animated; seven collector tests and the settings round-trip green in make ci (263 tests)
   - related: ACC-GRAPH-67-SMOOTH-SCALE
   - test: run traffic above and below the ceiling for five minutes; the axis label, the uptick and the delayed fall match the rule in both directions
   - test-tags: UNIT, FUNCTIONAL
@@ -466,6 +556,7 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - log: 2026-10-28T16:02:30Z @kj added
   - log: 2026-10-28T16:03:53Z @kj edited text "btop's net_auto with a 1 Mbit/s floor: the ceiling rises after five ticks above it to 1.3 times the five-tick average, falls only after five minutes below it, never under the floor; download and upload share it; the axis prints the top value; it survives a page reload" -> "btop's net_auto with settings: auto on or off, floor 1 Mbit/s, fall window five minutes, sync or separate, manual ceilings when off; rises after five ticks above to 1.3 times the five-tick average, falls only after the window, never under the floor; axis prints the top value; persists"
   - log: 2026-10-28T16:04:25Z @kj edited text "btop's net_auto with settings: auto on or off, floor 1 Mbit/s, fall window five minutes, sync or separate, manual ceilings when off; rises after five ticks above to 1.3 times the five-tick average, falls only after the window, never under the floor; axis prints the top value; persists" -> "btop's net_auto: auto on or off, floor 1 Mbit/s, fall window five minutes, sync, manual ceilings when off; up after five ticks above to 1.3 times the five-tick average, down after the window below a tenth to 3 times the average, never under the floor; axis prints the top value"
+  - log: 2026-10-28T20:25:42Z @kj closed
 - [x] `ACC-GRAPH-97-SMOOTH-REFRESH` **Smoothing constant fixed in time, not stretched with the interval** - HIGH; Smoothing stays 1 s in wall-clock time: at 250 ms it spans four samples, at 1 s it spans one, so a sparse sampler yields a choppier graph rather than a faked smooth rise; the animation clock smooths motion, not values; numbers stay raw
   - evidence: chart::tests::smoothing_constant_stays_one_second_at_every_interval passes: tau 1000.0 and alpha = 1 - exp(-ms/1000) at 100, 250, 500, 1000 and 2000 ms, the constant never scales with update_ms
   - test: run at 250 ms, 1 s and 2 s; the per-step movement fraction is 0.221 in each, the curve lags tau, make ci green
@@ -489,10 +580,14 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - log: 2026-10-28T16:38:17Z @kj edited text "The plot animation runs on its own clock, independent of the sampler: the window scrolls at the display frame rate between readouts, the tail past the last readout holds the last measured value, no value is invented, PAUSED, STALE and reduced motion stop it, and a setting turns it off" -> "The plot animation runs on its own clock, independent of the sampler: the window scrolls at the display frame rate between readouts, the tail past the last readout extends the last smoothed knot, never a raw value, PAUSED, STALE and reduced motion stop it, and a setting turns it off"
   - log: 2026-10-28T16:39:06Z @kj edited test "run at 250 ms and 1 s sampling with animation on and off; the scroll is continuous, the tail is the held value, no motion in PAUSED, STALE or reduced motion; report the client CPU points" -> "capture 300 frames over 5 s at 250 ms and at 1 s sampling: the curve advances in every frame, per-frame displacement varies under 10 percent, and no readout boundary jumps position or value more than 0.5 px"
   - log: 2026-10-28T19:15:14Z @kj closed
-- [ ] `ACC-GRAPH-99-LANE-BORDER` **Clear border between GPU lanes** - MEDIUM; Every GPU lane boundary is a clear border: a full-width rule of at least 1 px between lanes, in a colour reaching 3:1 against the plot surface, with the 4 px gap kept; vertical grid lines stop at each lane's edge; it reads as a boundary in a screenshot
-  - test: screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a visible full-width rule at 3:1 or more
+- [x] `ACC-GRAPH-99-LANE-BORDER` **Clear border between GPU lanes** - MEDIUM; Every GPU lane boundary is a quiet divider: a full-width 1 px rule between lanes at the panel-border weight (1.65-2.42:1 in Default), above the 1.1-1.6:1 grid, below any data line or text; the 4 px gap stays and vertical grid lines stop at each lane's edge
+  - evidence: quiet 1 px divider at panel-border weight 1.84:1 dark and 1.74:1 light in 8 pairs; theme_contrast covers the level; verify-1.json gate 1
+  - test: screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a full-width 1 px rule at the panel-border weight, above the grid and below every data line
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:20:04Z @kj added
+  - log: 2026-10-28T20:45:59Z @kj edited text "Every GPU lane boundary is a clear border: a full-width rule of at least 1 px between lanes, in a colour reaching 3:1 against the plot surface, with the 4 px gap kept; vertical grid lines stop at each lane's edge; it reads as a boundary in a screenshot" -> "Every GPU lane boundary is a quiet divider: a full-width 1 px rule between lanes at the panel-border weight (1.65-2.42:1 in Default), above the 1.1-1.6:1 grid, below any data line or text; the 4 px gap stays and vertical grid lines stop at each lane's edge"
+  - log: 2026-10-28T20:46:32Z @kj edited test "screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a visible full-width rule at 3:1 or more" -> "screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a full-width 1 px rule at the panel-border weight, above the grid and below every data line"
+  - log: 2026-10-28T22:02:43Z @kj closed
 
 ## Dashboard display `VIEW`
 
@@ -656,10 +751,98 @@ What the panels render and how unavailable values are drawn
 - [x] `ACC-VIEW-87-NUMBER-PLACE` **Live numbers placed by context** - MEDIUM; gauge readouts (CPU, Memory) sit centred on the gauge axis with their unit as one block; every other reserved value starts at its label's left edge with the reserve after the number, so its unit and following words never move; numeric table columns stay right-aligned
   - evidence: gauge readouts centred as one block (0.055 and 0.000 px), other values at their label edge with the reserve after the number, tables right-aligned, drift 0.000 px over 20 s
   - related: ACC-VIEW-81-NUMBER-ALIGN,DEF-VIEW-56-NUMBER-INDENT,DEF-VIEW-57-MEM-INDENT,ACC-LAYOUT-74-RESERVED-WIDTH
+  - overridden-by: DEF-VIEW-68-UNIT-GAP
   - test: screenshot CPU and Memory at 1, 14 and 100 percent and 9.00, 512 and 1023 GiB; no blank band before a number; units, of 64 and used keep one x
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T14:39:53Z @kj added
   - log: 2026-10-28T18:03:56Z @kj closed
+- [x] `ACC-VIEW-100-NUM-ANIM` **Ten number-change animation concepts** - MEDIUM; A page shows ten distinct ways a changing value can animate: ghost trail, block assemble, odometer roll, blur crossfade, split-flap, weight pop, particle collapse, scanline reveal, spring count-up, motion-blur echoes; all running live at 250 ms and 1 s, dark and light, no layout shift; motion always runs, the OS reduced-motion query is ignored
+  - evidence: ten cards animate with identical frame counts under emulated reduce (e.g. blocks 363/363, particles 242/242); chip reports the system setting with no force control; served on 41887 sha256 dad8bc85
+  - test: open the page; ten concepts animate on every value change, at both intervals and both modes, with no layout shift
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T20:47:03Z @kj added
+  - log: 2026-10-28T21:50:55Z @kj amended text "A page shows ten distinct ways a changing value can animate: ghost trail, block assemble, odometer roll, blur crossfade, split-flap, weight pop, particle collapse, scanline reveal, spring count-up, motion-blur echoes; all running live at 250 ms and 1 s, dark and light, no layout shift; the owner picks one" -> "A page shows ten distinct ways a changing value can animate: ghost trail, block assemble, odometer roll, blur crossfade, split-flap, weight pop, particle collapse, scanline reveal, spring count-up, motion-blur echoes; all running live at 250 ms and 1 s, dark and light, no layout shift; motion always runs, the OS reduced-motion query is ignored"; reason: the page must state and demonstrate the forced-motion policy the owner just set
+  - log: 2026-10-28T22:17:43Z @kj closed
+- [ ] `ACC-VIEW-102-TREE-SORT` **Tree sorting is hierarchical** - MEDIUM; In tree view sorting is hierarchical: siblings sort by the chosen column and direction, a parent row and its subtree stay together, the sort never detaches a child from its parent, and the header marks the active column and direction
+  - test: tree view, sort by each column; siblings reorder at every level, children stay under their parent
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T20:55:23Z @kj added
+- [ ] `ACC-VIEW-103-TREE-DEPTH` **Process tree display level and folding** - HIGH; The process tree offers a display level: selecting N expands the root and every process down to depth N, default 3; any node folds and unfolds on its own at every level; the chosen level and the fold state are remembered per browser
+  - test: select level 1, 2, 3; the rows stop at that depth; fold and unfold a node at each level; reload keeps both
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T20:55:23Z @kj added
+- [ ] `ACC-VIEW-104-CONFIG-DIM` **Config menu dims the dashboard behind it** - MEDIUM; While the CONFIG popover is open, a single translucent scrim covers the top bar and every panel, the popover stays undimmed and interactive, a click on the scrim closes the menu, and keyboard focus stays inside the menu
+  - test: open CONFIG; measure the panels darkening behind the popover, its own contrast unchanged, and a scrim click closing it
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-28T21:12:50Z @kj added
+- [ ] `ACC-VIEW-108-NUM-MOTION` **Config chooses the number-change animation** - HIGH; CONFIG general page gains a number row with six options: none (default), spring up, motion blur, odometer, spring blur - a spring count-up whose intermediate values leave fading echoes - and segment flip, where digits are drawn as seven-segment shapes and only the segments that change switch; per browser; animates only on a value change and never moves layout
+  - test: open CONFIG, switch the number effect, watch a stat change on a 250 ms tick
+  - log: 2026-10-28T21:49:01Z @kj added
+  - log: 2026-10-28T21:50:02Z @kj amended text "CONFIG general page gains a number row with four options: none (default, today's instant update), spring up, motion blur (echoes), odometer. Per browser, saved like motion; an animation runs only when a value changes, never moves layout, and obeys prefers-reduced-motion and the motion toggle" -> "CONFIG general page gains a number row with five options: none (default), spring up, motion blur, odometer, and spring blur - a spring count-up whose intermediate values leave fading echoes. Per browser; animates only on a value change, never moves layout, obeys reduced motion and the motion toggle"
+  - log: 2026-10-28T21:50:55Z @kj amended text "CONFIG general page gains a number row with five options: none (default), spring up, motion blur, odometer, and spring blur - a spring count-up whose intermediate values leave fading echoes. Per browser; animates only on a value change, never moves layout, obeys reduced motion and the motion toggle" -> "CONFIG general page gains a number row with five options: none (default), spring up, motion blur, odometer, spring blur - a spring count-up whose intermediate values leave fading echoes. Per browser; animates only on a value change, never moves layout; only the app's motion toggle stops it"
+  - log: 2026-10-28T22:10:18Z @kj amended text "CONFIG general page gains a number row with five options: none (default), spring up, motion blur, odometer, spring blur - a spring count-up whose intermediate values leave fading echoes. Per browser; animates only on a value change, never moves layout; only the app's motion toggle stops it" -> "CONFIG general page gains a number row with six options: none (default), spring up, motion blur, odometer, spring blur - a spring count-up whose intermediate values leave fading echoes - and segment flip, where digits are drawn as seven-segment shapes and only the segments that change switch; per browser; animates only on a value change and never moves layout"; reason: the owner added a sixth effect; the list must stay complete
+- [ ] `ACC-VIEW-109-NUM-MORE` **Ten further number-change concepts** - MEDIUM; A second design page with ten new number-change animation concepts beyond the first ten, on the same series, phase offsets, speed control and replay, each named with its mechanism and build note; motion always runs, the OS reduced-motion query is ignored
+  - log: 2026-10-28T21:49:01Z @kj added
+  - log: 2026-10-28T21:50:55Z @kj amended text "A second design page with ten new number-change animation concepts beyond the first ten, on the same series, phase offsets, speed control, replay and motion-state chip, each named with its mechanism and build note, verified in Chromium" -> "A second design page with ten new number-change animation concepts beyond the first ten, on the same series, phase offsets, speed control and replay, each named with its mechanism and build note; motion always runs, the OS reduced-motion query is ignored"
+- [ ] `ACC-VIEW-110-TIME-AXIS` **Config chooses the graph time axis** - HIGH; CONFIG gains a time axis row with 1, 2, 3, 5 and 10 minutes; default 3 minutes instead of the fixed 240 s. Applies to every graph and every viewer, sizes the history to the window, redraws the axis and is saved to the loaded config file
+  - test: open CONFIG, pick each window, confirm the plots span it and the axis labels follow
+  - log: 2026-10-28T21:53:35Z @kj added
+- [ ] `ACC-VIEW-111-TIP-EXPLAIN` **A terse stat explains itself in the standard tooltip** - MEDIUM; Every terse stat explains itself in the house tooltip, shown 3 s after the pointer rests on it and placed at the pointer: what the number counts, its unit and its source in plain words; the CPU footer's load values are the first, naming tasks runnable or blocked and the 1, 5 and 15 minute spans
+  - test: hover the CPU load footer for 3 s; the tooltip names the metric, the spans and the source
+  - log: 2026-10-28T21:56:56Z @kj added
+  - log: 2026-10-28T21:57:39Z @kj amended text "Every terse stat explains itself in the house tooltip after the 3 s hover delay: what the number counts, its unit and its source, in plain words; the CPU footer's load values are the first, naming tasks runnable or blocked and the 1, 5 and 15 minute spans" -> "Every terse stat explains itself in the house tooltip, shown 3 s after the pointer rests on it and placed at the pointer: what the number counts, its unit and its source in plain words; the CPU footer's load values are the first, naming tasks runnable or blocked and the 1, 5 and 15 minute spans"; reason: the placement rule belongs to the same tooltip behaviour
+- [ ] `ACC-VIEW-118-NUM-MORPH` **Third board: ten morphing concepts** - LOW; A third design page with ten further number animations centred on morphing, where the old digits flow into the new ones rather than appearing; same harness as the first two boards - series, phase offsets, speed control, replay, tick counter, motion always runs - verified in Chromium
+  - test: open the board; ten cards each show at least three intermediate frames that differ from both the old and the new value
+  - log: 2026-10-28T22:10:47Z @kj added
+- [x] `ACC-VIEW-119-MORPH-DIVERSE` **Particle morphs travel diverse paths** - MEDIUM; In the Block assemble and Particle collapse cards the dots pair through a deterministic scramble, not nearest order: at least a third cross to another part of the glyph, trajectories differ in length and direction, and the start still covers the old digits and the end the new ones
+  - evidence: blocks 46.8% and particles 49.2% of pairs land beyond the fifth-nearest target, travel SD 14.6-23.5 px, crossings 41-61%, shapes still match old/new at 0.1x; served on 41887 sha aa4f21f5
+  - test: replay both cards at 0.1x; measure travel distances, crossings and old/new IoU
+  - log: 2026-10-28T22:19:02Z @kj added
+  - log: 2026-10-28T23:26:57Z @kj closed
+- [ ] `ACC-VIEW-120-ANIM-COMPLETE` **A number animation runs to its end** - HIGH; A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each effect fits the 250 ms interval at 1x; pause and motion off stop at the true value
+  - test: watch a stat at 250 ms and 0.25x: no transition stops part way, and the value settles at the latest reading
+  - log: 2026-10-28T22:19:29Z @kj added
+  - log: 2026-10-28T22:43:41Z @kj amended text "When a value changes mid-animation the running animation finishes and the newest value is applied afterwards, so no transition is cut in half; each effect is timed to fit the 250 ms interval at 1x, and this holds on the dashboard and on the design boards" -> "A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each effect fits the 250 ms interval at 1x; pause and motion off stop at the true value"; reason: particle effects retarget continuously; discrete transitions still complete
+- [ ] `ACC-VIEW-121-FLUID` **Particles stay in motion and settle when steady** - HIGH; Particle concepts never freeze between changes: particles carry velocity and springs, retarget to the newest digits without restarting, stay continuously in motion while values change, and settle to rest when the value stops; per-frame displacement is bounded, nothing teleports, and the page holds at least 50 frames per second
+  - test: watch a particle card through three rapid changes; then hold the value still and watch the motion die out
+  - log: 2026-10-28T22:43:40Z @kj added
+- [ ] `ACC-VIEW-126-RATE-THRESHOLD` **Micro-changes do not restart the particles** - HIGH; A new value starts a morph only when it moves by at least a set fraction of the display range; smaller changes update the text without moving particles, so they settle between changes instead of being constantly in motion, and a steady value leaves them at rest
+  - test: feed steps below the threshold: no morph starts; then a large step: one morph starts and settles
+  - log: 2026-10-28T23:31:27Z @kj added
+  - log: 2026-10-28T23:53:07Z @kj board 1 cards pass 2026-10-29: 20 micro-steps start 0 morphs, one 10 percent step starts 1, settle about 1.1 s; boards 2 and 3 still carry the old engine, so the item stays open
+- [ ] `ACC-VIEW-127-EXACT-TEXT` **Settled numbers are real text, not drawn glyphs** - HIGH; When a particle or block card settles the number is real text in the page font, not canvas-drawn shapes: after the settle a text node shows the value, its mask matches a control rendering of the same string pixel for pixel, and the canvas layer is hidden
+  - test: let a card settle; compare its pixels with a control text node in the same font and size
+  - log: 2026-10-28T23:31:32Z @kj added
+  - log: 2026-10-28T23:53:07Z @kj board 1 cards pass 2026-10-29: canvas hidden at rest, text node in the page font, pixel diff 0 of 4040 against a control rendering; boards 2 and 3 still carry the old engine, so the item stays open
+- [ ] `ACC-VIEW-128-TICK-LABELS` **Seconds labels under every chart's vertical ticks** - HIGH; faint seconds label under each vertical grid tick of every chart, sparklines included, reading like the Network axis: 180 s, 120 s, 60 s, now; space comes from moving each sparkline panel's footer into its header right side, dropping no field; labels follow the selected window
+  - test: the CPU and Memory sparklines carry one faint label per vertical tick, wording equal to the Network axis
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-28T23:47:43Z @kj chart.rs hands the tick ages to the template; the sparkline axis renders them at 9 px in the muted label colour
+  - log: 2026-10-28T23:47:43Z @kj added
+  - log: 2026-10-28T23:48:44Z @kj amended text "faint seconds label under every vertical grid tick of every chart, the CPU, Memory and Processes sparklines included, reading like the Network and GPU axis: 240 s, 180 s, 120 s, 60 s, now; the labels follow the selected time window" -> "faint seconds label under each vertical grid tick of every chart, sparklines included, reading like the Network axis: 180 s, 120 s, 60 s, now; space comes from moving each sparkline panel's footer into its header right side, dropping no field; labels follow the selected window"
+- [ ] `ACC-VIEW-129-LOAD-LABELS` **Each load average carries its own window** - HIGH; each load average reads value/window - '23/1m 25/5m 29/15m' in the CPU sparkline header and '0.34/1m 0.38/5m 0.44/15m' in the CPU gauge - replacing the bare triple and the '1 · 5 · 15 min' caption; the windows are the kernel's fixed 1, 5 and 15 minutes
+  - test: the CPU gauge shows 1 min, 5 min and 15 min beside their values, and the CPU sparkline header shows the same triple
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-28T23:49:46Z @kj loadavg_value reads the fixed 1, 5 and 15 minute averages from /proc/loadavg; the template puts each label beside its number
+  - log: 2026-10-28T23:49:46Z @kj added
+  - log: 2026-10-28T23:51:05Z @kj amended text "each load average gets its window label inline, '1 min 0.34  5 min 0.38  15 min 0.44', in the CPU gauge panel and the CPU sparkline header, replacing the separate '1 · 5 · 15 min' caption; the windows are the kernel's fixed 1, 5 and 15 minutes" -> "each load average reads value/window - '23/1m 25/5m 29/15m' in the CPU sparkline header and '0.34/1m 0.38/5m 0.44/15m' in the CPU gauge - replacing the bare triple and the '1 · 5 · 15 min' caption; the windows are the kernel's fixed 1, 5 and 15 minutes"
+- [ ] `ACC-VIEW-130-LOAD-SCALE` **CPU load switch: normalised or aggregate percent** - HIGH; CONFIG CPU page gains a CPU load switch: Normalised shows each 1/5/15 minute load as a percentage of the whole machine, 23 -> 36%/1m (0-100%); Aggregate shows the same sum over cores, 23 -> 2300%/1m (0-6400% at 64 cores); both places follow, the choice persists
+  - test: Aggregate turns the CPU load triple into 0-6400% values in the gauge and the sparkline header, Normalised into 0-100%, and a reload keeps the choice
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-28T23:52:47Z @kj normalised divides the load average by the core count and multiplies by 100; aggregate leaves it as a per-core sum times 100; the value rides the existing config radio group app.js persists
+  - log: 2026-10-28T23:52:47Z @kj added
+- [ ] `ACC-VIEW-131-LOAD-WIDTH` **Load figures reserve the width of their widest form** - HIGH; every load figure reserves its widest form in the active mode - '100%' normalised against '6400%' aggregate - so crossing a digit count moves no neighbour; number effects animate the four-digit values at the same duration; the bound follows the core count
+  - test: switch to aggregate and watch 99%/1m grow to 2300%/1m with no neighbour moving (0.5 px over 10 s), in the gauge and the header
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-28T23:52:55Z @kj the data-w reservation switches with the mode, 100% against 6400%, and the existing number effects take the wider integer unchanged
+  - log: 2026-10-28T23:52:55Z @kj added
+- [ ] `ACC-VIEW-132-GAUGE-SQUIRCLE` **Gauges draw as a segment of a very rounded rectangle** - HIGH; every gauge in the app draws as a segment of a very rounded rectangle (squircle): CPU and Memory alike, band, tick marks and scale labels on one squircle path, keeping the car-dial sweep and centre percentage; no circular gauge remains; the shape scales with the gauge box at every breakpoint
+  - test: the band's radius at 45 degrees exceeds its radius on the axes by at least 8 percent, ticks sit on the band, and the scale labels stay outside it
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-29T00:06:42Z @kj one parametric superellipse builder in chart.rs emits the arc; gauge_ticks and the scale labels sample the same curve, so both gauges follow it
+  - log: 2026-10-29T00:06:42Z @kj added
+  - log: 2026-10-29T00:06:56Z @kj amended text "the CPU and Memory gauges draw as a segment of a very rounded rectangle (squircle) instead of a circle: band, tick marks and scale labels follow one squircle path, keeping the car-dial sweep; the centre percentage is unchanged" -> "the CPU and Memory gauges draw as a segment of a very rounded rectangle (squircle): band, tick marks and scale labels follow one squircle path, keeping the car-dial sweep and the centre percentage; the shape scales with the gauge box, same exponent and sweep at every breakpoint"
+  - log: 2026-10-29T00:07:15Z @kj amended text "the CPU and Memory gauges draw as a segment of a very rounded rectangle (squircle): band, tick marks and scale labels follow one squircle path, keeping the car-dial sweep and the centre percentage; the shape scales with the gauge box, same exponent and sweep at every breakpoint" -> "every gauge in the app draws as a segment of a very rounded rectangle (squircle): CPU and Memory alike, band, tick marks and scale labels on one squircle path, keeping the car-dial sweep and centre percentage; no circular gauge remains; the shape scales with the gauge box at every breakpoint"
 
 ## Layout and density `LAYOUT`
 

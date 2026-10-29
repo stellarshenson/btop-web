@@ -1,11 +1,20 @@
 <header class="ph"><h2 id="net-title">Network</h2><span class="head-right">{% if let Some(selected) = snapshot.net.selected_iface %}<span class="meta" data-p="3" data-field="net-interface" data-tip="Selected interface, no unit&#10;source: getifaddrs(3) interface list&#10;net_iface picks it, else the largest total&#10;lo is skipped unless it is the only one">{{ selected }}</span>{% endif %}<span class="meta" data-p="3" data-field="net-axis-note" data-tip="Plot scale, unit bytes/s per row&#10;source: net_auto; five-tick mean × 1.3 rise&#10;× 3.0 fall after net_fall seconds&#10;net_floor is the lowest; ▼ ▲ per direction">scale ▼ <span data-w="999M">{{ crate::collector::bytes_short(*snapshot.net.scale_down.label_max) }}</span> ▲ <span data-w="999M">{{ crate::collector::bytes_short(*snapshot.net.scale_up.label_max) }}</span>{% if let Some(window) = snapshot.axis_labels().first() %} &middot; {{ window }}{% endif %}</span></span></header>
 <div class="net-body">
   <div class="net-plots">
-    <div class="net-plot net-down" data-chart="net-down" role="img" aria-label="Download history">
-      {% if !snapshot.net.down_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.net.scale_down.style.is_empty() %} rescale" style="{{ snapshot.net.scale_down.style }}" data-rescale="{{ snapshot.net.scale_down.rescale }}{% endif %}"><path class="area" d="{{ snapshot.net.down_chart.area }}"></path><path class="line" d="{{ snapshot.net.down_chart.line }}"></path></g></svg>{% endif %}
+    {% let down_scale = snapshot.net.down_scale_labels() %}
+    <div class="net-plot-row">
+      <div class="plot-scale" aria-hidden="true"><span class="scale-total">{{ down_scale[0] }}</span><span class="scale-mid" style="--at:50">{{ down_scale[1] }}</span><span class="scale-zero">{{ down_scale[2] }}</span></div>
+      <div class="net-plot net-down" data-chart="net-down" role="img" aria-label="Download history">
+        {% if !snapshot.net.down_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.net.scale_down.style.is_empty() %} rescale" style="{{ snapshot.net.scale_down.style }}" data-rescale="{{ snapshot.net.scale_down.rescale }}{% endif %}"><path class="area" d="{{ snapshot.net.down_chart.area }}"></path><path class="line" d="{{ snapshot.net.down_chart.line }}"></path></g></svg>{% endif %}
+      </div>
     </div>
-    <div class="net-plot net-up" data-chart="net-up" role="img" aria-label="Upload history">
-      {% if !snapshot.net.up_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.net.scale_up.style.is_empty() %} rescale" style="{{ snapshot.net.scale_up.style }}" data-rescale="{{ snapshot.net.scale_up.rescale }}{% endif %}"><path class="area" d="{{ snapshot.net.up_chart.area }}"></path><path class="line" d="{{ snapshot.net.up_chart.line }}"></path></g></svg>{% endif %}
+    <div class="net-boundary" aria-hidden="true"></div>
+    {% let up_scale = snapshot.net.up_scale_labels() %}
+    <div class="net-plot-row">
+      <div class="plot-scale" aria-hidden="true"><span class="scale-total">{{ up_scale[0] }}</span><span class="scale-mid" style="--at:50">{{ up_scale[1] }}</span><span class="scale-zero">{{ up_scale[2] }}</span></div>
+      <div class="net-plot net-up" data-chart="net-up" role="img" aria-label="Upload history">
+        {% if !snapshot.net.up_chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.net.scale_up.style.is_empty() %} rescale" style="{{ snapshot.net.scale_up.style }}" data-rescale="{{ snapshot.net.scale_up.rescale }}{% endif %}"><path class="area" d="{{ snapshot.net.up_chart.area }}"></path><path class="line" d="{{ snapshot.net.up_chart.line }}"></path></g></svg>{% endif %}
+      </div>
     </div>
     <div class="xaxis" data-p="3" data-field="net-x-axis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>
   </div>

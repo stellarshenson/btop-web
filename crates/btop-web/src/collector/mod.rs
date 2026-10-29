@@ -430,6 +430,31 @@ impl NetSnapshot {
     pub fn total_up_label(&self) -> String {
         rate(self.total_up)
     }
+
+    /// The download plot's scale gutter, top to bottom: the shown ceiling,
+    /// its half and zero (DEF-GRAPH-63-GRID-UNITS).
+    pub fn down_scale_labels(&self) -> [String; 3] {
+        scale_labels(self.scale_down.label_max)
+    }
+
+    /// The upload plot's scale gutter, as [`Self::down_scale_labels`].
+    pub fn up_scale_labels(&self) -> [String; 3] {
+        scale_labels(self.scale_up.label_max)
+    }
+}
+
+/// The three labels of a plot's scale gutter for a shown ceiling, through
+/// btop's short humanizer: the ceiling, its half and zero. With no ceiling
+/// the gutter is empty, never the word "unavailable" over the plot.
+fn scale_labels(label_max: Option<u64>) -> [String; 3] {
+    let Some(max) = label_max else {
+        return Default::default();
+    };
+    [
+        bytes_short(Some(max)),
+        bytes_short(Some(max / 2)),
+        bytes_short(Some(0)),
+    ]
 }
 
 #[derive(Debug, Clone, Default)]

@@ -22,7 +22,8 @@ Options:
   -u, --update <MS>     Sampling interval in milliseconds, 100 to 86400000
                         (default 250)
       --theme <N>       Theme number: 0 Default, 1 Everforest Medium,
-                        2 Flexoki, 3 Gruvbox, 4 Solarized
+                        2 Flexoki, 3 Gruvbox, 4 Solarized, 5 Synthwave,
+                        6 Terracotta, 7 Ultraviolet, 8 Cyberpunk
       --proc-view <VIEW>
                         Starting process list for a viewer with no stored
                         choice: top, all or tree (default tree when btop's
@@ -176,7 +177,7 @@ async fn main() -> Result<()> {
     state.container = config
         .container
         .as_ref()
-        .map(|container| container.title().into());
+        .map(|container| container.tip().into());
     let app = btop_web::app(state);
 
     let listener = TcpListener::bind(config.listen)

@@ -46,7 +46,7 @@ pub const fn default_port() -> u16 {
 pub const DEFAULT_UPDATE_MS: u64 = 250;
 
 /// The shipped themes in picker order. Index 0 is the built-in Default.
-pub const THEMES: [&str; 8] = [
+pub const THEMES: [&str; 9] = [
     "default",
     "everforest-medium",
     "flexoki",
@@ -55,6 +55,7 @@ pub const THEMES: [&str; 8] = [
     "synthwave",
     "terracotta",
     "ultraviolet",
+    "cyberpunk",
 ];
 
 /// ACC-CONF-60-VIEW-FLAG: the process list views `--proc-view` accepts.
@@ -95,7 +96,7 @@ pub struct ServerOption {
     pub help: &'static str,
 }
 
-const THEME_CHOICES: [(&str, &str); 8] = [
+const THEME_CHOICES: [(&str, &str); 9] = [
     ("0", "0 default"),
     ("1", "1 everforest-medium"),
     ("2", "2 flexoki"),
@@ -104,6 +105,7 @@ const THEME_CHOICES: [(&str, &str); 8] = [
     ("5", "5 synthwave"),
     ("6", "6 terracotta"),
     ("7", "7 ultraviolet"),
+    ("8", "8 cyberpunk"),
 ];
 
 /// Each value is its own label.
@@ -1051,7 +1053,8 @@ proc_filter_kernel = True
                 "solarized",
                 "synthwave",
                 "terracotta",
-                "ultraviolet"
+                "ultraviolet",
+                "cyberpunk"
             ]
         );
         let mut config = Config::from_text(&default_config_text(), "test").unwrap();
@@ -1059,6 +1062,8 @@ proc_filter_kernel = True
         assert_eq!(config.theme_id(), "solarized");
         config.apply("theme = 7\n", "test.conf").unwrap();
         assert_eq!(config.theme_id(), "ultraviolet");
+        config.apply("theme = 8\n", "test.conf").unwrap();
+        assert_eq!(config.theme_id(), "cyberpunk");
     }
 
     /// The theme numbers are the picker order: the menu lists exactly
@@ -1074,11 +1079,11 @@ proc_filter_kernel = True
     #[test]
     fn an_out_of_range_theme_lists_the_valid_range() {
         let mut config = Config::from_text(&default_config_text(), "test").unwrap();
-        let error = config.apply("theme = 8\n", "test.conf").unwrap_err();
+        let error = config.apply("theme = 9\n", "test.conf").unwrap_err();
         let message = error.to_string();
         assert!(message.contains("test.conf:1"), "{message}");
         assert!(
-            message.contains("theme must be in 0..=7, got 8"),
+            message.contains("theme must be in 0..=8, got 9"),
             "{message}"
         );
     }
@@ -1154,7 +1159,7 @@ proc_filter_kernel = True
             ("net_download", "1.5"),
             ("show_swap", "yes"),
             ("cpu_core_map", "0-1"),
-            ("theme", "8"),
+            ("theme", "9"),
             ("custom_cpu_name", "a\nb"),
             ("custom_cpu_name", "a\rb"),
             ("custom_cpu_name", "a\"b"),

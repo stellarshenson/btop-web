@@ -56,6 +56,7 @@ fn every_shipped_pair_has_both_modes() {
         "synthwave",
         "terracotta",
         "ultraviolet",
+        "cyberpunk",
     ] {
         assert!(
             ids.contains(&expected),
@@ -249,6 +250,56 @@ fn plot_grid_is_very_faint_in_every_pair_and_mode() {
                 hex(colors["grid"]),
                 hex(colors["surface"])
             );
+        }
+    }
+}
+
+/// ACC-GRAPH-99-LANE-BORDER: the GPU lane rule paints the panel-border token
+/// at 55% over the surface (app.css), so it stays above the plot grid and
+/// below every data line and text token in every pair and mode, and inside
+/// the measured 1.65-2.42:1 panel-border band in Default (DEF-VIEW-60).
+#[test]
+fn gpu_lane_border_sits_between_the_grid_and_the_text() {
+    const LANE_BORDER_WEIGHT: f64 = 0.55;
+    for pair in embedded_pairs() {
+        for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
+            let colors = semantic(palette);
+            let surface = colors["surface"];
+            let rule = mix(colors["border"], surface, LANE_BORDER_WEIGHT);
+            let ratio = contrast(rule, surface);
+            let grid = contrast(colors["grid"], surface);
+            assert!(
+                ratio > grid,
+                "{} {mode}: lane border {} on {} is {ratio:.2}:1, at or below the grid's {grid:.2}:1",
+                pair.id,
+                hex(rule),
+                hex(surface)
+            );
+            for token in [
+                "chart-gpu-0",
+                "chart-gpu-1",
+                "chart-gpu-2",
+                "text",
+                "text-strong",
+            ] {
+                let line = contrast(colors[token], surface);
+                assert!(
+                    ratio < line,
+                    "{} {mode}: lane border {} on {} is {ratio:.2}:1, at or above {token}'s {line:.2}:1",
+                    pair.id,
+                    hex(rule),
+                    hex(surface)
+                );
+            }
+            if pair.id == "default" {
+                assert!(
+                    (1.65..=2.42).contains(&ratio),
+                    "{} {mode}: lane border {} on {} is {ratio:.2}:1, outside the panel-border band",
+                    pair.id,
+                    hex(rule),
+                    hex(surface)
+                );
+            }
         }
     }
 }

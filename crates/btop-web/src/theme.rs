@@ -432,6 +432,11 @@ pub struct ThemeChoice {
     pub label: String,
 }
 
+/// ACC-THEME-101-CYBERPUNK: a pair appended after the first eight lists last,
+/// so the picker numbers 0-7 already stored in a config file still name the
+/// same themes. The list is the append order.
+const APPENDED: [&str; 1] = ["cyberpunk"];
+
 /// Every theme in the embedded `themes/` directory, paired with its
 /// counterpart, plus the built-in Default.
 pub fn embedded_pairs() -> Vec<ThemePair> {
@@ -483,6 +488,12 @@ pub fn embedded_pairs() -> Vec<ThemePair> {
             light,
         });
     }
+    pairs.sort_by_key(|pair| {
+        APPENDED
+            .iter()
+            .position(|id| *id == pair.id)
+            .map_or(0, |at| at + 1)
+    });
     pairs
 }
 
@@ -761,7 +772,7 @@ mod tests {
     /// key in both modes, so no CSS custom property falls back to Default.
     #[test]
     fn designed_themes_define_every_key_and_mode() {
-        let designed = ["synthwave", "terracotta", "ultraviolet"];
+        let designed = ["synthwave", "terracotta", "ultraviolet", "cyberpunk"];
         let mut found = 0;
         for path in ThemeAsset::iter() {
             if !designed.iter().any(|id| path.starts_with(id)) {

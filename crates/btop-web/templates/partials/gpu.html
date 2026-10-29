@@ -4,6 +4,7 @@
   {% let lane = crate::chart::gpu_lane(snapshot.gpu.devices.len()) %}
   {% for device in snapshot.gpu.devices %}
   <div class="gpu-lane" data-gpu="{{ loop.index0 }}" data-selected="true">
+    <div class="plot-scale" aria-hidden="true"><span class="scale-total">100%</span><span class="scale-mid" style="--at:75">75%</span><span class="scale-mid" style="--at:50">50%</span><span class="scale-mid" style="--at:25">25%</span><span class="scale-zero">0%</span></div>
     <div class="net-plot" data-chart="gpu" role="img" aria-label="GPU {{ loop.index0 }} utilisation history"><svg class="chart" viewBox="0 0 {{ lane.width }} {{ lane.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="gpu-series g{{ loop.index0 % 3 }}">{% if !device.chart.line.is_empty() %}<path class="area" d="{{ device.chart.area }}"></path><path class="line" d="{{ device.chart.line }}"></path>{% endif %}</g></svg></div>
     <div class="net-legend">
       <div class="legend-item" data-gpu="{{ loop.index0 }}" data-selected="true">
@@ -14,6 +15,7 @@
         <span class="gpu-bars" data-tip="GPU {{ loop.index0 }} bars, unit percent of full&#10;load = utilisation; mem = VRAM used / total&#10;pwr = power draw / power limit&#10;source: NVML, or DRM sysfs for AMD" aria-hidden="true"><i class="gbl">load</i>{% if let Some(value) = device.utilization_bar() %}<span class="meter" style="--value:{{ value }}"></span>{% else %}<span class="meter" data-state="unavailable"></span>{% endif %}<i class="gbl">mem</i>{% if let Some(value) = device.vram_bar() %}<span class="meter" style="--value:{{ value }}"></span>{% else %}<span class="meter" data-state="unavailable"></span>{% endif %}<i class="gbl">pwr</i>{% if let Some(value) = device.power_bar() %}<span class="meter" style="--value:{{ value }}"></span>{% else %}<span class="meter" data-state="unavailable"></span>{% endif %}</span>
       </div>
     </div>
+    {% if !loop.last %}<div class="gpu-boundary" aria-hidden="true"></div>{% endif %}
   </div>
   {% endfor %}
   <div class="xaxis" data-p="3" data-field="gpu-x-axis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>

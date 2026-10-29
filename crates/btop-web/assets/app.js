@@ -9,6 +9,7 @@
 
   var GPU_KEY = "btop-web-gpu-selection";
   var config = document.getElementById("config");
+  var scrim = document.getElementById("config-scrim");
   var pauseButton = document.getElementById("pause-btn");
   var filterInput = document.getElementById("filter");
   var procCount = document.getElementById("proc-count");
@@ -38,84 +39,118 @@
 
   // The server writes each stat's text into data-tip; this code only places
   // the one box. A process cell takes its column header's text, so a table of
-  // hundreds of rows repeats no attribute. The box stays clear of the hovered
-  // stat, every plot box and the viewport edges, and a pointer that stays put
-  // keeps it through the frame swaps.
+  // hundreds of rows repeats no attribute. The box opens after the pointer has
+  // rested TIP_WAIT_MS on one stat (DEF-VIEW-64), TIP_GAP right and TIP_DROP
+  // below the pointer so it covers neither the cursor nor the stat's own text
+  // (ACC-VIEW-111), flipped left or up only when it would leave the viewport
+  // and kept TIP_PAD inside it (DEF-VIEW-75). A frame replaces the stat under
+  // a still pointer, so the box re-reads the text the server now sends.
+  var TIP_WAIT_MS = 3000; // pointer rest on one stat before the box opens
+  var TIP_GAP = 12; // px from the pointer to the box's near side
+  var TIP_DROP = 16; // px from the pointer to the box's top
+  var TIP_PAD = 4; // px between the box and the viewport edge
   var tip = document.getElementById("tip");
-  var tipAt = null;
+  var tipAt = null; // the open box: { key, text }
+  var tipWait = 0; // the pointer-rest timer
+  var tipWant = null; // the stat the pointer rests on, not yet open
   var tipX = 0;
   var tipY = 0;
+
+  // A swapped fragment repeats the elements but not the nodes, so a stat's
+  // identity through a frame is its place in the document.
+  function tipEntry(el, text) {
+    var key = "";
+    for (var node = el; node && node !== document.body; node = node.parentElement) {
+      var index = 0;
+      for (var prev = node.previousElementSibling; prev; prev = prev.previousElementSibling) index += 1;
+      key += "/" + index;
+    }
+    return { el: el, key: key, text: text };
+  }
 
   function tipSource(node) {
     if (!node || !node.closest) return null;
     // A plot box carries no tooltip, and neither does its contents.
     if (node.closest("[data-chart]")) return null;
     var own = node.closest("[data-tip]");
-    if (own) return { el: own, text: own.getAttribute("data-tip") };
+    if (own) return tipEntry(own, own.getAttribute("data-tip"));
     var cell = node.closest("td");
     var table = cell ? cell.closest("table.ptable") : null;
     if (!table) return null;
     var head = table.querySelectorAll("thead th")[cell.cellIndex];
     if (!head || !head.hasAttribute("data-tip")) return null;
-    return { el: cell, text: head.getAttribute("data-tip") };
+    return tipEntry(cell, head.getAttribute("data-tip"));
   }
 
+  // The line boxes of a stat's own text: the numbers their own place
+  // protects, tall enough that no digit is clipped. A bar or a gauge with no
+  // text falls back to its whole box.
+  function textBox(anchor) {
+    var left = Infinity;
+    var top = Infinity;
+    var right = -Infinity;
+    var bottom = -Infinity;
+    var nodes = anchor.querySelectorAll("*");
+    var all = [anchor];
+    for (var index = 0; index < nodes.length; index += 1) all.push(nodes[index]);
+    for (index = 0; index < all.length; index += 1) {
+      var hasText = false;
+      for (var child = all[index].firstChild; child; child = child.nextSibling) {
+        if (child.nodeType === 3 && child.nodeValue.trim()) hasText = true;
+      }
+      if (!hasText) continue;
+      var box = all[index].getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) continue;
+      left = Math.min(left, box.left);
+      top = Math.min(top, box.top);
+      right = Math.max(right, box.right);
+      bottom = Math.max(bottom, box.bottom);
+    }
+    if (left === Infinity) return anchor.getBoundingClientRect();
+    return { left: left, top: top, right: right, bottom: bottom };
+  }
+
+  // The box opens TIP_GAP right and TIP_DROP below the pointer. It flips to
+  // the pointer's left or above it only when that side would leave the
+  // viewport, and it stays TIP_PAD inside the viewport. Where the pointer sits
+  // on the stat's own text, the box moves just below that text, or above it
+  // when below is off screen, so the hovered value stays readable.
   function placeTip(anchor) {
-    var pad = 8;
-    var gap = 6;
-    var box = anchor.getBoundingClientRect();
     var width = tip.offsetWidth;
     var height = tip.offsetHeight;
     var vw = window.innerWidth;
     var vh = window.innerHeight;
-    var charts = [];
-    var nodes = document.querySelectorAll("[data-chart]");
-    for (var index = 0; index < nodes.length; index += 1) {
-      var rect = nodes[index].getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) charts.push(rect);
+    var x = tipX + TIP_GAP;
+    if (x + width > vw - TIP_PAD) x = tipX - TIP_GAP - width;
+    var y = tipY + TIP_DROP;
+    if (y + height > vh - TIP_PAD) y = tipY - TIP_DROP - height;
+    var text = textBox(anchor);
+    if (x < text.right && x + width > text.left && y < text.bottom && y + height > text.top) {
+      var below = text.bottom + TIP_GAP;
+      y = below + height <= vh - TIP_PAD ? below : text.top - TIP_GAP - height;
     }
-    // On screen, clear of the hovered stat and of every plot.
-    function clear(x, y) {
-      if (x < pad || y < pad || x + width > vw - pad || y + height > vh - pad) return false;
-      if (x < box.right + gap && x + width > box.left - gap && y < box.bottom + gap && y + height > box.top - gap) return false;
-      for (var hit = 0; hit < charts.length; hit += 1) {
-        // 1 px of slack: a live frame can shift a chart by a fraction.
-        if (x < charts[hit].right + 1 && x + width > charts[hit].left - 1 && y < charts[hit].bottom + 1 && y + height > charts[hit].top - 1) return false;
-      }
-      return true;
-    }
-    function put(x, y) {
-      tip.style.left = x + "px";
-      tip.style.top = y + "px";
-    }
-    var align = [
-      Math.max(pad, Math.min(box.left, vw - width - pad)),
-      Math.max(pad, Math.min(box.right - width, vw - width - pad)),
-    ];
-    for (var side = 0; side < align.length; side += 1) {
-      for (var away = gap; away < vh + height; away += 6) {
-        if (clear(align[side], box.top - away - height)) return put(align[side], box.top - away - height);
-        if (clear(align[side], box.bottom + away)) return put(align[side], box.bottom + away);
-      }
-    }
-    var y = Math.max(pad, Math.min(box.top, vh - height - pad));
-    for (var across = gap; across < vw + width; across += 6) {
-      if (clear(box.right + across, y)) return put(box.right + across, y);
-      if (clear(box.left - across - width, y)) return put(box.left - across - width, y);
-    }
-    put(pad, pad);
+    put(
+      Math.max(TIP_PAD, Math.min(x, vw - TIP_PAD - width)),
+      Math.max(TIP_PAD, Math.min(y, vh - TIP_PAD - height))
+    );
+  }
+
+  function put(x, y) {
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
   }
 
   function hideTip() {
+    window.clearTimeout(tipWait);
+    tipWait = 0;
+    tipWant = null;
     tipAt = null;
     if (tip) tip.hidden = true;
   }
 
-  function showTip(source) {
-    if (!tip) return;
-    if (!source) return hideTip();
-    if (tipAt && tipAt.el === source.el && tipAt.text === source.text) return;
-    tipAt = source;
+  function openTip(source) {
+    tipAt = { key: source.key, text: source.text };
+    tipWant = null;
     tip.textContent = source.text;
     tip.hidden = false;
     tip.style.visibility = "hidden";
@@ -123,24 +158,41 @@
     tip.style.visibility = "";
   }
 
+  // The rest timer fired: open only if the pointer is still on that stat.
+  function openRest() {
+    tipWait = 0;
+    var want = tipWant;
+    tipWant = null;
+    var source = tipSource(document.elementFromPoint(tipX, tipY));
+    if (!source || (want && source.key !== want.key)) return;
+    openTip(source);
+  }
+
   // A frame replaces the stat under a still pointer; re-read its text.
   function refreshTip() {
     if (!tip || !tipAt || tip.hidden) return;
     var source = tipSource(document.elementFromPoint(tipX, tipY));
-    if (!source) return hideTip();
-    showTip(source);
+    if (!source || source.key !== tipAt.key) return hideTip();
+    if (source.text !== tipAt.text) openTip(source);
   }
 
   if (tip) {
     document.addEventListener("pointermove", function (event) {
       tipX = event.clientX;
       tipY = event.clientY;
-      showTip(tipSource(event.target));
+      var source = tipSource(event.target);
+      if (!source) return hideTip();
+      if ((tipAt && tipAt.key === source.key) || (tipWant && tipWant.key === source.key)) return;
+      hideTip();
+      tipWant = source;
+      tipWait = window.setTimeout(openRest, TIP_WAIT_MS);
     });
     document.addEventListener("pointerdown", hideTip);
     document.documentElement.addEventListener("pointerleave", hideTip);
     window.addEventListener("blur", hideTip);
     window.addEventListener("resize", hideTip);
+    // Capture, because the process table scrolls inside the page.
+    window.addEventListener("scroll", hideTip, true);
   }
 
   /* ---------- clock and live state ---------- */
@@ -169,6 +221,9 @@
       pauseButton.setAttribute("aria-pressed", String(paused));
       pauseButton.textContent = paused ? "resume" : "pause";
     }
+    // ACC-VIEW-120: a stopped page shows the true value at once; nothing
+    // queues while it is stopped.
+    if (stale || paused) cancelNumberRuns();
     syncMotion();
   }
 
@@ -225,11 +280,12 @@
   } catch (error) {
     // Storage is optional; motion stays on for this page view.
   }
-  var reducedMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   var motionFrame = 0;
 
+  // The OS reduced-motion query is not consulted: the owner's machine sets it
+  // on every page, so only the CONFIG motion toggle stops the clock.
   function motionAllowed() {
-    return motionPref && windowMs > 0 && lastFrameAt > 0 && !paused && !stale && !document.hidden && !(reducedMotion && reducedMotion.matches);
+    return motionPref && windowMs > 0 && lastFrameAt > 0 && !paused && !stale && !document.hidden;
   }
 
   function shiftSeries(progress) {
@@ -278,12 +334,550 @@
     } catch (error) {
       // Storage is optional; the choice holds for this page view.
     }
+    if (!motionPref) cancelNumberRuns();
     syncMotionControls();
     syncMotion();
   });
 
-  if (reducedMotion && reducedMotion.addEventListener) reducedMotion.addEventListener("change", syncMotion);
   document.addEventListener("visibilitychange", syncMotion);
+
+  /* ---------- number change effects (ACC-VIEW-108-NUM-MOTION) ---------- */
+
+  // The setting is per browser, stored like the motion toggle. Effects run on
+  // the [data-w] values only: each reserves its widest form, so a tween or an
+  // overlay moves no neighbour (ACC-LAYOUT-74), and tabular figures give 0 the
+  // advance and height of every other digit. Only the app's motion toggle
+  // stops them; the OS reduced-motion query is not consulted, because the
+  // owner's machine sets it on every page.
+  var NUM_KEY = "btop-web-num-motion";
+  var NUM_MODES = ["none", "spring", "blur", "odometer", "spring-blur", "segment"];
+  // ACC-VIEW-120: one effect lasts at most four fifths of the current interval,
+  // so it ends before the next frame replaces the value; NUM_MS caps it at the
+  // 250 ms interval's own duration.
+  var NUM_MS = 200;
+
+  function numDuration() {
+    var span = document.getElementById("update-interval");
+    var ms = span ? Number(span.getAttribute("data-update-ms")) || updateMs : updateMs;
+    return Math.max(1, Math.min(NUM_MS, ms * 0.8));
+  }
+
+  // ACC-VIEW-120: every started effect ends exactly once, naturally or on a
+  // stop, so the two counts on <html> prove no transition was cut.
+  var numStarted = 0;
+  var numCompleted = 0;
+
+  function numCount() {
+    document.documentElement.setAttribute("data-animations-started", String(numStarted));
+    document.documentElement.setAttribute("data-animations-completed", String(numCompleted));
+  }
+
+  numCount();
+  // Cap on echoes: each one is another painted text layer; past three the
+  // opacity is too faint to read, so more would cost paint time per tick and
+  // add nothing visible.
+  var NUM_ECHOES = 3;
+  var numMode = "none";
+  try {
+    var numStored = window.localStorage.getItem(NUM_KEY);
+    if (NUM_MODES.indexOf(numStored) !== -1) numMode = numStored;
+  } catch (error) {
+    // Storage is optional; none holds for this page view.
+  }
+  // One record per [data-w] in document order: the target text and the texts
+  // the echoes may show. A frame replaces the nodes, so the order is the key.
+  var numStates = [];
+  var numRuns = {};
+
+  function numParts(text) {
+    var match = /^(\D*)(\d+(?:\.\d+)?)([\s\S]*)$/.exec(text);
+    if (!match) return null;
+    var dot = match[2].indexOf(".");
+    return {
+      pre: match[1],
+      value: Number(match[2]),
+      decimals: dot === -1 ? 0 : match[2].length - dot - 1,
+      post: match[3]
+    };
+  }
+
+  function numFormat(parts, value) {
+    var text = parts.decimals > 0 ? value.toFixed(parts.decimals) : String(Math.round(value));
+    return parts.pre + text + parts.post;
+  }
+
+  function numLine(el) {
+    var line = parseFloat(window.getComputedStyle(el).lineHeight);
+    return line > 0 ? line : el.getBoundingClientRect().height;
+  }
+
+  // An echo is the old text in an absolute layer over the current value, so
+  // it fades without moving anything. z-index -1 puts it behind the number.
+  function numEcho(el, text, opacity, drift, duration) {
+    var layer = document.createElement("span");
+    layer.className = "num-echo";
+    layer.textContent = text;
+    layer.setAttribute("aria-hidden", "true");
+    el.appendChild(layer);
+    var animation = layer.animate(
+      [
+        { opacity: String(opacity), transform: "translateY(0)" },
+        { opacity: "0", transform: "translateY(" + drift + "px)" }
+      ],
+      { duration: Math.max(1, duration), easing: "ease-out", fill: "forwards" }
+    );
+    animation.onfinish = function () {
+      layer.remove();
+    };
+    return { layer: layer, animation: animation };
+  }
+
+  // ACC-VIEW-120: a frame replaces a panel's nodes, so a running effect carries
+  // its own layers into the node that replaced them and keeps its animation
+  // state. The new node's text is the newest reading; it is applied when the
+  // effect ends, so a burst coalesces to the latest value. The host marker is
+  // an attribute, not a class: htmx settles the class and style of a swapped
+  // element back to the server's own, which would undo a class 20 ms in.
+  function numAdopt(index, el) {
+    var run = numRuns[index];
+    if (!run || run.host.el === el) return;
+    var old = run.host.el;
+    old.removeAttribute("data-num-host");
+    el.textContent = "";
+    while (old.firstChild) el.appendChild(old.firstChild);
+    el.setAttribute("data-num-host", "");
+    run.host.el = el;
+  }
+
+  function numBegin(index, host, stop) {
+    numRuns[index] = { host: host, stop: stop };
+    numStarted += 1;
+    numCount();
+  }
+
+  // End one effect: its node shows the newest reading, never a value that a
+  // later frame replaced.
+  function numFinish(index) {
+    if (!numRuns[index]) return;
+    delete numRuns[index];
+    numCompleted += 1;
+    numCount();
+    var state = numStates[index];
+    if (!state) return;
+    state.el.textContent = state.text;
+    state.el.removeAttribute("data-num-host");
+  }
+
+  // A spring count-up: the text is rewritten from an underdamped spring, so
+  // the digits travel and overshoot briefly instead of swapping. k = 1600 and
+  // c = 60 leave one short overshoot and settle well inside the effect's
+  // duration. With trail, each intermediate value also leaves an echo behind.
+  // The closed form, not a per-frame Euler step: a 60 Hz frame makes c*dt = 1,
+  // the over-damped case, which hides the designed overshoot at that cadence.
+  function numSpring(index, el, before, after, trail) {
+    var host = { el: el };
+    var ms = numDuration();
+    var from = before.value;
+    var to = after.value;
+    var omega = Math.sqrt(1600);
+    var zeta = 60 / (2 * omega);
+    var omegaD = omega * Math.sqrt(1 - zeta * zeta);
+    var value = from;
+    var started = window.performance.now();
+    var echoAt = 0;
+    var echoes = [];
+    var frame = 0;
+    var tween = document.createElement("span");
+    tween.className = "num-tween";
+    host.el.textContent = "";
+    host.el.appendChild(tween);
+    host.el.setAttribute("data-num-host", "");
+
+    function draw(number) {
+      if (number < 0 && from >= 0 && to >= 0) number = 0;
+      tween.textContent = numFormat(after, number);
+    }
+
+    function finish() {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+      for (var echo = 0; echo < echoes.length; echo += 1) {
+        echoes[echo].animation.cancel();
+        echoes[echo].layer.remove();
+      }
+      numFinish(index);
+    }
+
+    function step(now) {
+      var elapsed = now - started;
+      // The frame timestamp, not the wall clock: an even display cadence.
+      var t = elapsed / 1000;
+      var decay = Math.exp(-zeta * omega * t);
+      var swing = Math.cos(omegaD * t) + ((zeta * omega) / omegaD) * Math.sin(omegaD * t);
+      value = to + decay * (from - to) * swing;
+      if (elapsed >= ms) {
+        finish();
+        return;
+      }
+      draw(value);
+      if (trail && elapsed - echoAt >= ms / 8) {
+        echoAt = elapsed;
+        echoes.push(numEcho(host.el, tween.textContent, 0.3, -6, ms - elapsed));
+        if (echoes.length > NUM_ECHOES) {
+          var oldest = echoes.shift();
+          oldest.animation.cancel();
+          oldest.layer.remove();
+        }
+      }
+      frame = window.requestAnimationFrame(step);
+    }
+
+    draw(from);
+    // The timer, not the display cadence, ends the effect inside the interval.
+    var timer = window.setTimeout(finish, ms);
+    numBegin(index, host, finish);
+    frame = window.requestAnimationFrame(step);
+  }
+
+  // Motion blur: the last values sit behind the current one at falling
+  // opacity and drift away. Only the current text is real; the layers are
+  // aria-hidden and removed within the effect's duration.
+  function numBlur(index, el, text, history) {
+    var host = { el: el };
+    var ms = numDuration();
+    var opacity = [0.3, 0.17, 0.09];
+    var echoes = [];
+    var tween = document.createElement("span");
+    tween.className = "num-tween";
+    tween.textContent = text;
+    host.el.textContent = "";
+    host.el.appendChild(tween);
+    host.el.setAttribute("data-num-host", "");
+    for (var echo = 0; echo < history.length && echo < NUM_ECHOES; echo += 1) {
+      echoes.push(numEcho(host.el, history[echo], opacity[echo], -6, ms));
+    }
+
+    function finish() {
+      window.clearTimeout(timer);
+      numFinish(index);
+    }
+
+    function stop() {
+      for (var at = 0; at < echoes.length; at += 1) {
+        echoes[at].animation.cancel();
+        echoes[at].layer.remove();
+      }
+      finish();
+    }
+
+    var timer = window.setTimeout(finish, ms);
+    numBegin(index, host, stop);
+  }
+
+  // Odometer: each changed digit rolls through a 0-9 strip, up or down with
+  // the value. The cells are absolute and take their x from the rendered
+  // text, so with tabular figures 0 keeps its place against every digit.
+  // A length change moves every cell, so that update swaps instead of rolling.
+  function numOdometer(index, el, oldText, newText, before, after) {
+    var host = { el: el };
+    var ms = numDuration();
+    var line = numLine(host.el);
+    var base = document.createElement("span");
+    base.className = "num-base";
+    base.textContent = newText;
+    var row = document.createElement("span");
+    row.className = "num-odo";
+    row.setAttribute("aria-hidden", "true");
+    row.style.lineHeight = line + "px";
+    host.el.textContent = "";
+    host.el.appendChild(base);
+    host.el.appendChild(row);
+    host.el.setAttribute("data-num-host", "");
+    var node = base.firstChild;
+    var box = host.el.getBoundingClientRect();
+    var up = after.value >= before.value;
+    var running = [];
+    for (var at = 0; at < newText.length; at += 1) {
+      var range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + 1);
+      var cellBox = range.getBoundingClientRect();
+      var cell = document.createElement("span");
+      cell.className = "num-odo-cell";
+      cell.style.left = cellBox.left - box.left + "px";
+      cell.style.width = cellBox.width + "px";
+      cell.style.height = line + "px";
+      var oldGlyph = oldText.charAt(at);
+      var glyph = newText.charAt(at);
+      var rolls = oldText.length === newText.length && oldGlyph >= "0" && oldGlyph <= "9" &&
+        glyph >= "0" && glyph <= "9" && oldGlyph !== glyph;
+      if (rolls) {
+        var strip = document.createElement("span");
+        strip.className = "num-odo-strip";
+        for (var slot = 0; slot < 20; slot += 1) {
+          var digit = document.createElement("span");
+          digit.textContent = String(slot % 10);
+          strip.appendChild(digit);
+        }
+        var fromDigit = Number(oldGlyph);
+        var toDigit = Number(glyph);
+        var target = up ? (toDigit >= fromDigit ? toDigit : toDigit + 10) : toDigit;
+        strip.style.transform = "translateY(" + -fromDigit * line + "px)";
+        cell.appendChild(strip);
+        running.push(strip.animate(
+          [
+            { transform: "translateY(" + -fromDigit * line + "px)" },
+            { transform: "translateY(" + -target * line + "px)" }
+          ],
+          { duration: ms, easing: "cubic-bezier(.33,0,.2,1)", fill: "forwards" }
+        ));
+      } else {
+        var fixed = document.createElement("span");
+        fixed.className = "num-odo-static";
+        fixed.textContent = glyph;
+        cell.appendChild(fixed);
+      }
+      row.appendChild(cell);
+    }
+
+    function finish() {
+      window.clearTimeout(timer);
+      numFinish(index);
+    }
+
+    function stop() {
+      for (var at = 0; at < running.length; at += 1) running[at].cancel();
+      finish();
+    }
+
+    var timer = window.setTimeout(finish, ms);
+    numBegin(index, host, stop);
+  }
+
+  // Segment flip: the digits are drawn as seven-segment boxes in their own
+  // slots; only the segments that differ between the old and the new glyph
+  // fade on or off, so a digit that keeps its glyph is untouched. Cells take
+  // their x and width from the hidden text, so the tabular advance holds and
+  // no neighbour moves; the prefix and suffix keep the text font.
+  var NUM_SEGMENTS = {
+    "0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg", "4": "bcfg",
+    "5": "acdfg", "6": "acdefg", "7": "abc", "8": "abcdefg", "9": "abcdfg"
+  };
+  // An unlit segment stays faintly visible: the shape reads as a display at
+  // rest instead of a different set of glyphs.
+  var NUM_SEG_OFF = 0.07;
+
+  // Segment boxes for one cell: a, d and g horizontal, b, c, e and f
+  // vertical. Thickness scales with the cell and stays at least 1 px.
+  function numSegmentShape(width, height) {
+    var pad = Math.max(1, Math.round(height * 0.08));
+    var thick = Math.max(1, Math.round(Math.min(width, height) * 0.1));
+    var across = Math.max(2 * thick + 1, width - 2 * pad);
+    var span = Math.max(1, (height - 2 * pad - 3 * thick) / 2);
+    var middle = pad + (height - 2 * pad - thick) / 2;
+    var lower = pad + thick + span + thick;
+    return {
+      a: [pad + thick, pad, across - 2 * thick, thick],
+      g: [pad + thick, middle, across - 2 * thick, thick],
+      d: [pad + thick, pad + height - 2 * pad - thick, across - 2 * thick, thick],
+      f: [pad, pad + thick, thick, span],
+      b: [width - pad - thick, pad + thick, thick, span],
+      e: [pad, lower, thick, span],
+      c: [width - pad - thick, lower, thick, span]
+    };
+  }
+
+  function numSegment(index, el, oldText, newText, before, after) {
+    var host = { el: el };
+    var ms = numDuration();
+    var base = document.createElement("span");
+    base.className = "num-base";
+    base.textContent = newText;
+    var row = document.createElement("span");
+    row.className = "num-seg-row";
+    row.setAttribute("aria-hidden", "true");
+    host.el.textContent = "";
+    host.el.appendChild(base);
+    host.el.appendChild(row);
+    host.el.setAttribute("data-num-host", "");
+    var node = base.firstChild;
+    var box = host.el.getBoundingClientRect();
+    var offset = after.pre.length;
+    var oldDigits = oldText.slice(before.pre.length, oldText.length - before.post.length);
+    var newDigits = newText.slice(offset, newText.length - after.post.length);
+    var running = [];
+    for (var at = 0; at < newDigits.length; at += 1) {
+      var range = document.createRange();
+      range.setStart(node, offset + at);
+      range.setEnd(node, offset + at + 1);
+      var glyphBox = range.getBoundingClientRect();
+      var width = glyphBox.width;
+      var height = glyphBox.height || numLine(host.el);
+      var glyph = newDigits.charAt(at);
+      var was = oldDigits.charAt(at);
+      var cell = document.createElement("span");
+      cell.className = "num-seg-cell";
+      cell.style.left = glyphBox.left - box.left + "px";
+      cell.style.top = glyphBox.top - box.top + "px";
+      cell.style.width = width + "px";
+      cell.style.height = height + "px";
+      row.appendChild(cell);
+      if (glyph === ".") {
+        var radius = Math.max(1, Math.round(height * 0.06));
+        var dot = document.createElement("span");
+        dot.className = "num-seg-dot";
+        dot.style.left = (width - 2 * radius) / 2 + "px";
+        dot.style.top = height - radius * 3 + "px";
+        dot.style.width = 2 * radius + "px";
+        dot.style.height = 2 * radius + "px";
+        if (was === ".") {
+          dot.style.opacity = "1";
+        } else {
+          dot.style.opacity = "0";
+          running.push(dot.animate(
+            [{ opacity: 0 }, { opacity: 1 }],
+            { duration: ms, easing: "ease-out", fill: "forwards" }
+          ));
+        }
+        cell.appendChild(dot);
+        continue;
+      }
+      var shape = numSegmentShape(width, height);
+      var wasLit = NUM_SEGMENTS[was] || "";
+      var isLit = NUM_SEGMENTS[glyph] || "";
+      for (var key = 0; key < "abcdefg".length; key += 1) {
+        var name = "abcdefg".charAt(key);
+        var part = shape[name];
+        var segment = document.createElement("span");
+        segment.className = "num-seg";
+        segment.style.left = part[0] + "px";
+        segment.style.top = part[1] + "px";
+        segment.style.width = part[2] + "px";
+        segment.style.height = part[3] + "px";
+        var from = wasLit.indexOf(name) === -1 ? NUM_SEG_OFF : 1;
+        var to = isLit.indexOf(name) === -1 ? NUM_SEG_OFF : 1;
+        segment.style.opacity = String(to);
+        cell.appendChild(segment);
+        if (from !== to) {
+          running.push(segment.animate(
+            [{ opacity: from }, { opacity: to }],
+            { duration: ms, easing: "ease-out", fill: "forwards" }
+          ));
+        }
+      }
+    }
+
+    function finish() {
+      window.clearTimeout(timer);
+      numFinish(index);
+    }
+
+    function stop() {
+      for (var at = 0; at < running.length; at += 1) running[at].cancel();
+      finish();
+    }
+
+    var timer = window.setTimeout(finish, ms);
+    numBegin(index, host, stop);
+  }
+
+  function playNumber(index, el, oldText, newText, history) {
+    if (numMode === "none" || !motionPref || document.hidden) return;
+    if (!el.getClientRects().length) return;
+    var before = numParts(oldText);
+    var after = numParts(newText);
+    if (!before || !after || before.value === after.value) return;
+    // A changed prefix, suffix or number of decimals is a unit or scale
+    // change; a tween between different forms would read as invented digits.
+    if (before.pre !== after.pre || before.post !== after.post || before.decimals !== after.decimals) return;
+    if (numMode === "odometer") {
+      if (oldText.length === newText.length) numOdometer(index, el, oldText, newText, before, after);
+    } else if (numMode === "blur") {
+      numBlur(index, el, newText, history);
+    } else if (numMode === "segment") {
+      numSegment(index, el, oldText, newText, before, after);
+    } else {
+      numSpring(index, el, before, after, numMode === "spring-blur");
+    }
+  }
+
+  function cancelNumberRuns() {
+    var keys = Object.keys(numRuns);
+    for (var index = 0; index < keys.length; index += 1) numRuns[keys[index]].stop();
+    numRuns = {};
+  }
+
+  // After each frame, pair the values by document order. A change starts an
+  // effect; the same text does nothing, so a replaced node with an unchanged
+  // value stays still and a hidden tab records the truth without replaying.
+  function syncNumbers() {
+    var hosts = document.querySelectorAll("[data-w]");
+    if (hosts.length !== numStates.length) {
+      // A row, lane or panel appeared or went: pair nothing this frame.
+      cancelNumberRuns();
+      numStates = [];
+      for (var fresh = 0; fresh < hosts.length; fresh += 1) {
+        numStates.push({ el: hosts[fresh], text: hosts[fresh].textContent, history: [] });
+      }
+      return;
+    }
+    var states = [];
+    for (var index = 0; index < hosts.length; index += 1) {
+      var el = hosts[index];
+      var text = el.textContent;
+      var previous = numStates[index];
+      if (numRuns[index] && previous) {
+        if (previous.el === el) {
+          // The node was not replaced, so its text is the effect's own paint,
+          // not a reading.
+          states.push(previous);
+          continue;
+        }
+        // A frame arrived mid-effect: carry the effect into the new node and
+        // hold this reading until it ends. The state keeps the newest value,
+        // so a burst coalesces to it; nothing else is queued.
+        states.push({ el: el, text: text, history: previous.history });
+        numAdopt(index, el);
+        continue;
+      }
+      var state = { el: el, text: text, history: previous ? previous.history : [] };
+      if (previous && previous.text !== text) {
+        state.history = [previous.text].concat(previous.history).slice(0, NUM_ECHOES);
+        playNumber(index, el, previous.text, text, state.history);
+      }
+      states.push(state);
+    }
+    numStates = states;
+  }
+
+  function syncNumControls() {
+    var chips = document.querySelectorAll('[data-group="num-motion"] .opt');
+    for (var index = 0; index < chips.length; index += 1) {
+      var on = chips[index].getAttribute("data-value") === numMode;
+      chips[index].classList.toggle("on", on);
+      chips[index].setAttribute("aria-checked", String(on));
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    var chip = closest(event.target, '[data-group="num-motion"] .opt');
+    if (!chip) return;
+    var value = chip.getAttribute("data-value");
+    if (NUM_MODES.indexOf(value) === -1) return;
+    numMode = value;
+    try {
+      window.localStorage.setItem(NUM_KEY, numMode);
+    } catch (error) {
+      // Storage is optional; the choice holds for this page view.
+    }
+    if (numMode === "none") cancelNumberRuns();
+    syncNumControls();
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) cancelNumberRuns();
+    syncNumbers();
+  });
 
   /* ---------- CONFIG popover ---------- */
 
@@ -305,6 +899,7 @@
   function closeConfig(returnTo) {
     if (!config || config.hidden) return;
     config.hidden = true;
+    if (scrim) scrim.hidden = true;
     setExpanded(false);
     if (!returnTo) return;
     var trigger = returnTo.isConnected ? returnTo : visibleToggle();
@@ -315,6 +910,7 @@
     if (!config) return;
     lastTrigger = trigger;
     config.hidden = false;
+    if (scrim) scrim.hidden = false;
     setExpanded(true);
     var tab = config.querySelector('[role="tab"][aria-selected="true"]');
     if (tab) tab.focus();
@@ -364,9 +960,34 @@
     });
 
     document.addEventListener("keydown", function (event) {
-      if (event.key !== "Escape" || config.hidden) return;
-      event.preventDefault();
-      closeConfig(lastTrigger);
+      if (config.hidden) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeConfig(lastTrigger);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      // ACC-VIEW-104-CONFIG-DIM: Tab and Shift+Tab cycle inside the open menu.
+      var items = [];
+      var nodes = config.querySelectorAll("button, select, input, textarea, a[href], [tabindex]");
+      for (var index = 0; index < nodes.length; index += 1) {
+        if (nodes[index].disabled) continue;
+        if (nodes[index].getAttribute("tabindex") === "-1") continue;
+        if (nodes[index].getClientRects().length === 0) continue;
+        items.push(nodes[index]);
+      }
+      if (items.length === 0) return;
+      var first = items[0];
+      var last = items[items.length - 1];
+      var active = document.activeElement;
+      var outside = !config.contains(active);
+      if (event.shiftKey && (outside || active === first)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (outside || active === last)) {
+        event.preventDefault();
+        first.focus();
+      }
     });
   }
 
@@ -716,12 +1337,12 @@
   function readProcView() {
     var panel = document.getElementById("p-proc");
     var start = panel ? panel.getAttribute("data-proc-view") : null;
-    var state = { view: PROC_VIEWS.indexOf(start) !== -1 ? start : "top", chosen: null, nodes: "expanded", toggled: {}, sort: "mem", descending: true };
+    var state = { view: PROC_VIEWS.indexOf(start) !== -1 ? start : "top", chosen: null, level: 3, toggled: {}, sort: "mem", descending: true };
     try {
       var stored = JSON.parse(window.localStorage.getItem(PROC_KEY));
       if (!stored || stored.v !== 1) return state;
       if (PROC_VIEWS.indexOf(stored.view) !== -1) state.view = state.chosen = stored.view;
-      if (stored.nodes === "collapsed" || stored.nodes === "expanded") state.nodes = stored.nodes;
+      if (stored.level >= 1 && stored.level <= 9) state.level = Math.round(stored.level);
       if (stored.toggled && typeof stored.toggled === "object") {
         Object.keys(stored.toggled).forEach(function (pid) {
           if (typeof stored.toggled[pid] === "boolean") state.toggled[pid] = stored.toggled[pid];
@@ -738,7 +1359,7 @@
   // Written only on a user action.
   function commitProc() {
     try {
-      window.localStorage.setItem(PROC_KEY, JSON.stringify({ v: 1, view: procView.chosen || undefined, nodes: procView.nodes, toggled: procView.toggled, sort: procView.sort, descending: procView.descending }));
+      window.localStorage.setItem(PROC_KEY, JSON.stringify({ v: 1, view: procView.chosen || undefined, level: procView.level, toggled: procView.toggled, sort: procView.sort, descending: procView.descending }));
     } catch (error) {
       // Storage is optional; the choice holds for this page view.
     }
@@ -750,8 +1371,8 @@
   var procSort = document.getElementById("proc-sort");
 
   function syncProcControls() {
-    var chosen = { "proc-view": procView.view, "proc-nodes": procView.nodes, "proc-dir": procView.descending ? "desc" : "asc" };
-    var chips = document.querySelectorAll('[data-group="proc-view"] .opt, [data-group="proc-nodes"] .opt, [data-group="proc-dir"] .opt');
+    var chosen = { "proc-view": procView.view, "proc-level": String(procView.level), "proc-dir": procView.descending ? "desc" : "asc" };
+    var chips = document.querySelectorAll('[data-group="proc-view"] .opt, [data-group="proc-level"] .opt, [data-group="proc-dir"] .opt');
     for (var index = 0; index < chips.length; index += 1) {
       var group = closest(chips[index], "[data-group]").getAttribute("data-group");
       var on = chips[index].getAttribute("data-value") === chosen[group];
@@ -851,7 +1472,7 @@
       p.twisty.className = "twisty";
       p.twisty.setAttribute("aria-label", "children of " + p.texts[1] + " (pid " + p.pid + ")");
     }
-    var mark = p.collapsed ? "\u25b8" : "\u25be";
+    var mark = p.collapsed ? "\u25b8\u2002" : "\u25be\u2002";
     if (p.twisty.textContent !== mark) {
       p.twisty.setAttribute("aria-expanded", String(!p.collapsed));
       p.twisty.textContent = mark;
@@ -959,33 +1580,50 @@
         p.collapsed = parent && p.pid !== 1;
         p.shown = (p.parent === null || p.parent.pid === 1) && (p.match || (p.collapsed && p.under));
       } else {
-        var stored = Object.prototype.hasOwnProperty.call(procView.toggled, p.pid) ? procView.toggled[p.pid] : procView.nodes === "collapsed";
-        // A query opens the ancestors of a match without touching the stored set.
+        // ACC-VIEW-103-TREE-DEPTH: a node at or below the display level starts
+        // folded; a triangle click overrides that for its pid until the level
+        // changes. A query opens the ancestors of a match without touching the
+        // stored set.
+        var stored = Object.prototype.hasOwnProperty.call(procView.toggled, p.pid) ? procView.toggled[p.pid] : p.depth >= procView.level;
         p.collapsed = parent && stored && !(query && p.under);
         p.shown = false;
       }
       if (view !== "tree" && p.shown) order.push(p);
     });
     if (view === "tree") {
-      // Shown rows only: a row whose parent is collapsed is never reached.
-      var walk = function (siblings, prefix) {
+      // btop's prefix (`btop_shared.cpp:188`, `btop_collect.cpp:2754`): one
+      // three-character slot per ancestor level, ' \u2502 ' while that ancestor has
+      // a following sibling and '   ' under the last one, then a leaf's
+      // ' \u251c\u2500 ', ' \u2514\u2500 ' or the first root's ' \u250c\u2500 '. A node with children puts
+      // its triangle in the branch slot instead, followed by U+2002.
+      var walk = function (siblings, bars) {
         var shown = sortProc(siblings).filter(function (p) {
           return p.match || p.under;
         });
+        var prefix = bars.map(function (more) {
+          return more ? " \u2502 " : "   ";
+        }).join("");
         shown.forEach(function (p, at) {
+          var last = at === shown.length - 1;
           p.shown = true;
           order.push(p);
-          // btop's tree prefix (btop_shared.cpp:181-188, btop_collect.cpp:2754-2760), one cell per level.
-          var mark = p.kids.length > 0 ? "" : at === shown.length - 1 ? "\u2514" : p.depth === 0 && at === 0 ? "\u250c" : "\u251c";
-          glyphs[p.pid] = prefix + mark;
-          if (p.kids.length > 0 && !p.collapsed) walk(p.kids, prefix + "\u2502");
+          glyphs[p.pid] = prefix + (p.kids.length > 0 ? " " : last ? " \u2514\u2500 " : p.depth === 0 && at === 0 ? " \u250c\u2500 " : " \u251c\u2500 ");
+          if (p.kids.length > 0 && !p.collapsed) walk(p.kids, bars.concat([!last]));
         });
       };
       walk(rows.filter(function (p) {
         return p.parent === null;
-      }), "");
+      }), []);
     } else {
       sortProc(order);
+    }
+
+    // DEF-VIEW-65-TREE-GLYPHS: the Program column widens with the level so the
+    // prefix never clips; the name ellipsizes into what is left.
+    if (procWrap) {
+      var level = String(procView.level);
+      if (procWrap.style.getPropertyValue("--tree-level") !== level) procWrap.style.setProperty("--tree-level", level);
+      procWrap.toggleAttribute("data-tree", view === "tree");
     }
 
     // A row already in place stays: a moved row is styled and laid out again.
@@ -1094,7 +1732,7 @@
   }
 
   document.addEventListener("click", function (event) {
-    var chip = closest(event.target, '[data-group="proc-view"] .opt, [data-group="proc-nodes"] .opt, [data-group="proc-dir"] .opt');
+    var chip = closest(event.target, '[data-group="proc-view"] .opt, [data-group="proc-level"] .opt, [data-group="proc-dir"] .opt');
     if (!chip) return;
     var value = chip.getAttribute("data-value");
     if (closest(chip, '[data-group="proc-view"]')) {
@@ -1102,8 +1740,8 @@
     } else if (closest(chip, '[data-group="proc-dir"]')) {
       procView.descending = value === "desc";
     } else {
-      // The option sets every node; it clears the per-row overrides.
-      procView.nodes = value;
+      // The level sets every node; it clears the per-row overrides.
+      procView.level = Number(value);
       procView.toggled = {};
     }
     commitProc();
@@ -1167,6 +1805,7 @@
     applyGpuSelection();
     applyProc();
     syncBands();
+    syncNumbers();
     refreshTip();
   }
 
@@ -1203,6 +1842,7 @@
     } else if (type === "mem") {
       syncBands();
     }
+    syncNumbers();
     refreshTip();
   });
 
@@ -1212,6 +1852,7 @@
   syncLayoutControls();
   syncProcControls();
   syncMotionControls();
+  syncNumControls();
   gpuSelection = readGpuSelection(gpuBoxes().length);
   afterFrames();
 })();

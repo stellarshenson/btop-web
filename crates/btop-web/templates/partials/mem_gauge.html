@@ -7,7 +7,7 @@
       <path class="g-tick" d="{{ crate::chart::gauge_ticks(false) }}"></path>
       <path class="g-tick major" d="{{ crate::chart::gauge_ticks(true) }}"></path>
       <g data-p="3" data-field="gauge-scale">{% for (x, y, text) in crate::chart::gauge_labels() %}<text class="g-scale" x="{{ x|fmt("{:.2}") }}" y="{{ y|fmt("{:.2}") }}">{{ text }}</text>{% endfor %}</g>
-      {% if let Some((value, unit)) = snapshot.mem.ram_used_parts() %}<text class="g-value" x="54" y="66">{{ value }} <tspan class="g-unit">{{ unit }}</tspan></text>
+      {% if let Some((value, unit)) = snapshot.mem.ram_used_parts() %}<text class="g-value" x="54" y="66">{{ value }}<tspan class="g-unit" dx="2.65">{{ unit }}</tspan></text>
       <text class="g-label" x="54" y="78">used</text>{% else %}<text class="g-label" x="54" y="70">unavailable</text>{% endif %}
     </svg>
   </div>
