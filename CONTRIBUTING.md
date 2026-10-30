@@ -26,7 +26,7 @@ Prefixed crates come from crates.io and Renovate groups their updates. htmx and 
 
 ## Licence
 
-Contributions are accepted under the Apache-2.0 licence in `LICENSE`.
+Contributions are accepted under the MIT licence in `LICENSE`; the third-party files listed in `NOTICE.md` keep their own licences.
 
 ## Reports
 

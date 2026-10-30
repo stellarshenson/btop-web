@@ -1,0 +1,47 @@
+<div id="p-proc-stat" hx-swap-oob="innerHTML"><header class="ph"><h2 id="proc-stat-title">Processes</h2><span class="head-right stat-facts">
+    <span data-tip="Top process by CPU, unit percent&#10;pid 1, the highest Cpu% of the sample&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta">top <b>tini 0.0%</b></span>
+    <span data-tip="Processes reaching 80% of CPU, unit count&#10;source: this sample's Cpu% values, sorted&#10;the smallest count whose sum reaches 80%">80% cpu <b class="foot-count" data-w="000">0</b></span>
+    <span data-tip="Processes reaching 80% of memory, unit count&#10;source: this sample's MemB values, sorted&#10;the smallest count whose sum reaches 80%">80% mem <b class="foot-count" data-w="000">1</b></span>
+  </span></header>
+<div class="stat-body">
+  <div class="stat-tile" data-tip="Process total, unit processes&#10;source: /proc/&lt;pid&gt; entries this sample&#10;in a container: pids in its cgroup tree"><span class="stat-value" data-w="000" data-range="10" id="proc-total">9</span><span class="proc-facts">
+    <span data-tip="Running processes, unit count&#10;source: /proc/&lt;pid&gt;/stat state R&#10;rows of this sample">running <b>1</b></span>
+    <span data-tip="Sleeping processes, unit count&#10;source: /proc/&lt;pid&gt;/stat state S&#10;rows of this sample">sleeping <b>7</b></span>
+    <span data-tip="Waiting processes, unit count&#10;source: /proc/&lt;pid&gt;/stat state D&#10;rows of this sample">waiting <b>0</b></span>
+    <span data-tip="Zombie processes, unit count&#10;source: /proc/&lt;pid&gt;/stat state Z&#10;rows of this sample">zombie <b>0</b></span>
+    <span data-tip="Threads, unit count&#10;source: /proc/&lt;pid&gt;/stat field 20, summed&#10;over the rows of this sample">threads <b>85</b></span>
+    
+  </span></div>
+  <div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to 10">
+    <svg class="chart" viewBox="0 0 30 28" preserveAspectRatio="none" aria-hidden="true"><g class="series"><path class="area" d="M29.92 3.60L30.00 3.60L30.04 3.60L30.04 28.00L29.92 28.00Z"></path><path class="line" d="M29.92 3.60L30.00 3.60L30.04 3.60"></path></g></svg>
+  </div>
+  <div class="xaxis stat-axis" aria-hidden="true"><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
+</div></div>
+<div id="proc-table-wrap" hx-swap-oob="innerHTML"><table class="ptable">
+  <caption class="sr-only">Processes</caption>
+  <colgroup>
+    <col style="width:76px"><col class="proc-program"><col data-p="3" data-field="proc-command"><col data-p="3" data-field="proc-threads" style="width:70px"><col data-p="3" data-field="proc-user" style="width:72px"><col style="width:72px"><col style="width:106px">
+  </colgroup>
+  <thead>
+    <tr>
+      <th class="num" scope="col" data-tip="Pid, unit process id&#10;source: /proc/&lt;pid&gt; directory name&#10;btop's numeric process id"><button type="button">Pid</button></th>
+      <th scope="col"><button type="button">Program</button></th>
+      <th data-p="3" data-field="proc-command" scope="col"><button type="button">Command</button></th>
+      <th class="num" data-p="3" data-field="proc-threads" scope="col" data-tip="Threads of the process, unit count&#10;source: /proc/&lt;pid&gt;/stat field 20&#10;btop's thread count"><button type="button">Threads</button></th>
+      <th data-p="3" data-field="proc-user" scope="col"><button type="button">User</button></th>
+      <th class="num" scope="col" data-tip="Resident memory, unit KiB, MiB or GiB&#10;source: /proc/&lt;pid&gt;/statm RSS × page size&#10;btop's MemB; statm is the fallback"><button type="button">MemB</button></th>
+      <th class="num" scope="col" data-tip="CPU use of the process, unit percent&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta&#10;per core; × cores when proc_per_core&#10;graph: btop's 20 s cpu_p plot"><button type="button">Cpu%</button></th>
+    </tr>
+  </thead>
+  <tbody id="proc-body">
+<tr data-raw="0 0 140709888 69"><td class="num">715</td><td class="mono">mlflow</td><td class="mono">/opt/conda/bin/python /opt/conda/bin/mlflow server --backend-store-uri sqlite:////home/lab/.cache/mlflow/mlflow.sqlite3 --default-artifact-root /home/lab/.cache/mlflow/artifacts --workers 1 --host 0.0.0.0 --port 5000 --serve-artifacts --gunicorn-opts --access-logfile=-</td><td class="num">69</td><td>lab</td><td class="num">134M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="0 0 1134592 1" data-sum="0.0 25M 16 cpu-zero"><td class="num">1</td><td class="mono">tini</td><td class="mono">tini -- /opt/conda/bin/python3 -I -m galaxalab_utils.labserver jupyterhub-singleuser --ServerApp.disable_check_xsrf=True</td><td class="num">1</td><td>lab</td><td class="num">1.1M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="1 0 1024000 4"><td class="num">222</td><td class="mono">hotproc</td><td class="mono">hotproc --busy</td><td class="num">4</td><td>lab</td><td class="num">1.0M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="1 0 6090752 3"><td class="num">158</td><td class="mono">pulseaudio</td><td class="mono">pulseaudio --daemonize=yes --exit-idle-time=-1 -n --load=module-native-protocol-unix</td><td class="num">3</td><td>lab</td><td class="num">5.8M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="1 0 409600 4"><td class="num">334</td><td class="mono">denied</td><td class="mono">/usr/bin/denied</td><td class="num">4</td><td>lab</td><td class="num">400K</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="1 0 14262272 2"><td class="num">111</td><td class="mono">ttyd</td><td class="mono">ttyd -d 3 -W -i lo -p 7681 -t titleFixed Resources Monitor -t scrollback 0 btop --utf-force</td><td class="num">2</td><td>lab</td><td class="num">14M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="1 0 1613824 1"><td class="num">112</td><td class="mono">12_start_resour</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/12_start_resources_monitor.sh</td><td class="num">1</td><td>lab</td><td class="num">1.5M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="1 0 1626112 1"><td class="num">120</td><td class="mono">13_start_mlflow</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/13_start_mlflow.sh</td><td class="num">1</td><td>lab</td><td class="num">1.6M</td><td class="num cpu-zero">0.0</td></tr>
+<tr data-raw="0 - - -"><td class="num">333</td><td class="mono">nostat</td><td class="mono">/usr/bin/nostat</td><td class="num"></td><td>lab</td><td class="num"></td><td class="num"></td></tr>
+  </tbody>
+</table></div>

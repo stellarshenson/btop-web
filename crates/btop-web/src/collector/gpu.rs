@@ -37,14 +37,18 @@
 //! A recorded tree (`BTOP_WEB_PROC_ROOT` other than `/proc`) cannot record
 //! NVML, so NVML is skipped there and the fixtures exercise the sysfs path.
 //!
-//! Period: every sample, `update_ms` (250 ms by default; btop's 2000).
-//! The NVML sweep runs off the tick path: the sampler starts one blocking
-//! sweep per tick when none is in flight, and each snapshot carries the newest
-//! completed sweep. btop collects GPUs inline; here a sweep of three NVIDIA
-//! cards takes 0.2-1.3 s, which would hold a 250 ms tick back. The readings are
-//! instantaneous, so the values are unchanged. The utilization history takes
-//! one sample per tick from that newest sweep ([`attach_charts`]) and draws
-//! each device in its own 0-100% lane, [`crate::chart::gpu_lane`]
+//! Period: the sampler's slow pass, `slow_ms` (`proc_refresh_ms`, 1000 ms by
+//! default; btop's 2000). The NVML sweep runs off the tick path: the sampler
+//! starts one blocking sweep per slow pass when none is in flight, and each
+//! snapshot carries the newest completed sweep until the next one lands. btop
+//! collects GPUs inline every cycle; here a sweep of three NVIDIA cards takes
+//! 0.2-1.3 s, which would hold a 250 ms tick back, and at btop's cadence the
+//! sweep was a third of the tick (DEF-PERF-76-SERVER-COST). The readings are
+//! instantaneous, so a held sweep is the value the next one would return; the
+//! values therefore move at the slow rate, the same stated cadence deviation
+//! as the process walk (ACC-PERF-149-SPLIT-CADENCE). The utilization history
+//! still takes one sample per tick from the newest sweep ([`attach_charts`])
+//! and draws each device in its own 0-100% lane, [`crate::chart::gpu_lane`]
 //! (DEF-GRAPH-51-GPU-LANES).
 //!
 //! Container (ACC-SCOPE-64-CONTAINER, DEF-GPU-40-CONTAINER-HIDDEN): the
@@ -74,18 +78,30 @@
 //! fd table cannot be read (another uid, no CAP_SYS_PTRACE) is counted as
 //! unreadable and the count renders as a lower bound, `gpu n+`. No readable
 //! cgroup makes it unavailable. Period: [`HOLDER_PERIOD`], inside the
-//! off-tick sweep. The fd walk uses `nix`'s `Dir` and `readlinkat`, one
-//! syscall per fd. The `procfs` crate opens and stats every fd as well, for an
-//! open mode the count does not use: 7.5-8.2 against 4.6 us CPU per fd here.
+//! off-tick sweep; the count is the last completed sweep's, a held sample up
+//! to 30 s old (DEF-PERF-76-SERVER-COST). The walk opens one directory fd for
+//! the proc root, one fd directory per member through it with `openat`, and
+//! reads one target per fd with `readlinkat`; the fd names and the relative
+//! path come from one reused `String`, and the target of every fd must be
+//! read, because only the target says whether it can be a GPU node. A
+//! follow-stat would answer in one syscall too but can block: on this host
+//! `fstatat` on an fd whose target is an NFS file slept in the sunrpc client
+//! for minutes when the server did not answer (measured 2026-10-29), while
+//! `readlinkat` only returns the stored path and never enters the target's
+//! filesystem. The `procfs` crate opens
+//! and stats every fd as well, for an open mode the count does not use:
+//! 7.5-8.2 against 4.6 us CPU per fd here.
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::Write as _;
+use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use nix::dir::Dir;
 use nix::errno::Errno;
-use nix::fcntl::{OFlag, readlinkat};
+use nix::fcntl::{OFlag, open, openat, readlinkat};
 use nix::sys::stat::Mode;
 use nvml_wrapper::Device as NvmlDevice;
 use nvml_wrapper::Nvml;
@@ -136,13 +152,20 @@ pub fn collect(proc_root: &Path, config: &Config) -> GpuSnapshot {
     }
 }
 
-/// DEF-VIEW-48-GPU-FACT: the container holder count's period. One sweep costs
-/// about 4.6 us CPU per open fd in the container (27-29 ms over 5,800-6,200
-/// fds), against 8.5-11 ms CPU per 250 ms tick for the whole sampler, so a
-/// sweep every tick would more than double the dashboard's load
-/// (ACC-PERF-16). Every 5 s it added 10.1-17.0 percent CPU per tick at
-/// 5,400-7,100 container fds; the cost grows with that fd count.
-const HOLDER_PERIOD: Duration = Duration::from_secs(5);
+/// DEF-PERF-76-SERVER-COST: the slow cadence `cpu` and `proc` refresh the
+/// CPU model name and the container membership on. Both are cheap reads, and
+/// 5 s bounds how late a process that joins or leaves the container is shown.
+pub(super) const SLOW_PERIOD: Duration = Duration::from_secs(5);
+
+/// DEF-VIEW-48-GPU-FACT, DEF-PERF-76-SERVER-COST: the container holder count's
+/// period. One sweep reads every fd of every member: 13,200-15,600 readlinks
+/// at about 4-5 us CPU each, 55-80 ms against 15-16 ms per 250 ms tick for the
+/// whole sampler, so a sweep every tick would multiply the dashboard's load
+/// (ACC-PERF-16). At 5 s it still cost 2.8-4.0 ms per tick; at 30 s it costs
+/// 0.5-0.7, and every fd is still read, so the count is correct at the moment
+/// it is swept and held between sweeps, up to 30 s old: a process that opens a
+/// GPU node appears within 30 s, one that closes it lingers up to 30 s.
+pub(super) const HOLDER_PERIOD: Duration = Duration::from_secs(30);
 
 /// A holder sweep's result: the holders and the unreadable members, or
 /// `None` when the cgroup cannot be read ([`gpu_holders`]).
@@ -152,8 +175,8 @@ type Holders = Option<(usize, usize)>;
 static HOLDERS: Mutex<BTreeMap<PathBuf, (Instant, Holders)>> = Mutex::new(BTreeMap::new());
 
 /// The holder count, swept again when the last sweep is older than
-/// [`HOLDER_PERIOD`]; `gpu::collect` runs once per tick at most, so the period
-/// is never shorter than `update_ms`.
+/// [`HOLDER_PERIOD`]; `gpu::collect` runs once per slow pass, so the fd sweep
+/// runs at most every 30 s.
 fn cached_holders(proc_root: &Path, cgroup: &Path) -> Holders {
     let mut cache = HOLDERS.lock().unwrap_or_else(|error| error.into_inner());
     if let Some((swept, holders)) = cache.get(proc_root)
@@ -168,30 +191,41 @@ fn cached_holders(proc_root: &Path, cgroup: &Path) -> Holders {
 
 /// One holder sweep (see the module docs): the members of `cgroup` and every
 /// cgroup below it, except `own_pid`, that hold a GPU node open, and the
-/// members whose fd table could not be read. `None` when `cgroup.procs`
-/// cannot be read.
+/// members whose fd table could not be read. `None` when the cgroup or the
+/// proc root cannot be read.
 fn gpu_holders(proc_root: &Path, cgroup: &Path, own_pid: i32) -> Holders {
     let (mut holders, mut unreadable) = (0, 0);
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC;
+    let root = open(proc_root, flags, Mode::empty()).ok()?;
+    let mut relative = String::new();
     for pid in super::proc::cgroup_members(cgroup, "cgroup.procs")? {
         if pid == own_pid {
             continue;
         }
-        let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC;
-        match Dir::open(&proc_root.join(format!("{pid}/fd")), flags, Mode::empty()) {
-            Ok(mut fds) => {
-                // `iter` borrows `fds`, which `readlinkat` needs, so list the names first.
-                let names: Vec<_> = fds
-                    .iter()
-                    .flatten()
-                    .map(|entry| entry.file_name().to_owned())
-                    .filter(|name| !matches!(name.to_bytes(), b"." | b".."))
-                    .collect();
-                if names.iter().any(|name| {
-                    readlinkat(&fds, name.as_c_str())
+        relative.clear();
+        let _ = write!(relative, "{pid}/fd");
+        match openat(&root, relative.as_str(), flags, Mode::empty()).and_then(Dir::from_fd) {
+            Ok(fds) => {
+                // The iterator owns the directory, so the targets are read
+                // through a duplicate of its fd.
+                let Ok(targets) = fds.as_fd().try_clone_to_owned() else {
+                    unreadable += 1;
+                    continue;
+                };
+                let mut holder = false;
+                for entry in fds.into_iter().flatten() {
+                    let name = entry.file_name();
+                    if matches!(name.to_bytes(), b"." | b"..") {
+                        continue;
+                    }
+                    if readlinkat(&targets, name)
                         .is_ok_and(|target| is_gpu_node(Path::new(&target)))
-                }) {
-                    holders += 1;
+                    {
+                        holder = true;
+                        break;
+                    }
                 }
+                holders += usize::from(holder);
             }
             // The process exited after `cgroup.procs` was read.
             Err(Errno::ENOENT | Errno::ESRCH) => {}
@@ -253,7 +287,7 @@ fn apply_custom_names(devices: &mut [GpuDevice], config: &Config) {
 
 /// btop's GPU graph history: one utilization sample per device per tick. A
 /// device that disappears loses its history; a new device starts empty.
-pub fn attach_charts(proc_root: &Path, devices: &mut [GpuDevice], update_ms: u64) {
+pub fn attach_charts(proc_root: &Path, devices: &mut [GpuDevice], update_ms: u64, window_ms: u64) {
     let mut states = HISTORY.lock().unwrap_or_else(|error| error.into_inner());
     let histories = states.entry(proc_root.to_path_buf()).or_default();
     histories.truncate(devices.len());
@@ -263,6 +297,7 @@ pub fn attach_charts(proc_root: &Path, devices: &mut [GpuDevice], update_ms: u64
     // DEF-GRAPH-51-GPU-LANES: each device draws in its own 0-100% lane.
     let lane = gpu_lane(devices.len());
     for (history, device) in histories.iter_mut().zip(devices.iter_mut()) {
+        history.set_window(window_ms);
         history.push(device.utilization_pct, update_ms);
         device.chart = history.chart(lane, 0.0, 100.0);
     }
@@ -1434,9 +1469,9 @@ mod tests {
             ..GpuDevice::default()
         }];
         let key = Path::new("gpu-utilization-history-test");
-        attach_charts(key, &mut devices, 250);
+        attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
         assert!(devices[0].chart.line.is_empty());
-        attach_charts(key, &mut devices, 250);
+        attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
         assert!(
             devices[0].chart.line.starts_with('M'),
             "{}",
@@ -1455,9 +1490,10 @@ mod tests {
         }];
         let key = Path::new("gpu-one-sample-per-tick-test");
         for _ in 0..5 {
-            attach_charts(key, &mut devices, 250);
+            attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
         }
-        let first = (960 - 5) as f64 * gpu_lane(1).width / 959.0;
+        let slots = crate::chart::capacity(crate::chart::WINDOW_MS, 250);
+        let first = (slots - 5) as f64 * gpu_lane(1).width / (slots - 1) as f64;
         let start = format!("M{first:.2} ");
         assert!(
             devices[0].chart.line.starts_with(&start),
@@ -1472,7 +1508,7 @@ mod tests {
         let mut devices = vec![GpuDevice::default()];
         let key = Path::new("gpu-unreadable-utilization-test");
         for _ in 0..3 {
-            attach_charts(key, &mut devices, 250);
+            attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
         }
         assert!(
             devices[0].chart.line.is_empty(),

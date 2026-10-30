@@ -1,27 +1,27 @@
 <!doctype html>
-<html lang="en" data-theme="{{ initial_theme }}" data-mode="dark">
+<html lang="en" data-theme="{{ initial_theme }}" data-mode="dark" data-font="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"500","swap":true,"error":true},{"code":"[45]..","swap":false,"error":true}]}'>
 <title>{{ title }}</title>
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icon.svg?v={{ asset_stamp }}" type="image/svg+xml">
 <style>{{ css|safe }}</style>
-<link rel="stylesheet" href="assets/app.css">
-<script src="assets/htmx.min.js"></script>
-<script src="assets/htmx-sse.min.js"></script>
-<script src="assets/theme.js"></script>
+<link rel="stylesheet" href="assets/app.css?v={{ asset_stamp }}">
+<script src="assets/htmx.min.js?v={{ asset_stamp }}"></script>
+<script src="assets/htmx-sse.min.js?v={{ asset_stamp }}"></script>
+<script src="assets/theme.js?v={{ asset_stamp }}"></script>
 </head>
 <body>
 <header class="utility">
   <span class="brand">btop<span>-web</span></span>
   <span class="u-meta u-ver">{{ version }}</span>
-  {% if let Some(host) = host %}<span class="u-meta u-host" data-p="4" data-field="host" title="{{ host }}">{{ host }}</span>{% endif %}
-  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" data-window-ms="{{ window_ms }}" title="sampling interval">{{ update_ms }} ms</span>
+  {% if let Some(host) = host %}<span class="u-meta u-host" data-p="4" data-field="host" title="{{ host }}">{{ host }}</span>{% endif %}{% if !chips.is_empty() %}{% include "partials/agents.html" %}{% endif %}
+  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" data-window-ms="{{ window_ms }}" data-slow-ms="{{ snapshot.slow_ms }}" data-slow-seq="{{ snapshot.slow_seq }}" data-tip="Sampling interval, unit milliseconds&#10;source: btop's -u flag or btop-web.conf&#10;one tick per interval feeds every panel">{{ update_ms }} ms</span>
   <span class="utility-right">
     <span class="u-meta u-clock hdr-clock" data-p="4" data-field="clock"></span>
-    <span class="chip chip-tier" id="tier-chip" data-tip="Priority tiers on screen, no unit&#10;source: the viewport size media queries&#10;each tier's title names the fields it drops"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat footers, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load per core, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User, CPU gauge, memory gauge, live chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
+    <span class="chip chip-tier" id="tier-chip" data-tip="Priority tiers on screen, no unit&#10;source: the viewport size media queries&#10;each tier's title names the fields it drops"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat facts, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat facts, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (frequency, load, cores busy, temperature), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns Command, Threads and User, CPU gauge, memory gauge, live chip sample age, agent chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
     {% if let Some(chip_tip) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" data-tip="{{ chip_tip|safe }}"><span class="up">container</span></span>{% endif %}
     <span class="chip chip-live" id="live-chip" data-tip="Sampler state, live, paused or stale&#10;age unit: seconds since the last frame&#10;source: the server's SSE frames&#10;two intervals without a frame turn STALE"><i class="lamp"></i><span class="live-word up" aria-live="polite">live</span><b class="live-age" id="sample-age" aria-hidden="true"></b></span>
     {% if readonly %}
@@ -30,44 +30,44 @@
     <button class="chip chip-config config-toggle" type="button" aria-expanded="false" aria-controls="config"><span class="up">config</span></button>
   </span>
 </header>
-<main class="page" hx-ext="sse" sse-connect="events">
+<main class="page" hx-ext="sse" sse-connect="{{ sse_url }}">
   <div class="tele">
     <div class="band" data-band="1">
-      <section class="panel stat" id="p-cpu-stat" data-panel="cpu-stat" data-band="1" aria-labelledby="cpu-stat-title">
+      <section class="panel stat" id="p-cpu-stat" data-panel="cpu-stat" data-slot="1" data-band="1" aria-labelledby="cpu-stat-title">
         {% include "partials/cpu_stat.html" %}
       </section>
-      <section class="panel stat" id="p-mem-stat" data-panel="mem-stat" data-band="1" aria-labelledby="mem-stat-title">
+      <section class="panel stat" id="p-mem-stat" data-panel="mem-stat" data-slot="2" data-band="1" aria-labelledby="mem-stat-title">
         {% include "partials/mem_stat.html" %}
       </section>
-      <section class="panel stat" data-p="3" data-field="proc-stat" id="p-proc-stat" data-panel="proc-stat" data-band="1" aria-labelledby="proc-stat-title">
+      <section class="panel stat" data-p="3" data-field="proc-stat" id="p-proc-stat" data-panel="proc-stat" data-slot="3" data-band="1" aria-labelledby="proc-stat-title">
         {% include "partials/proc_stat.html" %}
       </section>
     </div>
     <div class="band" data-band="2">
-      <section class="panel" id="p-net" data-panel="net" data-band="2" aria-labelledby="net-title">
-        {% include "partials/net.html" %}
+      <section class="panel" data-p="3" data-field="cores" id="p-cores" data-panel="cores" data-slot="1" data-band="2" aria-labelledby="cores-title">
+        {% include "partials/cores.html" %}
       </section>
-      <section class="panel" data-p="2" data-field="cpu-gauge" id="p-cpu-gauge" data-panel="cpu-gauge" data-band="2" aria-labelledby="cpu-gauge-title">
+      <section class="panel" data-p="2" data-field="cpu-gauge" id="p-cpu-gauge" data-panel="cpu-gauge" data-slot="2" data-band="2" aria-labelledby="cpu-gauge-title">
         {% include "partials/cpu_gauge.html" %}
       </section>
-      <section class="panel" data-p="2" data-field="mem-gauge" id="p-mem-gauge" data-panel="mem-gauge" data-band="2" aria-labelledby="mem-gauge-title">
+      <section class="panel" data-p="2" data-field="mem-gauge" id="p-mem-gauge" data-panel="mem-gauge" data-slot="3" data-band="2" aria-labelledby="mem-gauge-title">
         {% include "partials/mem_gauge.html" %}
       </section>
     </div>
     <div class="band" data-band="3">
-      <section class="panel" id="p-gpu" data-panel="gpu" data-band="3" aria-labelledby="gpu-title">
+      <section class="panel" id="p-gpu" data-panel="gpu" data-slot="1" data-band="3" aria-labelledby="gpu-title">
         {% include "partials/gpu.html" %}
       </section>
-      <section class="panel" data-p="3" data-field="cores" id="p-cores" data-panel="cores" data-band="3" aria-labelledby="cores-title">
-        {% include "partials/cores.html" %}
+      <section class="panel" id="p-net" data-panel="net" data-slot="2" data-band="3" aria-labelledby="net-title">
+        {% include "partials/net.html" %}
       </section>
-      <section class="panel" data-p="4" data-field="storage" id="p-storage" data-panel="storage" data-band="3" aria-labelledby="storage-title">
+      <section class="panel" data-p="4" data-field="storage" id="p-storage" data-panel="storage" data-slot="3" data-band="3" aria-labelledby="storage-title">
         {% include "partials/storage.html" %}
       </section>
     </div>
   </div>
   <div class="band" data-band="4">
-    <section class="panel" id="p-proc" data-panel="proc" data-band="4" data-proc-view="{{ initial_proc_view }}" aria-labelledby="proc-title">
+    <section class="panel" id="p-proc" data-panel="proc" data-slot="1" data-band="4" data-proc-view="{{ initial_proc_view }}" aria-labelledby="proc-title">
       <header class="ph">
         <h2 id="proc-title">Processes</h2>
         <span class="meta proc-count" id="proc-count" data-tip="Shown / total processes, unit count&#10;source: this sample's process rows&#10;shown follows the view and the filter">{% if let Some(total) = snapshot.proc.total %}{% if let Some(running) = snapshot.proc.running %}{{ running }}/{% endif %}{{ total }}{% endif %}</span>
@@ -108,6 +108,13 @@
       </div>
     </div>
     <div class="cfg-row">
+      <span class="cfg-label" id="cfg-font-label">font</span>
+      <div class="cfg-opts" data-group="font" role="radiogroup" aria-labelledby="cfg-font-label">
+        <button class="opt on" type="button" role="radio" aria-checked="true" data-value="system">system</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="galaxatron">GalaxaTron</button>
+      </div>
+    </div>
+    <div class="cfg-row">
       <span class="cfg-label">mode</span>
       <div class="cfg-opts" data-group="mode">
         <button class="opt" type="button" data-value="dark">dark</button>
@@ -132,11 +139,10 @@
       <span class="cfg-label" id="cfg-num-motion-label" title="number change animation">number</span>
       <div class="cfg-opts" data-group="num-motion" role="radiogroup" aria-labelledby="cfg-num-motion-label">
         <button class="opt on" type="button" role="radio" aria-checked="true" data-value="none" title="none - instant update">none</button>
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="spring" title="spring up">spring</button>
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="blur" title="motion blur (echoes)">blur</button>
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="odometer" title="odometer">odometer</button>
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="spring-blur" title="spring up with motion blur">spring blur</button>
-        <button class="opt" type="button" role="radio" aria-checked="false" data-value="segment" title="segment flip">segment flip</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="spring" title="count up with an overshoot">spring up</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="blur" title="old values fade behind the current one">motion blur</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="odometer" title="each changed digit rolls">odometer</button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-value="spring-blur" title="count up with fading echoes">spring blur</button>
       </div>
     </div>
     {% else if *page == "gpu" %}
@@ -228,8 +234,18 @@
   <button class="opt" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-size="l" aria-label="large">l</button>
 </div>
 
+<div class="panel-menu" id="proc-col-menu" role="menu" aria-label="process columns" hidden>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" tabindex="-1" data-col="pid">Pid</button>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" aria-disabled="true" tabindex="-1" data-col="name" disabled>Program</button>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" tabindex="-1" data-col="command">Command</button>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" tabindex="-1" data-col="threads">Threads</button>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" tabindex="-1" data-col="user">User</button>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" tabindex="-1" data-col="mem">MemB</button>
+  <button class="opt on" type="button" role="menuitemcheckbox" aria-checked="true" tabindex="-1" data-col="cpu">Cpu%</button>
+</div>
+
 <div class="tip" id="tip" role="tooltip" hidden></div>
 
-<script src="assets/app.js"></script>
+<script src="assets/app.js?v={{ asset_stamp }}"></script>
 </body>
 </html>

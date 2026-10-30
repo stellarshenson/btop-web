@@ -38,16 +38,19 @@
 //! Container (ACC-SCOPE-64-CONTAINER): inside a container this collector
 //! departs from btop on the owner's order (2026-10-27) and reads the
 //! container's cgroup v2 files. Every sample, `update_ms`, in bytes:
-//! - the Memory bar is used | cache | other | free = T (DEF-VIEW-50-MEM-TERMS,
-//!   owner 2026-10-28: total and free are the system's, there is no
-//!   in-container free, so `memory.max` is not read). T = MemTotal; used U =
-//!   max(0, `memory.current` - R), R = `active_file` + `inactive_file` +
-//!   `slab_reclaimable` of `memory.stat`, the kernel's MemAvailable terms
-//!   taken from the cgroup; cache = R, this container's reclaimable cache;
-//!   free = MemFree; other = T - `memory.current` - MemFree, the memory used
-//!   outside this container; available = free + cache; percentages
-//!   round(x * 100 / T). The ZFS ARC is not charged to a cgroup and is not
-//!   added
+//! - used U = max(0, `memory.current` - `inactive_file`), docker's working
+//!   set (DEF-VIEW-96-MEM-WRONG); cache = `inactive_file`, this container's
+//!   reclaimable file cache. `active_file` and `slab_reclaimable` are part of
+//!   the container's use and are not subtracted
+//! - T = MemTotal when `memory.max` is `max`, missing or at least MemTotal:
+//!   total, free and other are the host's, free = MemFree, and
+//!   other = T - `memory.current` - MemFree is the host's memory outside this
+//!   container; the bar is used | cache | other | free = T
+//! - when `memory.max` is below MemTotal the limit binds: T = `memory.max`,
+//!   free = T - U - cache, this container's room under its limit, and other
+//!   is dropped; the bar is used | cache | free = T
+//! - available = free + cache; percentages round(x * 100 / T). The ZFS ARC
+//!   is not charged to a cgroup and is not added
 //! - swap used = `memory.swap.current`; swap total = min(`memory.swap.max`,
 //!   SwapTotal), SwapTotal when `max`; free = total - used. A missing
 //!   `memory.swap.current` leaves swap unavailable
@@ -203,6 +206,7 @@ impl MemCollector {
         if config.show_disks {
             snapshot.disks = self.collect_disks(proc_root, config, &snapshot);
         }
+        self.used_history.set_window(config.window_ms());
         self.used_history
             .push(snapshot.ram_percent, config.update_ms);
         snapshot.gauge_pct = snapshot.ram_percent.and(self.used_history.ema());
@@ -509,26 +513,35 @@ fn container_memory(
             Some((key.to_string(), value.trim().parse().ok()?))
         })
         .collect();
-    if let Some(current) = read("memory.current")
-        && let Some(reclaimable) = ["active_file", "inactive_file", "slab_reclaimable"]
-            .iter()
-            .map(|key| memory_stat.get(*key).copied())
-            .sum::<Option<u64>>()
-        && let Some(mem_free) = meminfo.get("MemFree").copied()
-    {
-        let total = mem_total;
-        let used = current.saturating_sub(reclaimable);
-        let ([used, cache, free], other) = split(total, [used, reclaimable, mem_free]);
+    // A limit at or above MemTotal binds nothing, so only a lower memory.max
+    // replaces the bar's total.
+    let limit = read("memory.max").filter(|limit| *limit < mem_total);
+    snapshot.ram_limit = limit;
+    let bar = read("memory.current")
+        .zip(memory_stat.get("inactive_file").copied())
+        .and_then(|(current, inactive_file)| {
+            let used = current.saturating_sub(inactive_file);
+            if let Some(limit) = limit {
+                let ([used, cache], free) = split(limit, [used, inactive_file]);
+                return Some((limit, used, cache, free, None));
+            }
+            let ([used, cache, free], other) = split(
+                mem_total,
+                [used, inactive_file, meminfo.get("MemFree").copied()?],
+            );
+            Some((mem_total, used, cache, free, Some(other)))
+        });
+    if let Some((total, used, cache, free, other)) = bar {
         let available = free + cache;
         snapshot.ram_total = Some(total);
         snapshot.ram_used = Some(used);
         snapshot.ram_cache = Some(cache);
-        snapshot.ram_other = Some(other);
+        snapshot.ram_other = other;
         snapshot.ram_free = Some(free);
         snapshot.ram_available = Some(available);
         snapshot.ram_percent = Some(percent(used, total));
         snapshot.ram_cache_percent = Some(percent(cache, total));
-        snapshot.ram_other_percent = Some(percent(other, total));
+        snapshot.ram_other_percent = other.map(|other| percent(other, total));
         snapshot.ram_free_percent = Some(percent(free, total));
         snapshot.ram_available_percent = Some(percent(available, total));
     }
@@ -1245,38 +1258,71 @@ mod tests {
 
     const GIB: u64 = 1 << 30;
 
-    /// DEF-VIEW-50-MEM-TERMS: used | cache | other | free = MemTotal.
+    /// DEF-VIEW-96-MEM-WRONG: used is docker's working set,
+    /// memory.current - inactive_file, and cache is inactive_file;
+    /// active_file and slab_reclaimable stay part of the container's use. The
+    /// recorded memory.max (8 GiB) is below MemTotal, so it binds: the total
+    /// is the limit, free is the room under it, and other is dropped.
     #[test]
-    fn container_memory_follows_the_cgroup() {
+    fn container_memory_reads_dockers_working_set() {
         let snapshot = container_snapshot(&fixture("container/sys/fs/cgroup"));
-        let total = 527_649_328 * 1024;
-        let free = 172_308_644 * 1024;
-        assert_eq!(snapshot.ram_total, Some(total));
-        // U = 4 GiB - R, R = 1 + 1 GiB + 256 MiB = 2.25 GiB.
-        assert_eq!(snapshot.ram_used, Some(1_879_048_192));
-        assert_eq!(snapshot.ram_cache, Some(2_415_919_104));
-        assert_eq!(snapshot.ram_free, Some(free));
-        assert_eq!(snapshot.ram_other, Some(total - 4 * GIB - free));
-        assert_eq!(snapshot.ram_available, Some(free + 2_415_919_104));
-        assert_eq!(bar_sum(&snapshot), total);
-        assert_eq!(snapshot.ram_percent, Some(0.0));
-        assert_eq!(snapshot.ram_cache_percent, Some(0.0));
-        assert_eq!(snapshot.ram_other_percent, Some(67.0));
-        assert_eq!(snapshot.ram_free_percent, Some(33.0));
-        assert_eq!(snapshot.ram_available_percent, Some(33.0));
+        assert_eq!(snapshot.ram_total, Some(8 * GIB));
+        assert_eq!(snapshot.ram_limit, Some(8 * GIB));
+        // 4 GiB memory.current - 1 GiB inactive_file; the 1 GiB active_file
+        // and 256 MiB slab_reclaimable are not subtracted.
+        assert_eq!(snapshot.ram_used, Some(3 * GIB));
+        assert_eq!(snapshot.ram_cache, Some(GIB));
+        // 8 GiB memory.max - 4 GiB memory.current, the room under the limit.
+        assert_eq!(snapshot.ram_free, Some(4 * GIB));
+        assert_eq!(snapshot.ram_other, None);
+        assert_eq!(snapshot.ram_available, Some(5 * GIB));
+        assert_eq!(bar_sum(&snapshot), 8 * GIB);
+        assert_eq!(snapshot.ram_percent, Some(38.0));
+        assert_eq!(snapshot.ram_cache_percent, Some(13.0));
+        assert_eq!(snapshot.ram_other_percent, None);
+        assert_eq!(snapshot.ram_free_percent, Some(50.0));
+        assert_eq!(snapshot.ram_available_percent, Some(63.0));
     }
 
-    /// No in-container free: no limit and a limit above MemTotal give the
-    /// recorded 8 GiB limit's bar.
+    /// DEF-VIEW-95-SCOPE-MIX: with memory.max `max` or above MemTotal the
+    /// header total and free are the host's and other is the host's memory
+    /// outside this container; used and cache stay this container's.
     #[test]
-    fn container_memory_ignores_memory_max() {
-        let limited = container_snapshot(&fixture("container/sys/fs/cgroup"));
+    fn container_memory_without_a_limit_reads_the_host_total_and_free() {
+        let total = 527_649_328 * 1024;
+        let free = 172_308_644 * 1024;
         for (name, limit) in [("cg-max", "max\n"), ("cg-above", "1000000000000000\n")] {
             let cgroup = cgroup_variant(name, "memory.max", Some(limit));
             let snapshot = container_snapshot(&cgroup);
-            assert_eq!(bar_sum(&snapshot), 527_649_328 * 1024);
-            assert_eq!(snapshot.ram_segments(), limited.ram_segments());
+            assert_eq!(snapshot.ram_total, Some(total));
+            assert_eq!(snapshot.ram_limit, None);
+            assert_eq!(snapshot.ram_used, Some(3 * GIB));
+            assert_eq!(snapshot.ram_cache, Some(GIB));
+            assert_eq!(snapshot.ram_free, Some(free));
+            assert_eq!(snapshot.ram_other, Some(total - 4 * GIB - free));
+            assert_eq!(snapshot.ram_available, Some(free + GIB));
+            assert_eq!(bar_sum(&snapshot), total);
+            assert_eq!(snapshot.ram_percent, Some(1.0));
+            assert_eq!(snapshot.ram_other_percent, Some(67.0));
             let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
+        }
+    }
+
+    /// ACC-SCOPE-64-CONTAINER: a container with no readable cgroup renders
+    /// every memory value unavailable, never the host's.
+    #[test]
+    fn container_memory_without_a_cgroup_is_unavailable() {
+        for cgroup in [None, Some(PathBuf::from("/btop-web-no-such-cgroup"))] {
+            let mut config = in_container(Path::new("/btop-web-no-cgroup"));
+            config.container.as_mut().expect("container").cgroup = cgroup;
+            let snapshot = MemCollector::default().collect(&fixture("container/proc"), &config);
+            assert_eq!(snapshot.ram_total, None);
+            assert_eq!(snapshot.ram_used, None);
+            assert_eq!(snapshot.ram_cache, None);
+            assert_eq!(snapshot.ram_free, None);
+            assert_eq!(snapshot.ram_other, None);
+            assert_eq!(snapshot.ram_available, None);
+            assert_eq!(snapshot.ram_limit, None);
         }
     }
 

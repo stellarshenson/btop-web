@@ -57,12 +57,33 @@ fn every_shipped_pair_has_both_modes() {
         "terracotta",
         "ultraviolet",
         "cyberpunk",
+        "steel",
     ] {
         assert!(
             ids.contains(&expected),
             "theme {expected} missing; shipped: {ids:?}"
         );
     }
+}
+
+/// ACC-THEME-152-STEEL: the pair carries the lab's surfaces and text ramp in
+/// both modes; the contrast tests below then hold it to the same floors.
+#[test]
+fn steel_pair_matches_the_lab_tokens() {
+    let pair = embedded_pairs()
+        .into_iter()
+        .find(|pair| pair.id == "steel")
+        .expect("the Steel pair ships");
+    assert_eq!(pair.label, "Steel");
+    assert_eq!(hex(pair.dark.color("main_bg")), "#252b32");
+    assert_eq!(hex(pair.light.color("main_bg")), "#cdd0d6");
+    let ramp = |palette: &Palette| {
+        ["main_fg", "inactive_fg", "graph_text"]
+            .map(|key| hex(palette.color(key)))
+            .join(" ")
+    };
+    assert_eq!(ramp(&pair.dark), "#c3c3c3 #a5a5a5 #7d8791");
+    assert_eq!(ramp(&pair.light), "#23262a #2c3035 #3d4148");
 }
 
 #[test]
@@ -157,6 +178,54 @@ fn semantic_tokens_reach_their_wcag_floors_in_every_pair_and_mode() {
                 pair.id,
                 hex(colors["selection-fg"]),
                 hex(colors["selection-bg"])
+            );
+        }
+    }
+}
+
+/// DEF-VIEW-84-TIP-VISIBLE: the tooltip reads as an overlay on its own
+/// surface, one lightness step off the panel at 1.25:1 or more, with the
+/// accent border at 3:1 on both the fill and the panel and a two-tone ramp:
+/// the strong first line and the muted source lines at 4.5:1 on the fill.
+#[test]
+fn tooltip_surface_separates_and_keeps_its_text_readable() {
+    for pair in embedded_pairs() {
+        for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
+            let colors = semantic(palette);
+            let panel = colors["surface"];
+            let fill = colors["tip-surface"];
+            let ratio = contrast(fill, panel);
+            assert!(
+                ratio >= 1.25,
+                "{} {mode}: tip-surface {} on surface {} is {ratio:.2}:1",
+                pair.id,
+                hex(fill),
+                hex(panel)
+            );
+            for base in [panel, fill] {
+                let ratio = contrast(colors["tip-border"], base);
+                assert!(
+                    ratio >= 3.0,
+                    "{} {mode}: tip-border {} on {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(colors["tip-border"]),
+                    hex(base)
+                );
+            }
+            for token in ["tip-text", "tip-muted"] {
+                let ratio = contrast(colors[token], fill);
+                assert!(
+                    ratio >= 4.5,
+                    "{} {mode}: {token} {} on tip-surface {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(colors[token]),
+                    hex(fill)
+                );
+            }
+            assert!(
+                contrast(colors["tip-text"], fill) >= contrast(colors["tip-muted"], fill),
+                "{} {mode}: the strong line is dimmer than the muted one",
+                pair.id
             );
         }
     }

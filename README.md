@@ -56,11 +56,29 @@ docker run --rm -p 40290:40290 -v "$PWD/btop-web.conf:/etc/btop-web.conf:ro" \
 - **Unavailable** - CPU frequency, temperature, disk IO, network on a shared host namespace
 - **Detection** - the log prints `scope=container` with runtime, signal, cgroup and network, or `scope=host`; a CONTAINER chip names them
 
+### 2.2 Agent and client
+
+- **Standalone** - no mode flag: samples this host and serves the page. The default
+- **Agent** - `--agent` samples this host and serves `/events`, `/healthz` and `/readyz` only, over TLS 1.3 alone; no page, no assets
+- **Agent certificate** - generated self-signed with a random key on the first start at `$XDG_CONFIG_HOME/btop-web/agent.crt` and `agent.key` (mode 0600), reused afterwards; `--tls-cert` and `--tls-key` replace it, and their `-fd` forms read it once from an inherited descriptor; an encrypted PKCS#8 key takes its passphrase from `--tls-key-passphrase-env`, `--tls-key-passphrase-file` or `--tls-key-passphrase-fd`
+- **Secrets** - a certificate, key, passphrase or access key is named by a path, a descriptor number or an environment variable name; no secret value is ever a flag
+- **Client** - `--client --connect NAME=http://HOST:PORT` samples nothing and serves the page from the named agents over TLS 1.3; `--connect` repeats
+- **Pinning** - the client records the agent certificate's `sha256:` fingerprint on the first connect in `$XDG_CONFIG_HOME/btop-web/known_agents` and refuses any other certificate, naming both fingerprints
+- **Config keys** - `mode = standalone | agent | client` and one `connect = NAME=http://HOST:PORT` line per agent; the flags outrank both
+- **Naming** - `NAME` matches `[A-Za-z0-9._-]` and is unique; the top bar names every agent beside its sample age
+- **Selection** - the first configured agent is selected; a chip switches the page with `/?agent=NAME`, and an unknown name answers 404
+- **State** - an agent that stops answering reads `unavailable` in its chip, with its last frames held for the page's existing STALE mark; never zeros
+- **Streams** - one upstream connection per agent, shared by every viewer: two browsers cost one collection per agent tick, not one per viewer
+
 ## 3. Configuration
 
 | Key | Default | Variable | Effect |
 |---|---|---|---|
 | `listen` | `127.0.0.1:40290` | `BTOP_WEB_LISTEN` | bind |
+| `mode` | `standalone` | - | `standalone`, `agent` or `client`; `--agent` / `--client` outrank it |
+| `connect` | - | - | `NAME=http://HOST:PORT`, one line per agent; client mode |
+| `connect_key` | - | - | `NAME=/PATH` or `NAME=fd:N`, the key source for each client agent |
+| `tls_cert`, `tls_key` | generated pair | - | the agent listener's PEM certificate and key; both or neither |
 | `theme` | `0` | - | first-paint theme |
 | `update_ms` | `250` | `BTOP_WEB_UPDATE_MS` | interval in ms; btop's is 2000 |
 | `proc_root` | `/proc` | `BTOP_WEB_PROC_ROOT` | collector root |
@@ -77,6 +95,10 @@ Unknown keys are ignored; an invalid value stops startup with file and line. Oth
 | `--proc-view VIEW` | `top`, `all`, `tree`; a stored choice outranks both; else `tree` when `proc_tree`, else `top`; invalid or missing exits 2 |
 | `--title TEXT` | tab title, default `btop-web`; blank or missing exits 2 |
 | `--readonly`, `--no-readonly` | refuse mutations (default), or allow changes |
+| `--agent`; `--client` | telemetry only, or the dashboard from `--connect` agents; the two are exclusive |
+| `--connect NAME=URL` | `NAME=http://HOST:PORT`; repeats; client mode; a bad name or URL stops startup |
+| `--tls-cert PATH`; `--tls-key PATH`; `--tls-cert-fd N`; `--tls-key-fd N` | the agent listener's PEM pair, from a path or an inherited descriptor; both or neither; without them the agent generates and reuses its own |
+| `--access-key-file PATH`; `--access-key-fd N`; `--tls-key-passphrase-env VAR`; `--tls-key-passphrase-file PATH`; `--tls-key-passphrase-fd N`; `--known-agents PATH` | the agent's access key, the encrypted key's passphrase and the client's pin file; a secret value is never a flag value |
 | `--default-config`; `-h, --help`; `-v, -V, --version` | print embedded config; usage; version |
 | `-b/--boxes`, `-l/--low-color`, `-p/--preset`, `-t/--tty_on`, `--utf-force` | btop's terminal-only flags; exit 2 with `btop-web: <flag> is terminal-only and not applicable` |
 
@@ -85,12 +107,12 @@ Unknown keys are ignored; an invalid value stops startup with file and line. Oth
 CONFIG opens seven pages: general, cpu, gpu, mem, net, proc, layout.
 
 - **Display options** - theme, mode, pause, motion, GPU, process view, tree depth, sort, layout; per browser; layout resets
-- **Server options** - 38 keys; read-only shows text
+- **Server options** - 41 keys; read-only shows text
 - **`--no-readonly`** - each becomes a form, validated, applied in two ticks
-- **File write** - temp file and rename; without `-c` it ends at restart
+- **File write** - one line rewritten in `$XDG_CONFIG_HOME/btop-web/btop-web.conf`, or `~/.config/btop-web/btop-web.conf` when unset; temp file and rename; without a resolvable home a change ends at restart
 - **Origin** - a mismatched `Origin` gets 403
-- **btop file** - `~/.config/btop/btop.conf` is untouched
-- **Precedence** - `-u`, `--theme`, `--proc-view` and `BTOP_WEB_*` outrank the file
+- **btop file** - `btop.conf` is the baseline and is never written
+- **Precedence** - `-u`, `--theme`, `--proc-view` and `BTOP_WEB_*` outrank both files
 
 ## 4. Endpoints
 
@@ -98,11 +120,12 @@ No SPA, no JSON API.
 
 | Request | Response |
 |---|---|
-| `GET /` | dashboard page |
-| `GET /events` | SSE: `cpu`, `mem`, `net`, `proc`, `gpu`, five per snapshot |
+| `GET /` | dashboard page; client mode `/?agent=NAME` selects the agent |
+| `GET /events` | SSE: `cpu`, `mem`, `net`, `proc`, `gpu`, five per snapshot; client mode `/events?agent=NAME` relays that agent's fragments |
+| `GET /agents?agent=NAME` | client mode: the agent strip fragment for the one-second htmx poll; 404 in the server modes |
 | `POST /config` | one option as HTML |
 | `GET /healthz` | `ok` |
-| `GET /readyz` | 200 `ready` after first snapshot, else 503 |
+| `GET /readyz` | 200 `ready` once the listener serves |
 | `GET /assets/*` | CSS, JavaScript, htmx, icon; sha256 `ETag`, `Cache-Control: no-cache`, 304 on `If-None-Match` match |
 
 ## 5. Smooth graph scrolling
@@ -134,7 +157,7 @@ Build commands and gates; `make help` lists all.
 - **Static build** - the NVIDIA panel needs a host glibc equal to the build host's; NVML loads at runtime
 - **AMD** - DRM sysfs by default; `FEATURES=rocm` adds ROCm SMI, needs `librocm_smi64`
 - **CI** - ubuntu-latest runs fmt-check, clippy, test, cargo-deny, coverage, zizmor, Docker build
-- **Tests** - `make ci` runs 269 tests: 198 library, 5 end-to-end, 55 HTTP, 11 theme contrast
+- **Tests** - `make ci` runs 332 tests: 233 library, 6 end-to-end, 73 HTTP, 6 performance, 1 font, 13 theme contrast
 - **Fixtures** - collector tests use recorded roots; mount paths and the interface list resolve inside the tree; e2e sets `BTOP_WEB_PROC_ROOT`
 - **Filter placeholder** - a yellow block on the placeholder is Chromium's find-in-page highlight, not the page's paint
 
@@ -152,11 +175,12 @@ crates/btop-web/tests/fixtures/
 ## 8. Exposure
 
 > [!WARNING]
-> btop-web has no authentication and binds loopback by default. The page shows process names, command lines, users, endpoints. Remote access needs a TLS proxy with access control. Read-only blocks mutations but adds no authentication; `--no-readonly` lets anyone change options and the `-c` file.
+> btop-web has no authentication and binds loopback by default. The page shows process names, command lines, users, endpoints. Remote access needs a TLS proxy with access control. Read-only blocks mutations but adds no authentication; `--no-readonly` lets anyone change options and the btop-web.conf file.
 
 ## 9. Licence and attribution
 
-Apache-2.0 ([LICENSE](LICENSE)).
+MIT ([LICENSE](LICENSE)). Borrowed parts keep their own licences and are listed in [NOTICE.md](NOTICE.md):
 
-- **btop** - Aristocratos and contributors, Apache-2.0; theme files adapted from its `themes/`
-- **htmx** - 2.0.11 and its SSE extension, 0BSD
+- **btop** - Aristocratos and contributors, Apache-2.0; the theme files in `crates/btop-web/themes/` are adapted from its `themes/`
+- **htmx** - 2.0.11 and htmx-ext-sse 2.2.2, BSD-2-Clause; `crates/btop-web/assets/htmx.min.js` and `htmx-sse.min.js`
+- **GalaxaLabsTron Narrow** - OFL 1.1, derived from Orbitron; `crates/btop-web/assets/fonts/`

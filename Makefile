@@ -1,4 +1,4 @@
-.PHONY: help increment_version_number build build-static fmt-check clippy test deny coverage ci run docker clean env tools version upgrade release doctor
+.PHONY: help increment_version_number build build-static fmt-check clippy test deny coverage sbom ci run docker clean env tools version upgrade release doctor
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -77,9 +77,16 @@ coverage:
 ## Run every gate: format check, clippy and tests
 ci: fmt-check clippy test
 
-## Build and run the server
+## Regenerate sbom.cdx.json from Cargo.lock and the crate manifests, offline
+sbom:
+	python3 scripts/sbom.py
+
+# The glibc arena cap takes effect only from the environment that starts the
+# process; a value set inside it arrives too late. The deployed service must set
+# MALLOC_ARENA_MAX=1 in its unit or container environment as well.
+## Build and run the server with one glibc arena
 run: increment_version_number
-	$(CARGO) run --locked --release $(FEATURES_FLAG)
+	MALLOC_ARENA_MAX=1 $(CARGO) run --locked --release $(FEATURES_FLAG)
 
 # shortcut: the Dockerfile has no ARG FEATURES, so this build arg is ignored until it declares one
 ## Build the container image

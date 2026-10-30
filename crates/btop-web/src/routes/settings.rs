@@ -2,6 +2,9 @@
 //! path. With the read-only guard on, `readonly_guard` refuses the POST before
 //! it reaches [`update`] and the rows render as text. With the guard off, a row
 //! is an htmx form whose POST answers with the row re-rendered as HTML.
+//!
+//! ACC-CONF-148-OWN-FILE: a write goes to btop-web.conf only, never to the
+//! btop.conf that `--config` loaded.
 
 use std::collections::HashMap;
 
@@ -40,13 +43,23 @@ struct CfgKey<'a> {
 }
 
 /// `POST config`: validate one `key=value` pair with the file's parser, write
-/// the key's line to the loaded file, then hand the new configuration to the
+/// the key's line to btop-web.conf, then hand the new configuration to the
 /// sampler. Nothing changes unless every step succeeds.
 pub async fn update(
     State(state): State<AppState>,
     headers: HeaderMap,
     Form(form): Form<HashMap<String, String>>,
 ) -> Response {
+    // ACC-NET-143-AGENT-MODES: a client applies no server option - the agents
+    // own the configuration - so the boundary refuses the write instead of
+    // editing the file the local agent reads at its next start.
+    if state.client.is_some() {
+        return (
+            StatusCode::FORBIDDEN,
+            "client mode: server options belong to the agents",
+        )
+            .into_response();
+    }
     if !same_origin(&headers) {
         return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
     }
@@ -94,7 +107,9 @@ pub async fn update(
                 }
             }
         }
-        None => "applied until restart; no config file loaded".to_string(),
+        None => {
+            "applied until restart; no btop-web.conf path: set HOME or XDG_CONFIG_HOME".to_string()
+        }
     };
     state.config.send_replace(candidate.clone());
     row(StatusCode::OK, CfgRow::new(option, &candidate, msg))

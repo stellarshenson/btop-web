@@ -7,6 +7,8 @@
 <span class="cfg-k" id="cfg-{{ row.option.key }}-k" title="{{ row.option.help }}">{{ row.option.key }}</span><span class="cfg-opts" role="group" aria-labelledby="cfg-{{ row.option.key }}-k"><button class="opt{% if row.value == "True" %} on{% endif %}" type="submit" name="value" value="True" id="cfg-{{ row.option.key }}-on" aria-pressed="{{ row.value == "True" }}">on</button><button class="opt{% if row.value == "False" %} on{% endif %}" type="submit" name="value" value="False" id="cfg-{{ row.option.key }}-off" aria-pressed="{{ row.value == "False" }}">off</button></span>
 {%- when crate::config::Control::Int { min, max } -%}
 <label class="cfg-k" for="cfg-{{ row.option.key }}" title="{{ row.option.help }}">{{ row.option.key }}</label><input class="opt cfg-in" type="number" name="value" id="cfg-{{ row.option.key }}" value="{{ row.value }}" min="{{ min }}" max="{{ max }}" step="1">
+{%- when crate::config::Control::Chips(choices) -%}
+<span class="cfg-k" id="cfg-{{ row.option.key }}-k" title="{{ row.option.help }}">{{ row.option.key }}</span><span class="cfg-opts" role="group" aria-labelledby="cfg-{{ row.option.key }}-k">{% for (value, label) in choices %}<button class="opt{% if *value == row.value %} on{% endif %}" type="submit" name="value" value="{{ value }}" aria-pressed="{{ *value == row.value }}">{{ label }}</button>{% endfor %}</span>
 {%- when crate::config::Control::Text -%}
 <label class="cfg-k" for="cfg-{{ row.option.key }}" title="{{ row.option.help }}">{{ row.option.key }}</label><input class="opt cfg-in" type="text" name="value" id="cfg-{{ row.option.key }}" value="{{ row.value }}" autocomplete="off" spellcheck="false">
 {%- when crate::config::Control::Choice(choices) -%}

@@ -46,7 +46,27 @@
 //! which holds the server's cost per tick under the ACC-VIEW-52 bar
 //! (ACC-PERF-16-NO-OVERHEAD); a deeper collapsed row shows no graph.
 //!
-//! Period: every sample, `update_ms` (250 ms by default; btop's 2000).
+//! Period: every sample, `update_ms` (250 ms by default; btop's 2000), on the
+//! sampler's slow pass, so the walk and the counts rebuild every
+//! `proc_refresh_ms` (1000 by default) while the values keep the tick
+//! (ACC-PERF-149-SPLIT-CADENCE). The histories are told that slower period, so
+//! the count graph and the row graphs keep their wall-clock windows.
+//!
+//! Reads (DEF-PERF-76-SERVER-COST): the procfs root is opened once as a
+//! directory fd and every `<pid>/stat`, `<pid>/status`, `<pid>/comm`,
+//! `<pid>/cmdline` and `<pid>/statm` is opened relative to it with `openat`,
+//! into one reused byte buffer. A one-page procfs file's short read is its
+//! end, so a stat costs one read; the stat line is parsed from its bytes with
+//! no per-row string. Name, command line and user are `Arc<str>` in three
+//! LRU caches keyed by pid and `starttime`, bounded at
+//! [`IDENTITY_CACHE_LIMIT`] strings each (ACC-PERF-141-CACHE-BOUND): a string
+//! is read when its pid first appears or comes back with another starttime,
+//! cloned per tick by pointer, dropped when the process leaves the scan or
+//! the cache passes its limit, and a row whose string is missing renders that
+//! field unavailable rather than a stale value. The CPU model name and the
+//! container's `cgroup.procs` membership are re-read every 5 s
+//! (`gpu::SLOW_PERIOD`), not every tick; a process that joins or leaves the
+//! container is listed up to 5 s late.
 //!
 //! Container (ACC-SCOPE-64-CONTAINER): inside a container this collector
 //! departs from btop on the owner's order (2026-10-27). Every sample,
@@ -77,24 +97,32 @@
 //! - 80 percent cpu and mem: the Cpu% (and, separately, MemB) values sorted
 //!   largest first; the count is the first k whose sum reaches 80 percent of
 //!   the sum of all values, 0 when that sum is 0
-//! - count graph: the total pushed into a [`History`] (the 240 s window, the
-//!   1 s EMA, the shared decimation), drawn from 0 to the smallest 1, 2 or
-//!   5 x 10^k at or above both 10 and the largest drawn sample; a change of
-//!   that ceiling runs through [`Scale`], as the network plots do
-//!   (ACC-GRAPH-67-SMOOTH-SCALE)
+//! - count graph: the total pushed into a [`History`] (the configured time
+//!   axis window, the 1 s EMA, the shared decimation), drawn from 0 to the
+//!   smallest 1, 2 or 5 x 10^k at or above both 10 and the largest drawn
+//!   sample; a change of that ceiling runs through [`Scale`], as the network
+//!   plots do (ACC-GRAPH-67-SMOOTH-SCALE)
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::fs;
+use std::fs::File;
+use std::io::{ErrorKind, Read};
+use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::SystemTime;
+use std::sync::{Arc, Mutex};
+use std::time::{Instant, SystemTime};
+
+use nix::fcntl::{OFlag, open, openat};
+use nix::sys::stat::Mode;
 
 use crate::chart::{History, PROC_COUNT, PROC_GRAPH, PROC_WINDOW_MS, Scale};
 use crate::config::Config;
 
 use super::container;
-use super::{ProcEntry, ProcSnapshot, ProcSum};
+use super::gpu::SLOW_PERIOD;
+use super::{ProcEntry, ProcSnapshot, ProcSum, cpu_tone};
 
 /// btop's `sort_vector` (`src/btop_shared.hpp`), in the same order.
 pub const SORT_MODES: [&str; 8] = [
@@ -114,7 +142,12 @@ const KTHREADD: i32 = 2;
 struct ProcState {
     cputimes: u64,
     processes: HashMap<i32, CachedProcess>,
+    /// ACC-PERF-141-CACHE-BOUND: the rows' name, command and user strings.
+    identity: IdentityCache,
     passwd: PasswdCache,
+    /// The procfs root directory fd, opened once and reused by every read
+    /// (DEF-PERF-76-SERVER-COST).
+    dir: Option<ProcRoot>,
     /// btop's `kernels_procs`, seeded with kthreadd.
     kernel_pids: HashSet<i32>,
     /// btop's `proc_clear_count`, which rebuilds the kernel set every 256 samples.
@@ -130,7 +163,9 @@ impl Default for ProcState {
         Self {
             cputimes: 0,
             processes: HashMap::new(),
+            identity: IdentityCache::default(),
             passwd: PasswdCache::default(),
+            dir: None,
             kernel_pids: HashSet::from([KTHREADD]),
             kernel_clear_count: 0,
             count: History::new(),
@@ -139,16 +174,210 @@ impl Default for ProcState {
     }
 }
 
+/// One procfs root directory, opened once and reused: a row's files are
+/// opened relative to it with `openat`, so no path is resolved from `/` and no
+/// per-row path string or file stat is paid.
+struct ProcRoot {
+    fd: OwnedFd,
+}
+
+impl ProcRoot {
+    fn open(root: &Path) -> Option<Self> {
+        let fd = open(
+            root,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .ok()?;
+        Some(Self { fd })
+    }
+}
+
+/// Read `<pid>/<name>` through `root` into `buffer`, `path` being the reusable
+/// relative-path scratch; returns the byte count. `None` when the file cannot
+/// be opened or read. `single` marks a procfs one-page file (`comm`,
+/// `status`, `stat`, `statm`, all `single_open` in the kernel): the kernel
+/// serves it from one page, so a short read is the end of the file and the
+/// EOF read is skipped. `cmdline` is a multi-page seq_file and keeps reading
+/// to EOF.
+fn read_at(
+    root: &ProcRoot,
+    pid: i32,
+    name: &str,
+    single: bool,
+    buffer: &mut Vec<u8>,
+    path: &mut String,
+) -> Option<usize> {
+    path.clear();
+    let _ = write!(path, "{pid}/{name}");
+    let file = openat(
+        &root.fd,
+        path.as_str(),
+        OFlag::O_RDONLY | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .ok()?;
+    let mut file = File::from(file);
+    buffer.clear();
+    loop {
+        let start = buffer.len();
+        if start == buffer.capacity() {
+            buffer.reserve(4096);
+        }
+        buffer.resize(buffer.capacity(), 0);
+        let wanted = buffer.len() - start;
+        match file.read(&mut buffer[start..]) {
+            Ok(0) => {
+                buffer.truncate(start);
+                return Some(start);
+            }
+            Ok(read) => {
+                buffer.truncate(start + read);
+                if single && read < wanted {
+                    return Some(start + read);
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => return None,
+        }
+    }
+}
+
 /// A `proc_info` entry in btop's `current_procs` plus the cached stat counters.
 #[derive(Default)]
 struct CachedProcess {
+    /// The row without its identity strings, which the snapshot fills from
+    /// [`IdentityCache`].
     entry: ProcEntry,
     cpu_t: u64,
     cpu_s: u64,
+    /// The `starttime` the entry's identity was read at; a different one means
+    /// the pid was reused and the identity is read again.
+    starttime: Option<u64>,
     /// btop's `p_graphs` entry; it goes with the pid when the pid vanishes.
     graph: RowGraph,
     /// The subtree's summed graph, while the pid has children.
     sum_graph: RowGraph,
+}
+
+/// A pid and the `starttime` its identity string was read at, `None` until
+/// the first stat read supplies it.
+type IdentityKey = (i32, Option<u64>);
+
+/// ACC-PERF-141-CACHE-BOUND: the entries one identity cache holds, one string
+/// per process. A desktop holds well under this many processes in one scan,
+/// so the ceiling only bites under a process flood; the row whose string was
+/// evicted shows that field unavailable rather than a stale value.
+const IDENTITY_CACHE_LIMIT: usize = 4096;
+
+/// ACC-PERF-141-CACHE-BOUND: one kind of identity string (name, command line
+/// or user), keyed by pid and starttime so a reused pid reads its own string.
+/// The least recently used string is dropped when the next one arrives at
+/// [`IDENTITY_CACHE_LIMIT`].
+#[derive(Default)]
+struct StringLru {
+    values: HashMap<IdentityKey, (u64, Arc<str>)>,
+    /// Use stamps in eviction order; `remove_first` is the least recently used.
+    order: BTreeMap<u64, IdentityKey>,
+    tick: u64,
+}
+
+impl StringLru {
+    fn next_tick(&mut self) -> u64 {
+        self.tick = self.tick.wrapping_add(1);
+        self.tick
+    }
+
+    /// The string for `key`, marked as just used.
+    fn get(&mut self, key: IdentityKey) -> Option<Arc<str>> {
+        let tick = self.next_tick();
+        let (stamp, value) = self.values.get_mut(&key)?;
+        self.order.remove(stamp);
+        *stamp = tick;
+        self.order.insert(tick, key);
+        Some(value.clone())
+    }
+
+    fn insert(&mut self, key: IdentityKey, value: Arc<str>) {
+        let tick = self.next_tick();
+        if let Some((stamp, _)) = self.values.insert(key, (tick, value)) {
+            self.order.remove(&stamp);
+        }
+        self.order.insert(tick, key);
+        while self.values.len() > IDENTITY_CACHE_LIMIT {
+            let Some((_, oldest)) = self.order.pop_first() else {
+                break;
+            };
+            self.values.remove(&oldest);
+        }
+    }
+
+    fn remove(&mut self, key: &IdentityKey) {
+        if let Some((stamp, _)) = self.values.remove(key) {
+            self.order.remove(&stamp);
+        }
+    }
+
+    /// Move a string read before the starttime was known onto the pid's key.
+    fn move_key(&mut self, from: IdentityKey, to: IdentityKey) {
+        if let Some((stamp, value)) = self.values.remove(&from) {
+            self.order.remove(&stamp);
+            self.insert(to, value);
+        }
+    }
+
+    /// Drop every string whose process left the scan or changed starttime.
+    fn retain(&mut self, keep: impl Fn(&IdentityKey) -> bool) {
+        let values = &mut self.values;
+        self.order.retain(|_, key| {
+            if keep(key) {
+                true
+            } else {
+                values.remove(key);
+                false
+            }
+        });
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+/// ACC-PERF-141-CACHE-BOUND: the process identity strings, one bounded LRU per
+/// kind.
+#[derive(Default)]
+struct IdentityCache {
+    name: StringLru,
+    command: StringLru,
+    user: StringLru,
+}
+
+impl IdentityCache {
+    fn retain(&mut self, keep: impl Fn(&IdentityKey) -> bool) {
+        self.name.retain(&keep);
+        self.command.retain(&keep);
+        self.user.retain(&keep);
+    }
+
+    fn remove(&mut self, key: &IdentityKey) {
+        self.name.remove(key);
+        self.command.remove(key);
+        self.user.remove(key);
+    }
+
+    fn move_key(&mut self, from: IdentityKey, to: IdentityKey) {
+        self.name.move_key(from, to);
+        self.command.move_key(from, to);
+        self.user.move_key(from, to);
+    }
+
+    /// The three lengths, for the churn test's ceiling check.
+    #[cfg(test)]
+    fn len(&self) -> (usize, usize, usize) {
+        (self.name.len(), self.command.len(), self.user.len())
+    }
 }
 
 /// btop's `p_graphs` entry and its `p_counters` count of updates in a row
@@ -204,7 +433,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
             let Some(cgroup) = container.cgroup.as_deref() else {
                 return ProcSnapshot::default();
             };
-            let Some(members) = cgroup_members(cgroup, "cgroup.procs") else {
+            let Some(members) = cached_members(cgroup) else {
                 return ProcSnapshot::default();
             };
             let scale = if config.proc_per_core {
@@ -244,6 +473,9 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
         cpu_scale,
     };
 
+    let Some(dir) = state.dir.take().or_else(|| ProcRoot::open(proc_root)) else {
+        return ProcSnapshot::default();
+    };
     let Ok(directory) = fs::read_dir(proc_root) else {
         return ProcSnapshot::default();
     };
@@ -255,12 +487,13 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
     candidates.sort_unstable();
 
     let mut found = Vec::with_capacity(candidates.len());
+    let mut buffer = Vec::with_capacity(4096);
+    let mut path = String::with_capacity(32);
     for pid in candidates {
         if config.proc_filter_kernel && state.kernel_pids.contains(&pid) {
             continue;
         }
         found.push(pid);
-        let path = proc_root.join(pid.to_string());
         let first_sight = !state.processes.contains_key(&pid);
         let cached = state.processes.entry(pid).or_insert_with(|| CachedProcess {
             entry: ProcEntry {
@@ -269,11 +502,52 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
             },
             ..CachedProcess::default()
         });
-        if first_sight && !read_identity(&path, cached, &state.passwd.users) {
-            // btop's `continue`: the entry keeps what was read before the failure.
-            continue;
+        if first_sight {
+            // A pid first seen reads its identity now, before the stat that
+            // supplies the starttime; the key is rebound to it below. A stale
+            // key from an earlier holder of this pid's number goes first.
+            state.identity.remove(&(pid, None));
+            if !read_identity(
+                &dir,
+                pid,
+                (pid, None),
+                &mut state.identity,
+                &state.passwd.users,
+                &mut buffer,
+                &mut path,
+            ) {
+                // btop's `continue`: the entry keeps what was read before the failure.
+                continue;
+            }
         }
-        if let Some(stat) = read_stat(&path, &context) {
+        if let Some(stat) = read_stat(&dir, pid, &context, &mut buffer, &mut path) {
+            match cached.starttime {
+                // The identity read before the first stat moves onto the
+                // starttime the stat supplies.
+                None => state
+                    .identity
+                    .move_key((pid, None), (pid, Some(stat.starttime))),
+                Some(starttime) if starttime != stat.starttime => {
+                    // A reused pid is another process: its old strings go
+                    // before the read, so a failed read leaves them
+                    // unavailable instead of showing the old process's.
+                    state.identity.remove(&(pid, Some(starttime)));
+                    cached.starttime = Some(stat.starttime);
+                    if !read_identity(
+                        &dir,
+                        pid,
+                        (pid, Some(stat.starttime)),
+                        &mut state.identity,
+                        &state.passwd.users,
+                        &mut buffer,
+                        &mut path,
+                    ) {
+                        continue;
+                    }
+                }
+                Some(_) => {}
+            }
+            cached.starttime = Some(stat.starttime);
             apply(cached, stat, &context);
         }
         // btop caches a child of kthreadd and removes it from this sample.
@@ -287,14 +561,32 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
             found.pop();
         }
     }
+    state.dir = Some(dir);
     state
         .processes
         .retain(|pid, _| found.binary_search(pid).is_ok());
+    // ACC-PERF-141-CACHE-BOUND: a string goes when its process left the scan
+    // or its pid number came back with another starttime.
+    state.identity.retain(|(pid, starttime)| {
+        state
+            .processes
+            .get(pid)
+            .is_some_and(|cached| cached.starttime == *starttime)
+    });
     state.cputimes = cputimes;
 
+    let (processes, identity) = (&state.processes, &mut state.identity);
     let mut entries: Vec<ProcEntry> = found
         .iter()
-        .filter_map(|pid| state.processes.get(pid).map(|cached| cached.entry.clone()))
+        .filter_map(|pid| {
+            let cached = processes.get(pid)?;
+            let key = (*pid, cached.starttime);
+            let mut entry = cached.entry.clone();
+            entry.name = identity.name.get(key);
+            entry.command = identity.command.get(key).unwrap_or_default();
+            entry.user = identity.user.get(key);
+            Some(entry)
+        })
         .collect();
     let busy_below = tree_entries(&mut entries, config);
 
@@ -305,9 +597,11 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
         if let Some(cpu_p) = entry.cpu_pct {
             cached.graph.tick(Some(cpu_p), cpu_p, config.update_ms);
         }
-        // The row graphs draw no area, so none is built.
+        // The row graphs draw no area, so none is built. The tone comes from
+        // the window, not the readout (DEF-VIEW-67-SPARKLINE-TONE).
         if let Some(history) = &cached.graph.history {
             entry.graph.line = history.line(PROC_GRAPH, 0.0, 100.0);
+            entry.graph_tone = window_tone(history);
         }
         match entry.sum.as_mut() {
             Some(sum) if entry.depth == 0 || (entry.depth == 1 && entry.ppid == Some(1)) => {
@@ -316,6 +610,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
                 }
                 if let Some(history) = &cached.sum_graph.history {
                     sum.graph.line = history.line(PROC_GRAPH, 0.0, 100.0);
+                    sum.graph_tone = window_tone(history);
                 }
             }
             _ => cached.sum_graph = RowGraph::default(),
@@ -329,6 +624,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
             .count()
     };
     let threads = entries.iter().filter_map(|entry| entry.threads).sum();
+    state.count.set_window(config.window_ms());
     state
         .count
         .push(Some(entries.len() as f64), config.update_ms);
@@ -411,26 +707,39 @@ fn count_ceiling(largest: f64) -> u64 {
 }
 
 /// btop reads comm, cmdline and the uid from status once per pid; a failure
-/// stops the first collection of that pid before stat, and is not retried.
+/// stops the first collection of that pid before stat, and is not retried
+/// until the pid number comes back with a different starttime. Each string
+/// goes into its own cache under `key` as it is read.
 fn read_identity(
-    directory: &Path,
-    cached: &mut CachedProcess,
+    root: &ProcRoot,
+    pid: i32,
+    key: IdentityKey,
+    identity: &mut IdentityCache,
     users: &BTreeMap<String, String>,
+    buffer: &mut Vec<u8>,
+    path: &mut String,
 ) -> bool {
-    let Ok(comm) = fs::read_to_string(directory.join("comm")) else {
+    let Some(read) = read_at(root, pid, "comm", true, buffer, path) else {
         return false;
     };
-    cached.entry.name = Some(comm.strip_suffix('\n').unwrap_or(&comm).to_string());
+    let Ok(comm) = std::str::from_utf8(&buffer[..read]) else {
+        return false;
+    };
+    identity
+        .name
+        .insert(key, Arc::from(comm.strip_suffix('\n').unwrap_or(comm)));
 
-    let Ok(raw) = fs::read(directory.join("cmdline")) else {
+    let Some(read) = read_at(root, pid, "cmdline", false, buffer, path) else {
         return false;
     };
-    cached.entry.command = command_line(&raw);
+    identity
+        .command
+        .insert(key, Arc::from(command_line(&buffer[..read])));
 
-    let Some(uid) = uid(directory) else {
+    let Some(uid) = uid(root, pid, buffer, path) else {
         return false;
     };
-    cached.entry.user = Some(user_name(&uid, users));
+    identity.user.insert(key, Arc::from(user_name(&uid, users)));
     true
 }
 
@@ -473,49 +782,98 @@ fn command_line(raw: &[u8]) -> String {
     String::from_utf8_lossy(&command).into_owned()
 }
 
-fn uid(directory: &Path) -> Option<String> {
-    let status = fs::read_to_string(directory.join("status")).ok()?;
+fn uid(root: &ProcRoot, pid: i32, buffer: &mut Vec<u8>, path: &mut String) -> Option<String> {
+    let read = read_at(root, pid, "status", true, buffer, path)?;
+    let status = std::str::from_utf8(&buffer[..read]).ok()?;
     let line = status.lines().find_map(|line| line.strip_prefix("Uid:"))?;
     Some(line.split_whitespace().next()?.to_string())
 }
 
-fn read_stat(directory: &Path, context: &Context) -> Option<Stat> {
-    let stat = fs::read_to_string(directory.join("stat")).ok()?;
-    let tail = stat.get(stat.rfind(')')? + 1..)?.trim_start();
-    let fields: Vec<&str> = tail.split_whitespace().collect();
-    if fields.len() < 22 {
-        return None;
+/// Parse one ASCII number from a stat field.
+fn number<T: std::str::FromStr>(field: &[u8]) -> Option<T> {
+    std::str::from_utf8(field).ok()?.parse().ok()
+}
+
+fn read_stat(
+    root: &ProcRoot,
+    pid: i32,
+    context: &Context,
+    buffer: &mut Vec<u8>,
+    path: &mut String,
+) -> Option<Stat> {
+    let read = read_at(root, pid, "stat", true, buffer, path)?;
+    let stat = &buffer[..read];
+    // The fields after the last ')': field 14, utime, is the 12th there.
+    let close = stat.iter().rposition(|byte| *byte == b')')?;
+    let mut fields = stat[close + 1..]
+        .split(|byte| byte.is_ascii_whitespace())
+        .filter(|field| !field.is_empty());
+    let state = char::from(*fields.next()?.first()?);
+    let ppid = number(fields.next()?)?;
+    // pgrp through cmajflt.
+    for _ in 2..11 {
+        fields.next()?;
     }
+    let cpu_t = number::<u64>(fields.next()?)? + number::<u64>(fields.next()?)?;
+    // cutime, cstime and priority.
+    for _ in 13..16 {
+        fields.next()?;
+    }
+    let nice = number(fields.next()?)?;
+    let threads = number(fields.next()?)?;
+    // itrealvalue.
+    fields.next()?;
+    let starttime = number(fields.next()?)?;
+    // vsize.
+    fields.next()?;
+    let rss = fields.next()?;
+    let (rss_len, rss_value) = (rss.len(), number::<u64>(rss));
+    let mem = process_memory(rss_len, rss_value, root, pid, context, buffer, path)?;
     Some(Stat {
-        state: fields[0].chars().next()?,
-        ppid: fields[1].parse().ok()?,
-        cpu_t: fields[11].parse::<u64>().ok()? + fields[12].parse::<u64>().ok()?,
-        nice: fields[16].parse().ok()?,
-        threads: fields[17].parse().ok()?,
-        starttime: fields[19].parse().ok()?,
-        mem: process_memory(fields[21], directory, context)?,
+        state,
+        ppid,
+        cpu_t,
+        nice,
+        threads,
+        starttime,
+        mem,
     })
 }
 
 /// btop replaces the RSS field with totalMem when its digit count exceeds that
 /// of totalMem in KiB, then reads statm when the value reaches totalMem.
-fn process_memory(field: &str, directory: &Path, context: &Context) -> Option<u64> {
+fn process_memory(
+    rss_len: usize,
+    rss: Option<u64>,
+    root: &ProcRoot,
+    pid: i32,
+    context: &Context,
+    buffer: &mut Vec<u8>,
+    path: &mut String,
+) -> Option<u64> {
     let limit = context
         .total_memory
         .map(|total| (total >> 10).to_string().len());
     let mut memory = match limit {
-        Some(len) if field.len() > len => context.total_memory?,
-        _ => field.parse::<u64>().ok()?.checked_mul(context.page_size)?,
+        Some(len) if rss_len > len => context.total_memory?,
+        _ => rss?.checked_mul(context.page_size)?,
     };
     if context.total_memory.is_some_and(|total| memory >= total) {
-        memory = statm_memory(directory, context.page_size)?;
+        memory = statm_memory(root, pid, context.page_size, buffer, path)?;
     }
     Some(memory)
 }
 
-fn statm_memory(directory: &Path, page_size: u64) -> Option<u64> {
-    let statm = fs::read_to_string(directory.join("statm")).ok()?;
-    statm
+fn statm_memory(
+    root: &ProcRoot,
+    pid: i32,
+    page_size: u64,
+    buffer: &mut Vec<u8>,
+    path: &mut String,
+) -> Option<u64> {
+    let read = read_at(root, pid, "statm", true, buffer, path)?;
+    std::str::from_utf8(&buffer[..read])
+        .ok()?
         .split_whitespace()
         .nth(1)?
         .parse::<u64>()
@@ -599,6 +957,15 @@ fn graph_value(cpu_p: f64) -> f64 {
     } else {
         cpu_p.round()
     }
+}
+
+/// DEF-VIEW-67-SPARKLINE-TONE: a row graph is painted in the band of its
+/// window's peak, not of the newest readout, so a bar whose history holds a
+/// spike keeps that spike's tone while the number falls to zero. A window of
+/// zeros keeps `cpu-zero`. Stored samples never change, so the tone holds
+/// still between frames until the window itself changes.
+fn window_tone(history: &History) -> &'static str {
+    cpu_tone(history.max())
 }
 
 /// btop: `clamp(round(cmult * 1000 * delta / max(1, delta_total)) / 10, 0, 100 * cores)`.
@@ -756,12 +1123,13 @@ fn walk(index: usize, depth: usize, entries: &[ProcEntry], order: &mut Vec<Walke
         mem_bytes: total.mem,
         threads: total.threads,
         graph: Default::default(),
+        graph_tone: "",
     });
     order[slot].busy_below = below.cpu;
     total
 }
 
-fn text(value: &Option<String>) -> &str {
+fn text(value: &Option<Arc<str>>) -> &str {
     value.as_deref().unwrap_or("")
 }
 
@@ -819,6 +1187,29 @@ pub(super) fn cgroup_members(cgroup: &Path, file: &str) -> Option<HashSet<i32>> 
         pending.extend(children(&directory));
     }
     Some(members)
+}
+
+/// A container's member pids; `None` when its cgroup cannot be read.
+type Members = Option<HashSet<i32>>;
+
+/// DEF-PERF-76-SERVER-COST: the membership's period, the 5 s slow cadence
+/// (`gpu::SLOW_PERIOD`). The cgroup tree and its `cgroup.procs` files do not
+/// change every tick, so the walk runs on the slow cadence; a process that
+/// joins or leaves the container is listed up to 5 s late.
+static MEMBERS: Mutex<BTreeMap<PathBuf, (Instant, Members)>> = Mutex::new(BTreeMap::new());
+
+/// [`cgroup_members`] over `cgroup.procs`, read at most once per
+/// [`SLOW_PERIOD`].
+fn cached_members(cgroup: &Path) -> Option<HashSet<i32>> {
+    let mut cache = MEMBERS.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some((read, members)) = cache.get(cgroup)
+        && read.elapsed() < SLOW_PERIOD
+    {
+        return members.clone();
+    }
+    let members = cgroup_members(cgroup, "cgroup.procs");
+    cache.insert(cgroup.to_path_buf(), (Instant::now(), members.clone()));
+    members
 }
 
 /// btop `Tools::system_uptime`: the first token of `/proc/uptime` as a double.
@@ -1010,7 +1401,7 @@ mod tests {
         assert!(process.user.as_deref().is_some_and(|user| !user.is_empty()));
         assert_eq!(process.mem_bytes, Some(3482 * page_size()));
         assert_eq!(
-            process.command,
+            process.command.as_ref(),
             "ttyd -d 3 -W -i lo -p 7681 -t titleFixed Resources Monitor -t scrollback 0 btop --utf-force"
         );
         assert_eq!(process.cpu_pct, Some(0.0));
@@ -1185,7 +1576,7 @@ mod tests {
             .find(|entry| entry.pid == 333)
             .expect("pid 333");
         assert_eq!(process.name.as_deref(), Some("nostat"));
-        assert_eq!(process.command, "/usr/bin/nostat");
+        assert_eq!(process.command.as_ref(), "/usr/bin/nostat");
         assert!(process.user.as_deref().is_some_and(|user| !user.is_empty()));
         assert_eq!(process.state, None);
         assert_eq!(process.cpu_pct, None);
@@ -1712,6 +2103,73 @@ mod tests {
         );
     }
 
+    /// DEF-VIEW-67-SPARKLINE-TONE: the bar is painted in the band of its
+    /// window's peak, so a row whose readout is 0.0 keeps the spike's tone
+    /// while the window holds the spike, and holds that tone from frame to
+    /// frame.
+    #[test]
+    fn a_zero_row_keeps_the_tone_of_its_window_peak() {
+        let root = temp_tree("spike-tone");
+        fs::write(root.join("uptime"), "1000.00 0.00\n").unwrap();
+        fs::write(root.join("meminfo"), "MemTotal:       1048576 kB\n").unwrap();
+        let pid = root.join("500");
+        fs::create_dir_all(&pid).unwrap();
+        fs::write(pid.join("comm"), "spike\n").unwrap();
+        fs::write(pid.join("cmdline"), b"spike\0").unwrap();
+        fs::write(pid.join("status"), "Uid:\t1000\t1000\t1000\t1000\n").unwrap();
+        // `total` moves every update; the pid's utime moves only while busy.
+        let tick = |total: u64, utime: u64| {
+            fs::write(
+                root.join("stat"),
+                format!("cpu {total} 0 0 0 0 0 0 0 0 0\n"),
+            )
+            .unwrap();
+            write_cpu_stat(&pid, utime);
+            collect(&root, &config())
+                .entries
+                .first()
+                .cloned()
+                .expect("pid 500")
+        };
+        tick(0, 100); // first sight seeds the counters at 0 percent
+        let mut row = tick(100, 200);
+        for step in 2..=10 {
+            row = tick(step * 100, 100 + step * 100);
+        }
+        assert_eq!(row.cpu_pct, Some(100.0));
+        assert_eq!(row.graph_tone, "cpu-crit");
+        let mut zero = tick(1100, 1100);
+        assert_eq!(zero.cpu_pct, Some(0.0));
+        assert!(!zero.graph.line.is_empty());
+        // The spike stays in the 20 s window for the nine idle updates the
+        // graph survives; every one paints in the peak's band.
+        let mut idle = 0;
+        while !zero.graph.line.is_empty() {
+            assert_eq!(zero.graph_tone, "cpu-crit", "idle update {}", idle + 1);
+            idle += 1;
+            zero = tick(1100 + idle * 100, 1100);
+        }
+        assert_eq!(idle, 9, "the graph goes on the 10th idle update");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// DEF-VIEW-67-SPARKLINE-TONE: a window whose every sample is zero keeps
+    /// the zero tone and draws a flat bar at the floor.
+    #[test]
+    fn a_zero_window_keeps_the_zero_tone_and_a_flat_bar() {
+        let mut history = History::with_window(PROC_WINDOW_MS);
+        history.push(Some(0.0), 250);
+        history.push(Some(0.0), 250);
+        assert_eq!(window_tone(&history), "cpu-zero");
+        let line = history.line(PROC_GRAPH, 0.0, 100.0);
+        let ys: Vec<&str> = line
+            .split(['M', 'L'])
+            .filter_map(|point| point.split_once(' ').map(|(_, y)| y))
+            .collect();
+        assert!(ys.len() >= 2, "{line}");
+        assert!(ys.windows(2).all(|pair| pair[0] == pair[1]), "{line}");
+    }
+
     fn in_container(proc_root: &Path) -> Config {
         let mut config = config();
         config.container = container::detect(proc_root);
@@ -1847,7 +2305,11 @@ mod tests {
     }
 
     fn write_cpu_stat(directory: &Path, utime: u64) {
-        let utime = utime.to_string();
+        write_cpu_stat_at(directory, utime, 1000);
+    }
+
+    fn write_cpu_stat_at(directory: &Path, utime: u64, starttime: u64) {
+        let (utime, starttime) = (utime.to_string(), starttime.to_string());
         let fields = [
             "S",
             "1",
@@ -1868,7 +2330,7 @@ mod tests {
             "0",
             "1",
             "0",
-            "1000",
+            starttime.as_str(),
             "1000",
             "42",
         ];
@@ -1877,5 +2339,245 @@ mod tests {
             format!("500 (cpuproc) {}", fields.join(" ")),
         )
         .unwrap();
+    }
+
+    /// DEF-PERF-76-SERVER-COST: a tick clones the identity strings by pointer,
+    /// and a pid number that comes back with a different starttime re-reads
+    /// them.
+    #[test]
+    fn identity_is_shared_by_pointer_and_rebuilt_for_a_reused_pid() {
+        let root = temp_tree("identity-reused");
+        fs::write(root.join("stat"), "cpu 0 0 0 0 0 0 0 0 0 0\n").unwrap();
+        fs::write(root.join("meminfo"), "MemTotal:       1048576 kB\n").unwrap();
+        fs::write(root.join("uptime"), "1000.00 0.00\n").unwrap();
+        let pid = root.join("600");
+        fs::create_dir_all(&pid).unwrap();
+        fs::write(pid.join("comm"), "first\n").unwrap();
+        fs::write(pid.join("cmdline"), b"first\0").unwrap();
+        fs::write(pid.join("status"), "Uid:\t1000\t1000\t1000\t1000\n").unwrap();
+        write_cpu_stat_at(&pid, 100, 1000);
+
+        let first = collect(&root, &config());
+        let second = collect(&root, &config());
+        let (one, other) = (row(&first, 600), row(&second, 600));
+        assert!(Arc::ptr_eq(
+            one.name.as_ref().expect("a name"),
+            other.name.as_ref().expect("a name")
+        ));
+        assert!(Arc::ptr_eq(&one.command, &other.command));
+        assert!(Arc::ptr_eq(
+            one.user.as_ref().expect("a user"),
+            other.user.as_ref().expect("a user")
+        ));
+
+        // The pid number comes back with a new starttime: a reused pid.
+        fs::write(pid.join("comm"), "second\n").unwrap();
+        fs::write(pid.join("cmdline"), b"second\0").unwrap();
+        write_cpu_stat_at(&pid, 100, 2000);
+        let third = collect(&root, &config());
+        let reused = row(&third, 600);
+        assert_eq!(reused.name.as_deref(), Some("second"));
+        assert_eq!(reused.command.as_ref(), "second");
+        assert!(!Arc::ptr_eq(
+            one.name.as_ref().expect("a name"),
+            reused.name.as_ref().expect("a name")
+        ));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// ACC-PERF-141-CACHE-BOUND: the cache holds its ceiling, not one more,
+    /// and the entry it drops is the least recently used.
+    #[test]
+    fn identity_lru_evicts_the_least_recently_used_string() {
+        let mut cache = StringLru::default();
+        for pid in 0..IDENTITY_CACHE_LIMIT as i32 {
+            cache.insert((pid, Some(1)), Arc::from(pid.to_string()));
+        }
+        assert_eq!(cache.len(), IDENTITY_CACHE_LIMIT);
+        // Touch the first entry, so the second is now the least recently used.
+        assert!(cache.get((0, Some(1))).is_some());
+
+        cache.insert((IDENTITY_CACHE_LIMIT as i32, Some(1)), Arc::from("new"));
+        assert_eq!(
+            cache.len(),
+            IDENTITY_CACHE_LIMIT,
+            "the cache stays at its ceiling"
+        );
+        assert_eq!(cache.get((0, Some(1))).as_deref(), Some("0"));
+        assert_eq!(
+            cache.get((1, Some(1))),
+            None,
+            "the least recently used entry is evicted"
+        );
+        assert_eq!(
+            cache.get((IDENTITY_CACHE_LIMIT as i32, Some(1))).as_deref(),
+            Some("new")
+        );
+    }
+
+    fn identity_lengths(root: &Path) -> (usize, usize, usize) {
+        LAST.lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(root)
+            .map_or((0, 0, 0), |state| state.identity.len())
+    }
+
+    /// The test process's resident set, from `/proc/self/statm`.
+    fn rss_bytes() -> u64 {
+        let statm = fs::read_to_string("/proc/self/statm").unwrap_or_default();
+        let pages: u64 = statm
+            .split_whitespace()
+            .nth(1)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        pages * page_size()
+    }
+
+    /// ACC-PERF-141-CACHE-BOUND: 10,000 short-lived processes stay under the
+    /// ceiling, every entry goes when its process leaves the scan, and RSS
+    /// does not grow with the churn.
+    #[test]
+    fn identity_cache_is_bounded_under_process_churn() {
+        let root = temp_tree("identity-churn");
+        fs::write(root.join("stat"), "cpu 0 0 0 0 0 0 0 0 0 0\n").unwrap();
+        fs::write(root.join("meminfo"), "MemTotal:       1048576 kB\n").unwrap();
+        fs::write(root.join("uptime"), "1000.00 0.00\n").unwrap();
+        let config = config();
+        let rss_before = rss_bytes();
+        let mut observed = (0, 0, 0);
+
+        for index in 0..10_000 {
+            let pid = 1_000 + index;
+            let directory = root.join(pid.to_string());
+            fs::create_dir_all(&directory).unwrap();
+            let comm = format!("churn-{index}");
+            fs::write(directory.join("comm"), format!("{comm}\n")).unwrap();
+            fs::write(directory.join("cmdline"), format!("churn\0{index}\0")).unwrap();
+            fs::write(directory.join("status"), "Uid:\t1000\t1000\t1000\t1000\n").unwrap();
+            write_cpu_stat_at(&directory, 100, 1_000 + index as u64);
+
+            let snapshot = collect(&root, &config);
+            let entry = snapshot
+                .entries
+                .iter()
+                .find(|entry| entry.pid == pid)
+                .expect("the churned process");
+            assert_eq!(entry.name.as_deref(), Some(comm.as_str()));
+
+            let lengths = identity_lengths(&root);
+            observed = (
+                observed.0.max(lengths.0),
+                observed.1.max(lengths.1),
+                observed.2.max(lengths.2),
+            );
+            assert!(
+                lengths.0 <= IDENTITY_CACHE_LIMIT
+                    && lengths.1 <= IDENTITY_CACHE_LIMIT
+                    && lengths.2 <= IDENTITY_CACHE_LIMIT,
+                "{lengths:?} passes the {IDENTITY_CACHE_LIMIT} ceiling"
+            );
+            fs::remove_dir_all(&directory).unwrap();
+        }
+
+        // One scan with no process directories evicts the last process.
+        let snapshot = collect(&root, &config);
+        assert!(snapshot.entries.is_empty());
+        assert_eq!(
+            identity_lengths(&root),
+            (0, 0, 0),
+            "every entry goes when its process is gone"
+        );
+        let rss_after = rss_bytes();
+        eprintln!(
+            "identity churn: ceiling {IDENTITY_CACHE_LIMIT} per kind, observed max {observed:?}, RSS {rss_before} -> {rss_after} bytes"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// ACC-PERF-141-CACHE-BOUND: a pid number that comes back as another
+    /// process never shows the previous process's strings; when the new
+    /// process's identity cannot be read, the fields are unavailable.
+    #[test]
+    fn identity_never_crosses_a_reused_pid() {
+        let root = temp_tree("identity-hostile");
+        fs::write(root.join("stat"), "cpu 0 0 0 0 0 0 0 0 0 0\n").unwrap();
+        fs::write(root.join("meminfo"), "MemTotal:       1048576 kB\n").unwrap();
+        fs::write(root.join("uptime"), "1000.00 0.00\n").unwrap();
+        let pid = root.join("700");
+        fs::create_dir_all(&pid).unwrap();
+        fs::write(pid.join("comm"), "first\n").unwrap();
+        fs::write(pid.join("cmdline"), b"first\0").unwrap();
+        fs::write(pid.join("status"), "Uid:\t1000\t1000\t1000\t1000\n").unwrap();
+        write_cpu_stat_at(&pid, 100, 1000);
+        assert_eq!(
+            row(&collect(&root, &config()), 700).name.as_deref(),
+            Some("first")
+        );
+
+        // The pid number comes back with another starttime, and its identity
+        // cannot be read.
+        fs::remove_file(pid.join("comm")).unwrap();
+        write_cpu_stat_at(&pid, 100, 2000);
+        let reused = collect(&root, &config());
+        let entry = row(&reused, 700);
+        assert_eq!(entry.name, None, "never the previous process's name");
+        assert_eq!(entry.user, None);
+        assert_eq!(entry.command.as_ref(), "");
+
+        // Identity is read once per starttime, so the same starttime keeps
+        // the unavailable result even after the file becomes readable.
+        fs::write(pid.join("comm"), "second\n").unwrap();
+        fs::write(pid.join("cmdline"), b"second\0").unwrap();
+        assert_eq!(
+            row(&collect(&root, &config()), 700).name,
+            None,
+            "the read is not retried per tick"
+        );
+        write_cpu_stat_at(&pid, 100, 3000);
+        assert_eq!(
+            row(&collect(&root, &config()), 700).name.as_deref(),
+            Some("second"),
+            "the next starttime reads the new process's own strings"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// DEF-PERF-76-SERVER-COST: `cgroup.procs` is read on the 5 s slow
+    /// cadence, so a process that joins the container is listed up to that
+    /// late.
+    #[test]
+    fn container_membership_refreshes_on_the_slow_cadence() {
+        let tree = temp_tree("members-period");
+        copy_tree(&fixture("container"), &tree);
+        let root = tree.join("proc");
+        let config = in_container(&root);
+        let cgroup = config
+            .container
+            .as_ref()
+            .and_then(|container| container.cgroup.clone())
+            .expect("container cgroup");
+        assert_eq!(pids(&collect(&root, &config)), vec![1, 7, 42]);
+
+        // pid 900, visible in /proc, joins the container's cgroup.
+        let file = cgroup.join("cgroup.procs");
+        let mut text = fs::read_to_string(&file).unwrap();
+        text.push_str("900\n");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::write(&file, text).unwrap();
+        assert_eq!(
+            pids(&collect(&root, &config)),
+            vec![1, 7, 42],
+            "membership is cached for the period"
+        );
+
+        // Age the cache past the period: the next tick re-reads the file.
+        MEMBERS
+            .lock()
+            .unwrap()
+            .get_mut(&cgroup)
+            .expect("a cached member set")
+            .0 = Instant::now() - SLOW_PERIOD - std::time::Duration::from_secs(1);
+        assert_eq!(pids(&collect(&root, &config)), vec![1, 7, 42, 900]);
+        let _ = fs::remove_dir_all(&tree);
     }
 }

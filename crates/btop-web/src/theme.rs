@@ -160,6 +160,122 @@ const STEEL_LIGHT: [(&str, &str); 4] = [
     ("div_line", "#dde0e3"),
 ];
 
+/// ACC-THEME-152-STEEL: the GalaxaLab Steel pair in dark, every btop key
+/// present so no token falls back to Default. The surface is Steel Dark
+/// `--jp-layout-color0`, the row and meter steps `--jp-layout-color1`, the
+/// line `--jp-border-color1` and the family borders `--jp-border-color0`;
+/// the text ramp is `--jp-ui-font-color0..2`. `--jp-brand-color1` (Material
+/// blue-500) is the accent and the download series, success, warn and error
+/// are the cpu stops, and blue-300/100, green-300/700 and the two other
+/// Material stops fill the memory and network gradients.
+const STEEL_PAIR_DARK: [(&str, &str); 48] = [
+    ("main_bg", "#252b32"),
+    ("main_fg", "#c3c3c3"),
+    ("title", "#c3c3c3"),
+    ("hi_fg", "#2196f3"),
+    ("selected_bg", "#303841"),
+    ("selected_fg", "#c3c3c3"),
+    ("inactive_fg", "#a5a5a5"),
+    ("graph_text", "#7d8791"),
+    ("meter_bg", "#303841"),
+    ("proc_misc", "#4caf50"),
+    ("cpu_box", "#4d5a65"),
+    ("mem_box", "#4d5a65"),
+    ("net_box", "#4d5a65"),
+    ("proc_box", "#4d5a65"),
+    ("div_line", "#404b54"),
+    ("temp_start", "#388e3c"),
+    ("temp_mid", "#81c784"),
+    ("temp_end", "#4caf50"),
+    ("cpu_start", "#4caf50"),
+    ("cpu_mid", "#ff9800"),
+    ("cpu_end", "#f44336"),
+    ("free_start", "#388e3c"),
+    ("free_mid", "#81c784"),
+    ("free_end", "#4caf50"),
+    ("cached_start", "#2196f3"),
+    ("cached_mid", "#64b5f6"),
+    ("cached_end", "#bbdefb"),
+    ("available_start", "#ff9800"),
+    ("available_mid", "#ff9800"),
+    ("available_end", "#ff9800"),
+    ("used_start", "#f44336"),
+    ("used_mid", "#f44336"),
+    ("used_end", "#f44336"),
+    ("download_start", "#2196f3"),
+    ("download_mid", "#64b5f6"),
+    ("download_end", "#bbdefb"),
+    ("upload_start", "#ff9800"),
+    ("upload_mid", "#ff9800"),
+    ("upload_end", "#ff9800"),
+    ("process_start", "#388e3c"),
+    ("process_mid", "#81c784"),
+    ("process_end", "#4caf50"),
+    ("proc_pause_bg", "#f44336"),
+    ("proc_follow_bg", "#2196f3"),
+    ("proc_banner_bg", "#303841"),
+    ("proc_banner_fg", "#c3c3c3"),
+    ("followed_bg", "#2196f3"),
+    ("followed_fg", "#c3c3c3"),
+];
+
+/// The same pair in light: Steel Light's own greys, never an inversion of the
+/// dark table. The surface is `--jp-layout-color0`, the row steps
+/// `--jp-layout-color1..3`, the text ramp `--jp-ui-font-color0..2`, the line
+/// `--jp-border-color2` and the family borders `--jp-border-color0`; the
+/// accent is `--jp-brand-color1` (blue) and the cpu stops are the light
+/// success, warn and error colours.
+const STEEL_PAIR_LIGHT: [(&str, &str); 48] = [
+    ("main_bg", "#cdd0d6"),
+    ("main_fg", "#23262a"),
+    ("title", "#23262a"),
+    ("hi_fg", "#346389"),
+    ("selected_bg", "#bec3ca"),
+    ("selected_fg", "#23262a"),
+    ("inactive_fg", "#2c3035"),
+    ("graph_text", "#3d4148"),
+    ("meter_bg", "#bec3ca"),
+    ("proc_misc", "#27632a"),
+    ("cpu_box", "#9aa2ac"),
+    ("mem_box", "#9aa2ac"),
+    ("net_box", "#9aa2ac"),
+    ("proc_box", "#9aa2ac"),
+    ("div_line", "#aeb4bc"),
+    ("temp_start", "#27632a"),
+    ("temp_mid", "#388e3c"),
+    ("temp_end", "#388e3c"),
+    ("cpu_start", "#27632a"),
+    ("cpu_mid", "#76522d"),
+    ("cpu_end", "#983a3a"),
+    ("free_start", "#27632a"),
+    ("free_mid", "#388e3c"),
+    ("free_end", "#27632a"),
+    ("cached_start", "#83a6c3"),
+    ("cached_mid", "#4d85b2"),
+    ("cached_end", "#346389"),
+    ("available_start", "#76522d"),
+    ("available_mid", "#76522d"),
+    ("available_end", "#76522d"),
+    ("used_start", "#983a3a"),
+    ("used_mid", "#983a3a"),
+    ("used_end", "#983a3a"),
+    ("download_start", "#83a6c3"),
+    ("download_mid", "#4d85b2"),
+    ("download_end", "#346389"),
+    ("upload_start", "#76522d"),
+    ("upload_mid", "#76522d"),
+    ("upload_end", "#76522d"),
+    ("process_start", "#27632a"),
+    ("process_mid", "#388e3c"),
+    ("process_end", "#27632a"),
+    ("proc_pause_bg", "#983a3a"),
+    ("proc_follow_bg", "#346389"),
+    ("proc_banner_bg", "#bec3ca"),
+    ("proc_banner_fg", "#23262a"),
+    ("followed_bg", "#346389"),
+    ("followed_fg", "#23262a"),
+];
+
 fn parse_table(table: &[(&str, &str)]) -> BTreeMap<String, Rgb> {
     table
         .iter()
@@ -291,6 +407,21 @@ impl Palette {
             [0, 0, 0]
         };
         let muted = dim_towards(text, surface, TEXT_CONTRAST);
+        // DEF-VIEW-84-TIP-VISIBLE: the tooltip is an overlay on the panel
+        // surface, one small step off it so the box separates without a new
+        // palette entry, moving away from the accent so the border keeps its
+        // floor on both; the text tones are clamped against the new fill.
+        let tip_surface = step_off(surface, accent, TIP_CONTRAST);
+        // The accent is already 3:1 on the panel; on a near-white panel the
+        // fill can only step darker, which costs some of that, so the border
+        // is the accent moved back to the floor on the fill.
+        let tip_border = ensure_contrast(accent, tip_surface, UI_CONTRAST);
+        let tip_text = ensure_contrast(text_strong, tip_surface, TIP_TEXT_CONTRAST);
+        let tip_muted = dim_towards(
+            ensure_contrast(text, tip_surface, TEXT_CONTRAST),
+            tip_surface,
+            TEXT_CONTRAST,
+        );
         let mem_used = ensure_contrast(self.color("used_end"), surface, UI_CONTRAST);
         let mem_free = ensure_contrast(self.color("free_end"), surface, UI_CONTRAST);
         // The Memory bar's cache segment sits beside used, other (muted) and
@@ -313,6 +444,10 @@ impl Palette {
             ("text", text),
             ("text-strong", text_strong),
             ("muted", muted),
+            ("tip-surface", tip_surface),
+            ("tip-border", tip_border),
+            ("tip-text", tip_text),
+            ("tip-muted", tip_muted),
             ("accent", accent),
             ("selection-bg", selection_bg),
             (
@@ -418,6 +553,22 @@ impl ThemePair {
         }
     }
 
+    /// ACC-THEME-152-STEEL: the pair built from the GalaxaLab Steel JupyterLab
+    /// tokens. Both modes are their own table, so the light mode is the lab's
+    /// light greys rather than an inverted dark.
+    pub fn steel_theme() -> Self {
+        Self {
+            id: "steel".to_string(),
+            label: "Steel".to_string(),
+            dark: Palette {
+                colors: parse_table(&STEEL_PAIR_DARK),
+            },
+            light: Palette {
+                colors: parse_table(&STEEL_PAIR_LIGHT),
+            },
+        }
+    }
+
     pub fn choice(&self) -> ThemeChoice {
         ThemeChoice {
             id: self.id.clone(),
@@ -434,11 +585,12 @@ pub struct ThemeChoice {
 
 /// ACC-THEME-101-CYBERPUNK: a pair appended after the first eight lists last,
 /// so the picker numbers 0-7 already stored in a config file still name the
-/// same themes. The list is the append order.
-const APPENDED: [&str; 1] = ["cyberpunk"];
+/// same themes. ACC-THEME-152-STEEL lists Steel after cyberpunk, by id rather
+/// than by a position in this list. The list is the append order.
+const APPENDED: [&str; 2] = ["cyberpunk", "steel"];
 
 /// Every theme in the embedded `themes/` directory, paired with its
-/// counterpart, plus the built-in Default.
+/// counterpart, plus the built-in Default and Steel.
 pub fn embedded_pairs() -> Vec<ThemePair> {
     let mut grouped: BTreeMap<String, (Option<Palette>, Option<Palette>)> = BTreeMap::new();
     for path in ThemeAsset::iter() {
@@ -467,7 +619,7 @@ pub fn embedded_pairs() -> Vec<ThemePair> {
         }
     }
 
-    let mut pairs = vec![ThemePair::default_theme()];
+    let mut pairs = vec![ThemePair::default_theme(), ThemePair::steel_theme()];
     for (id, (dark, light)) in grouped {
         let (dark, light) = match (dark, light) {
             (Some(dark), Some(light)) => (dark, light),
@@ -650,6 +802,11 @@ const ZEBRA_TINT: f64 = 0.03;
 const HOVER_TINT: f64 = 0.07;
 /// The plot grid: the text colour at 12% over the surface, 1.1 to 1.6:1.
 const GRID_TINT: f64 = 0.12;
+/// DEF-VIEW-84-TIP-VISIBLE: the tooltip fill's distance from the panel, and
+/// the strong first line's floor, held above the source lines' so the ramp
+/// stays two tones where a theme gives title and text one colour.
+const TIP_CONTRAST: f64 = 1.25;
+const TIP_TEXT_CONTRAST: f64 = 7.0;
 
 /// Move `rgb` towards black or white until it reaches `ratio` against
 /// `background`. The direction that needs the shorter move is chosen by which
@@ -689,6 +846,33 @@ fn dim_towards(rgb: Rgb, background: Rgb, ratio: f64) -> Rgb {
         best = candidate;
     }
     best
+}
+
+/// The smallest blend of `background` towards black or white that reaches
+/// `ratio` against it, in whichever direction leaves `keep` the most contrast
+/// on the result. A pure black or pure white background has room in one
+/// direction only.
+// Own search, as ensure_contrast: the crate measures a ratio, it does not solve for one.
+fn step_off(background: Rgb, keep: Rgb, ratio: f64) -> Rgb {
+    let mut best: Option<Rgb> = None;
+    for target in [[0, 0, 0], [255, 255, 255]] {
+        let step = (1..=255u16).find(|step| {
+            contrast_ratio(
+                blend(background, target, f64::from(*step) / 255.0),
+                background,
+            ) >= ratio + CONTRAST_MARGIN
+        });
+        let Some(step) = step else { continue };
+        let candidate = blend(background, target, f64::from(step) / 255.0);
+        let better = match best {
+            None => true,
+            Some(current) => contrast_ratio(keep, candidate) > contrast_ratio(keep, current),
+        };
+        if better {
+            best = Some(candidate);
+        }
+    }
+    best.unwrap_or(background)
 }
 
 fn blend(from: Rgb, to: Rgb, weight: f64) -> Rgb {
@@ -810,6 +994,58 @@ mod tests {
         assert_eq!(pair.light.color("main_bg"), [0xff, 0xff, 0xff]);
     }
 
+    /// ACC-THEME-101-CYBERPUNK, ACC-THEME-152-STEEL: the picker numbers are
+    /// the list order, cyberpunk ninth and Steel after it. ACC-THEME-155
+    /// removes the Galaxa face pair, so the list carries no font variant.
+    #[test]
+    fn appended_pairs_list_last_and_no_face_variant_ships() {
+        let ids: Vec<String> = embedded_pairs().into_iter().map(|pair| pair.id).collect();
+        let at = |id: &str| {
+            ids.iter()
+                .position(|name| name == id)
+                .unwrap_or_else(|| panic!("{id} missing from {ids:?}"))
+        };
+        assert_eq!(ids[0], "default");
+        assert_eq!(at("cyberpunk"), 8);
+        assert_eq!(at("steel"), 9);
+        assert!(
+            !ids.iter().any(|id| id.contains("galaxatron")),
+            "a face variant is still in the theme list: {ids:?}"
+        );
+    }
+
+    /// ACC-THEME-152-STEEL: the pair carries the lab's surfaces and text ramp
+    /// in both modes, and defines every btop key in each, so no token falls
+    /// back to Default.
+    #[test]
+    fn steel_pair_matches_the_lab_tokens() {
+        let pair = ThemePair::steel_theme();
+        assert_eq!(pair.id, "steel");
+        assert_eq!(pair.label, "Steel");
+        for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
+            assert_eq!(
+                palette.colors.len(),
+                THEME_KEYS.len(),
+                "{mode} defines {} of {} keys",
+                palette.colors.len(),
+                THEME_KEYS.len()
+            );
+        }
+        assert_eq!(pair.dark.color("main_bg"), [0x25, 0x2b, 0x32]);
+        assert_eq!(pair.light.color("main_bg"), [0xcd, 0xd0, 0xd6]);
+        let ramp = |palette: &Palette| {
+            ["main_fg", "inactive_fg", "graph_text"].map(|key| palette.color(key))
+        };
+        assert_eq!(
+            ramp(&pair.dark),
+            [[0xc3, 0xc3, 0xc3], [0xa5, 0xa5, 0xa5], [0x7d, 0x87, 0x91]]
+        );
+        assert_eq!(
+            ramp(&pair.light),
+            [[0x23, 0x26, 0x2a], [0x2c, 0x30, 0x35], [0x3d, 0x41, 0x48]]
+        );
+    }
+
     /// ACC-GRAPH-72-NET-COLOURS: the Default download and upload lines differ
     /// by CIEDE2000 30 or more in both modes; btop's two violets differ by 11.
     #[test]
@@ -913,6 +1149,10 @@ mod tests {
             "--text:#23262a;",
             "--text-strong:#000000;",
             "--muted:#747679;",
+            "--tip-surface:#e4e4e4;",
+            "--tip-border:#bf4a4a;",
+            "--tip-text:#000000;",
+            "--tip-muted:#646669;",
             "--accent:#bf4a4a;",
             "--selection-bg:#d09595;",
             "--selection-fg:#111111;",

@@ -54,21 +54,23 @@
 //!   named by its CPU number; with no cgroup v2 directory `cores` is empty
 //! - load average (DEF-CPU-44): `/proc/loadavg` averages every task of the
 //!   kernel, so the container's own is computed with the kernel's method,
-//!   `calc_load` in `kernel/sched/loadavg.c`. Every [`LOAD_FREQ`], 15.004 s
-//!   (three of the kernel's 5 s periods plus its one extra tick of `5*HZ+1`
+//!   `calc_load` in `kernel/sched/loadavg.c`. Every [`LOAD_FREQ`], 30.004 s
+//!   (six of the kernel's 5 s periods plus its one extra tick of `5*HZ+1`
 //!   at HZ = 250, so the count drifts across the phase of periodic tasks as
 //!   the kernel's does; the owner chose 15 s on 2026-10-28 to cut the count's
-//!   cost to a third), off the
+//!   cost to a third, and DEF-PERF-76-SERVER-COST doubled it to 30 s because
+//!   the ~6,300 stat reads cost 40-60 ms and cannot be read cheaper), off the
 //!   tick ([`count_container_load`]), active = the tids in `cgroup.threads` of
 //!   the cgroup and every cgroup below it whose `<proc_root>/<tid>/stat` state
 //!   is R or D, less the counting thread itself (`<proc_root>/thread-self`),
 //!   which is always R while it reads. Then, in FIXED_1 = 2048 fixed point,
 //!   avenrun = (avenrun * e + active * 2048 * (2048 - e) [+ 2047 when the
-//!   load rises]) / 2048 with e = 2048 * exp(-15 s / 60 s), exp(-15/300),
-//!   exp(-15/900) = 1595, 1948, 2014: the kernel's rule for EXP_1, EXP_5 and
-//!   EXP_15, which gives its 1884, 2014, 2037 at 5 s, applied to 15 s. Shown
+//!   load rises]) / 2048 with e = 2048 * exp(-30 s / 60 s), exp(-30/300),
+//!   exp(-30/900) = 1242, 1853, 1981: the kernel's rule for EXP_1, EXP_5 and
+//!   EXP_15, which gives its 1884, 2014, 2037 at 5 s, applied to 30 s. Shown
 //!   as `/proc/loadavg` prints it (+ FIXED_1 / 200, two decimals truncated).
-//!   The kernel starts avenrun at 0 at boot; here the first count, taken
+//!   The shown value is the last count's, a held sample up to 30 s old. The
+//!   kernel starts avenrun at 0 at boot; here the first count, taken
 //!   before the first tick, seeds all three averages, because the VM's history
 //!   is not the container's. No cgroup v2 directory leaves load unavailable;
 //!   frequency and temperatures are hardware sensors, not read; the battery
@@ -154,7 +156,12 @@ pub fn collect(proc_root: &Path, config: &Config) -> CpuSnapshot {
         snapshot.cpu_hz = Some(frequency.text);
         snapshot.frequency_mhz = Some(frequency.mhz);
     }
-    parse_stat(proc_root, &mut snapshot, config.update_ms, true);
+    parse_stat(
+        proc_root,
+        &mut snapshot,
+        config.update_ms,
+        Some(config.window_ms()),
+    );
     if config.show_coretemp
         && let Some(sensors) = &sensors
     {
@@ -170,10 +177,28 @@ pub fn collect(proc_root: &Path, config: &Config) -> CpuSnapshot {
 
 fn model_name(proc_root: &Path, sys: &Path, config: &Config) -> Option<String> {
     if config.custom_cpu_name.is_empty() {
-        cpu_name(proc_root, sys)
+        cached_name(proc_root, sys)
     } else {
         Some(config.custom_cpu_name.clone())
     }
+}
+
+/// DEF-PERF-76-SERVER-COST: the model name's period. `/proc/cpuinfo` is about
+/// 88 KB and the name is the processor's static identity, so it is re-read on
+/// the 5 s slow cadence (`super::gpu::SLOW_PERIOD`), not every tick.
+static NAMES: Mutex<BTreeMap<PathBuf, (Instant, Option<String>)>> = Mutex::new(BTreeMap::new());
+
+/// [`cpu_name`] from a cache refreshed every `super::gpu::SLOW_PERIOD`.
+fn cached_name(proc_root: &Path, sys: &Path) -> Option<String> {
+    let mut cache = NAMES.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some((read, name)) = cache.get(proc_root)
+        && read.elapsed() < super::gpu::SLOW_PERIOD
+    {
+        return name.clone();
+    }
+    let name = cpu_name(proc_root, sys);
+    cache.insert(proc_root.to_path_buf(), (Instant::now(), name.clone()));
+    name
 }
 
 /// Container mode: the total from the cgroup's `cpu.stat` over E and the
@@ -219,6 +244,7 @@ fn collect_container(
         state.usage = Some((now, reading));
     }
     snapshot.load_avg = state.avenrun.map(|avenrun| avenrun.map(loadavg_value));
+    state.history.set_window(config.window_ms());
     state.history.push(snapshot.total_pct, config.update_ms);
     snapshot.gauge_pct = snapshot.total_pct.and(state.history.ema());
     snapshot.chart = state.history.chart(CPU_HISTORY, 0.0, 100.0);
@@ -230,7 +256,7 @@ fn collect_container(
 /// file is missing, as E then falls back to the online count.
 fn container_cores(proc_root: &Path, cgroup: &Path, update_ms: u64) -> Vec<CoreUsage> {
     let mut all = CpuSnapshot::default();
-    parse_stat(proc_root, &mut all, update_ms, false);
+    parse_stat(proc_root, &mut all, update_ms, None);
     let Some(cpus) = container::cpuset(cgroup) else {
         return all.cores;
     };
@@ -248,25 +274,28 @@ pub(super) fn seed_container(proc_root: &Path, container: &Container, update_ms:
     let Some(cgroup) = &container.cgroup else {
         return;
     };
-    parse_stat(proc_root, &mut CpuSnapshot::default(), update_ms, false);
+    parse_stat(proc_root, &mut CpuSnapshot::default(), update_ms, None);
     count_container_load(proc_root, cgroup);
     let mut states = LAST.lock().unwrap_or_else(|error| error.into_inner());
     states.entry(cgroup.clone()).or_default().usage =
         Some((Instant::now(), cgroup_cpu_stat(cgroup)));
 }
 
-/// The count's period: 15 s, three of the kernel's 5 s LOAD_FREQ periods, so
-/// the count costs a third of the kernel's rate (owner, 2026-10-28), plus the
-/// kernel's extra tick of `5*HZ+1` at HZ = 250 (this VM's CONFIG_HZ, the
+/// The count's period: 30 s, six of the kernel's 5 s LOAD_FREQ periods, plus
+/// the kernel's extra tick of `5*HZ+1` at HZ = 250 (this VM's CONFIG_HZ, the
 /// common distribution default). The extra tick keeps the count from locking
 /// to the phase of periodic tasks, the dashboard's own 250 ms tick included.
-pub const LOAD_FREQ: Duration = Duration::from_millis(15_004);
+/// The owner chose 15 s on 2026-10-28; DEF-PERF-76-SERVER-COST doubled it,
+/// because one count opens and reads about 6,300 `<tid>/stat` files, 40-60 ms
+/// that no cheaper read can replace, and the shown load is still the same
+/// kernel method, a held sample up to 30 s old.
+pub const LOAD_FREQ: Duration = Duration::from_millis(30_004);
 /// `include/linux/sched/loadavg.h`: FIXED_1, and the decay factors for one
-/// 15 s step by its rule `FIXED_1 / exp(step / period)`: 2048 * exp(-15/60),
-/// exp(-15/300), exp(-15/900) = 1595, 1948, 2014. At the kernel's 5 s step
+/// 30 s step by its rule `FIXED_1 / exp(step / period)`: 2048 * exp(-30/60),
+/// exp(-30/300), exp(-30/900) = 1242, 1853, 1981. At the kernel's 5 s step
 /// the same rule gives its EXP_1, EXP_5, EXP_15 = 1884, 2014, 2037.
 const FIXED_1: u64 = 1 << 11;
-const EXP: [u64; 3] = [1595, 1948, 2014];
+const EXP: [u64; 3] = [1242, 1853, 1981];
 
 /// One LOAD_FREQ step of the container's load average (DEF-CPU-44): count
 /// its R and D tasks and fold the count in, or seed all three averages with
@@ -363,12 +392,24 @@ fn container_percent(usage_usec: f64, elapsed_usec: f64, effective: f64) -> f64 
 /// its since-boot average as the oldest history point, never as the current
 /// value. Call this once, before the first tick.
 pub(super) fn seed(proc_root: &Path, update_ms: u64) {
-    parse_stat(proc_root, &mut CpuSnapshot::default(), update_ms, true);
+    parse_stat(
+        proc_root,
+        &mut CpuSnapshot::default(),
+        update_ms,
+        Some(crate::chart::WINDOW_MS),
+    );
 }
 
-/// `history` false skips the total's history and chart: a container shows
-/// only the per-core rows of `/proc/stat` (DEF-CPU-41).
-fn parse_stat(proc_root: &Path, snapshot: &mut CpuSnapshot, update_ms: u64, history: bool) {
+/// `window_ms` `None` skips the total's history and chart: a container shows
+/// only the per-core rows of `/proc/stat` (DEF-CPU-41). `Some` records the
+/// sample and spans the configured chart window (ACC-VIEW-110-TIME-AXIS); the
+/// startup seed uses the default, which the first tick replaces.
+fn parse_stat(
+    proc_root: &Path,
+    snapshot: &mut CpuSnapshot,
+    update_ms: u64,
+    window_ms: Option<u64>,
+) {
     let Ok(text) = std::fs::read_to_string(proc_root.join("stat")) else {
         return;
     };
@@ -444,7 +485,8 @@ fn parse_stat(proc_root: &Path, snapshot: &mut CpuSnapshot, update_ms: u64, hist
             });
         }
     }
-    if history {
+    if let Some(window_ms) = window_ms {
+        state.history.set_window(window_ms);
         state.history.push(snapshot.total_pct, update_ms);
         snapshot.gauge_pct = snapshot.total_pct.and(state.history.ema());
         snapshot.chart = state.history.chart(CPU_HISTORY, 0.0, 100.0);
@@ -1217,7 +1259,7 @@ mod tests {
             crate::chart::ChartPath::new(
                 &[20.0, 8.0],
                 0,
-                crate::chart::capacity(config.update_ms),
+                crate::chart::capacity(config.window_ms(), config.update_ms),
                 CPU_HISTORY.width,
                 CPU_HISTORY.height,
                 0.0,
@@ -1545,29 +1587,29 @@ mod tests {
     }
 
     /// DEF-CPU-44: kernel `calc_load` and `/proc/loadavg` digits, by hand, at
-    /// the 15 s step (d-44-freq).
+    /// the 30 s step (d-44-freq).
     #[test]
     fn container_load_uses_the_kernels_fixed_point_step() {
-        // The kernel's rule, FIXED_1 / exp(step / period), at 15 s and at its 5 s.
+        // The kernel's rule, FIXED_1 / exp(step / period), at 30 s and at its 5 s.
         let factors = |step: f64| {
             [60.0, 300.0, 900.0]
                 .map(|period: f64| (FIXED_1 as f64 * (-step / period).exp()).round() as u64)
         };
-        assert_eq!(factors(15.0), EXP);
+        assert_eq!(factors(30.0), EXP);
         assert_eq!(factors(5.0), [1884, 2014, 2037]);
-        assert_eq!(LOAD_FREQ, Duration::from_millis(15_004));
-        // From 0 with one task: (0 + 2048 * 453 + 2047) / 2048 = 453 -> 0.22.
-        assert_eq!(calc_load(0, 1595, 2048), 453);
-        assert_eq!(loadavg_value(453), 0.22);
-        // From 1.00 with none: 2048 * e / 2048 = e -> 0.78, 0.95, 0.98.
-        assert_eq!(calc_load(2048, 1595, 0), 1595);
-        assert_eq!(calc_load(2048, 1948, 0), 1948);
-        assert_eq!(calc_load(2048, 2014, 0), 2014);
-        assert_eq!(loadavg_value(1595), 0.78);
-        assert_eq!(loadavg_value(1948), 0.95);
-        assert_eq!(loadavg_value(2014), 0.98);
+        assert_eq!(LOAD_FREQ, Duration::from_millis(30_004));
+        // From 0 with one task: (0 + 2048 * 806 + 2047) / 2048 = 806 -> 0.39.
+        assert_eq!(calc_load(0, 1242, 2048), 806);
+        assert_eq!(loadavg_value(806), 0.39);
+        // From 1.00 with none: 2048 * e / 2048 = e -> 0.61, 0.90, 0.97.
+        assert_eq!(calc_load(2048, 1242, 0), 1242);
+        assert_eq!(calc_load(2048, 1853, 0), 1853);
+        assert_eq!(calc_load(2048, 1981, 0), 1981);
+        assert_eq!(loadavg_value(1242), 0.61);
+        assert_eq!(loadavg_value(1853), 0.90);
+        assert_eq!(loadavg_value(1981), 0.97);
         // A steady count holds: (4096 * 2048 + 2047) / 2048 = 4096 -> 2.00.
-        assert_eq!(calc_load(4096, 1595, 4096), 4096);
+        assert_eq!(calc_load(4096, 1242, 4096), 4096);
         assert_eq!(loadavg_value(4096), 2.0);
         assert_eq!(loadavg_value(3072), 1.5);
     }
@@ -1596,7 +1638,7 @@ mod tests {
     }
 
     /// Two tasks seed 2.00; one LOAD_FREQ with none decays each average by
-    /// its 15 s factor, 2 * e / 2048: 1.56, 1.90, 1.97. The counting thread is
+    /// its 30 s factor, 2 * e / 2048: 1.21, 1.81, 1.93. The counting thread is
     /// never counted.
     #[test]
     fn container_load_decays_and_skips_the_counting_thread() {
@@ -1622,10 +1664,10 @@ mod tests {
         stat(42, "S");
         count_container_load(&proc_root, &cgroup);
         let avenrun = LAST.lock().expect("state")[&cgroup].avenrun;
-        assert_eq!(avenrun, Some([3190, 3896, 4028]));
+        assert_eq!(avenrun, Some([2484, 3706, 3962]));
         assert_eq!(
             avenrun.map(|a| a.map(loadavg_value)),
-            Some([1.56, 1.90, 1.97])
+            Some([1.21, 1.81, 1.93])
         );
 
         stat(8, "R");

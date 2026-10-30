@@ -3,7 +3,10 @@ version = 2
 yanked = "deny"
 # basic-toml 0.1.10 is parsed at compile time by askama's derive macro and is not linked into the
 # binary; askama 0.16.1 is the newest release, so no upgrade removes it. Re-check when askama moves.
-ignore = ["RUSTSEC-2026-0374"]
+# ttf-parser 0.25.1 is a dev-dependency that parses a fixed in-repo font in tests/font.rs and is not
+# linked into the binary; 0.25.1 is the newest release and the advisory offers no safe upgrade.
+# Re-check if the dev dependency ever needs fixing; the test could move to skrifa.
+ignore = ["RUSTSEC-2026-0374", "RUSTSEC-2026-0192"]
 
 [licenses]
 version = 2

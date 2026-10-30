@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en" data-theme="default" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>btop-web dashboard mockup 1440x900</title>
+<!--
+  btop-web dashboard mockup - 1440 x 900, Default dark (theme pair 1).
+  Built from docs/design/layout-rules.md. Every number in this comment and in
+  the thin gutter above each panel header is a measurement of this file in
+  headless Chromium at 1440 x 900, in CSS pixels.
+
+  Bands (flex shares 116 : 190 : 214 : 314; band 2 rests at its 192.25 px
+  minimum, so the other three split the remaining 641.75 px):
+    band 1 CPU / Memory / Processes          height 115.59
+    band 2 Cores / CPU gauge / Memory gauge  height 192.25
+    band 3 GPU / Network                     height 213.25
+    band 4 Processes                         height 312.91
+
+  Panels, border-box width x height at left x:
+    CPU          469.33 x 115.59 at x 8.00
+    Memory       469.33 x 115.59 at x 485.33
+    Processes    469.33 x 115.59 at x 962.66
+    Cores        469.33 x 192.25 at x 8.00
+    CPU gauge    469.33 x 192.25 at x 485.33
+    Memory gauge 469.33 x 192.25 at x 962.66
+    GPU          786.67 x 213.25 at x 8.00
+    Network      629.33 x 213.25 at x 802.67
+    Processes    1424.00 x 312.91 at x 8.00
+
+  Alignment this page shows (requirement 2):
+    - CPU gauge panel and Memory gauge panel are both 469.33 px
+      wide. Their gauges are 147.61 x 150.23 and
+      147.61 x 150.23 px, with tops both
+      190.59: equal size, on one line.
+    - Memory legend at its natural width 178.86 px against the
+      181.00 px --gauge-side-w; free gauge-to-legend gap 120.86 px.
+    - Cores shortened to the third: 4 columns x 16 rows, row 108.33 px,
+      meter 65.67 px, value box 22.89 px.
+    - No empty block: every panel body fills its content box, panel-level
+      slack 0.03 px or less on all four edges. The Memory legend rows
+      sit 10.13 px from the body's top edge and
+      10.12 px from its bottom edge, inside the 12 px
+      rule.
+
+  Page: 1440 x 900, no page scroll (scrolls: false).
+  The page draws the nine panels the shipped host shows. Storage is absent
+  (no mount), so band 3 is 5:4; with Storage it would be 5:4:3 =
+  586.67 / 469.33 / 352.00 and ten panels. Band 4 reads 312.91 where the
+  312.90 px share rounds at the browser's 1/64 px layout unit; the four
+  heights sum to 834.00 px. A smaller viewport scales the page down as one
+  unit below 1440 x 900.
+-->
+<style>
+:root{
+  --surface:#272b31; --text:#c3c3c3; --text-strong:#eeeeee; --muted:#909293;
+  --border:#6c757c; --div-line:#404b54;
+  --border-cpu:#476b69; --border-mem:#47606b; --border-net:#47556b;
+  --border-proc:#47496b; --border-cores:#5f6867; --border-gpu:#5f5f68;
+  --accent:#bc5252; --ok:#77ca9b; --warn:#cbc06c; --crit:#e36f6f;
+  --zebra:#262a30; --row-hover:#24282e; --grid:#3a3d43;
+  --chart-cpu:#77ca9b; --chart-mem-used:#e3637a; --chart-mem-free:#d4ed97;
+  --chart-mem-cached:#86daea; --chart-net-down:#86acd6; --chart-net-up:#d9a978;
+  --chart-proc:#dcd179; --chart-gpu-0:#cbc06c; --chart-gpu-1:#746ab6;
+  --chart-gpu-2:#e25daf;
+  --chip-fg:#eeeeee;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,monospace;
+  --gap:8px; --head-h:26px; --tile-h:42px; --row-h:22px;
+  --fs-12:12px; --fs-11:11px; --fs-10:10px; --fs-9:9px; --lg-v:14px;
+  --stat-size:32px; --filter-w:132px; --legend-w:168px; --scale-w:27px;
+  --gpu-legend-w:224px; --gauge-side-w:181px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;width:1440px;height:900px;overflow:hidden}
+html{background:var(--surface)}
+body{
+  display:flex;flex-direction:column;
+  background:var(--surface);color:var(--text);
+  font-family:var(--ui);font-size:12px;line-height:1.25;
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
+  transform-origin:top left;
+}
+/* a smaller viewport scales the whole page down as one unit */
+@media (max-width:1439px),(max-height:899px){
+  body{transform:scale(min(1,calc(100vw / 1440px),calc(100vh / 900px)))}
+}
+[data-w]{display:inline-block;text-align:right}
+[data-w]::before{content:attr(data-w);display:block;height:0;visibility:hidden}
+
+/* top bar */
+.utility{flex:0 0 26px;display:flex;align-items:center;gap:8px;min-width:0;padding:0 8px;border-bottom:1px solid var(--div-line)}
+.brand{font-size:12px;font-weight:700;line-height:1;letter-spacing:.01em;color:var(--text-strong);white-space:nowrap}
+.brand span{color:var(--muted)}
+.u-meta{font-size:10px;color:var(--muted);white-space:nowrap}
+.u-int{color:var(--text)}
+.utility-right{flex:1 1 auto;display:flex;align-items:center;gap:6px;min-width:0}
+.chip{position:relative;isolation:isolate;overflow:hidden;display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 5px;border:1px solid var(--border);border-radius:2px;background:none;color:var(--text);font-size:10px;line-height:16px;white-space:nowrap;font-family:inherit}
+.chip::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.12;background:var(--chip-hue,var(--border))}
+.up{text-transform:uppercase;letter-spacing:.03em}
+.chip-live{--chip-hue:var(--ok);border-color:var(--ok);color:var(--chip-fg);margin-left:auto}
+.chip-live .lamp{width:4px;height:4px;background:var(--ok)}
+.chip-readonly{--chip-hue:var(--warn);border-color:var(--warn);color:var(--chip-fg)}
+.chip-readonly .lamp{width:4px;height:4px;background:var(--warn)}
+.chip-container{--chip-hue:var(--warn);border-color:var(--warn);color:var(--chip-fg)}
+.chip-config{--chip-hue:var(--accent);border-color:var(--accent);color:var(--chip-fg);cursor:pointer}
+.live-age{font-weight:400;color:var(--chip-fg)}
+
+/* page and bands */
+.page{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:var(--gap);padding:var(--gap)}
+.band{flex:var(--share) 1 0;min-height:var(--band-min);display:flex;gap:var(--gap)}
+.band-1{--share:116;--band-min:108px}
+.band-2{--share:190;--band-min:192.25px}
+.band-3{--share:214;--band-min:138px}
+.band-4{--share:314;--band-min:120px}
+
+/* panels */
+.panel{flex:var(--w) 1 0;flex-basis:0;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:2px}
+#p-cpu-stat{--w:4}#p-mem-stat{--w:4}#p-proc-stat{--w:4}
+#p-cores{--w:4}#p-cpu-gauge{--w:4}#p-mem-gauge{--w:4}
+#p-gpu{--w:5}#p-net{--w:4}
+#p-proc{--w:12}
+/* layout-rules section 1: bands 1 and 2 are three equal panels, so each takes
+   1408 / 3 = 469.333 px. The basis is the 1/64 px layout unit (469 + 21/64)
+   for all three, so the CPU and Memory gauge panels report one width; the
+   0.02 px rounding remainder stays at the band's right edge. */
+.band-1 > .panel,.band-2 > .panel{flex-grow:0;flex-shrink:0;flex-basis:calc((100% - var(--gap) * 2) / 3)}
+/* layout-rules section 1: band 3 splits the 1416 px content width 5:4, so
+   GPU 786.67 and Network 629.33. The two basis values are written at the
+   browser's 1/64 px layout unit (786 + 43/64, 629 + 21/64) because that pair
+   sums to 1416 exactly; flex-basis honours the border box, so the 1 px panel
+   borders do not skew the weights. */
+.band-3 > .panel{flex-grow:0;flex-shrink:0}
+#p-gpu{flex-basis:786.671875px}
+#p-net{flex-basis:629.328125px}
+
+/* header with the measurement gutter on top */
+.ph{flex:0 0 var(--head-h);min-height:0;display:flex;flex-direction:column;border-bottom:1px solid var(--div-line)}
+.gutter{flex:0 0 10px;display:flex;align-items:center;padding:0 8px;background:color-mix(in srgb,var(--text) 4%,var(--surface));border-bottom:1px dotted color-mix(in srgb,var(--border) 42%,var(--surface));font-family:var(--mono);font-size:8px;line-height:1;letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+.ph-row{flex:1 1 auto;min-height:0;display:flex;align-items:center;gap:8px;padding:0 8px;min-width:0}
+.ph h2{margin:0;font-size:12px;font-weight:600;line-height:1;letter-spacing:.01em;color:var(--text-strong);white-space:nowrap}
+.cpu-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted);white-space:nowrap}
+.head-right{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;font-size:10px;color:var(--muted);white-space:nowrap}
+.head-right b{font-weight:500;color:var(--text)}
+.head-right > span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+/* stat panels */
+.stat-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.stat-tile{flex:0 0 var(--tile-h);min-height:0;display:flex;align-items:last baseline;gap:4px;padding:0 10px;overflow:hidden;white-space:nowrap}
+.stat-value{font-size:var(--stat-size);font-weight:600;line-height:1.2;letter-spacing:-.015em;color:var(--text-strong)}
+.stat-value.ok{color:var(--ok)}
+.stat-value.warn{color:var(--warn)}
+.stat-value.crit{color:var(--crit)}
+.stat-unit{font-size:var(--fs-12);font-weight:500;color:var(--muted)}
+.proc-facts{flex:1 1 auto;min-width:0;display:grid;grid-auto-flow:column;grid-template-rows:auto auto;grid-auto-columns:1fr;column-gap:8px;padding-left:2em;font-size:var(--fs-10);line-height:1.25;color:var(--muted)}
+.proc-facts b{font-weight:500;color:var(--text)}
+.stat-chart{flex:1 1 0;min-height:0}
+.chart{display:block;width:100%;height:100%}
+.chart .area{opacity:.15}
+.chart .line{fill:none;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+[data-chart]:not([data-chart="proc"]){
+  background:
+    linear-gradient(var(--grid),var(--grid)) 25% 0 / 1px 100% no-repeat,
+    linear-gradient(var(--grid),var(--grid)) 50% 0 / 1px 100% no-repeat,
+    linear-gradient(var(--grid),var(--grid)) 75% 0 / 1px 100% no-repeat,
+    linear-gradient(var(--grid),var(--grid)) 0 25% / 100% 1px no-repeat,
+    linear-gradient(var(--grid),var(--grid)) 0 50% / 100% 1px no-repeat,
+    linear-gradient(var(--grid),var(--grid)) 0 75% / 100% 1px no-repeat;
+}
+[data-chart="cpu"] .area{fill:var(--chart-cpu)}
+[data-chart="cpu"] .line{stroke:var(--chart-cpu)}
+[data-chart="mem"] .area{fill:var(--chart-mem-used)}
+[data-chart="mem"] .line{stroke:var(--chart-mem-used)}
+[data-chart="proc-count"] .area{fill:var(--chart-proc)}
+[data-chart="proc-count"] .line{stroke:var(--chart-proc)}
+[data-chart="net-down"] .area{fill:var(--chart-net-down)}
+[data-chart="net-down"] .line{stroke:var(--chart-net-down);stroke-width:2}
+[data-chart="net-up"] .area{fill:var(--chart-net-up)}
+[data-chart="net-up"] .line{stroke:var(--chart-net-up);stroke-width:2}
+.gpu-series.g0 .area{fill:var(--chart-gpu-0)}
+.gpu-series.g0 .line{stroke:var(--chart-gpu-0);stroke-width:2}
+.gpu-series.g1 .area{fill:var(--chart-gpu-1)}
+.gpu-series.g1 .line{stroke:var(--chart-gpu-1);stroke-width:2}
+.gpu-series.g2 .area{fill:var(--chart-gpu-2)}
+.gpu-series.g2 .line{stroke:var(--chart-gpu-2);stroke-width:2}
+
+/* time axis */
+.xaxis{position:relative;flex:0 0 14px;font-size:var(--fs-9);line-height:14px;color:var(--muted);white-space:nowrap}
+.xaxis span{position:absolute;top:0;transform:translateX(-50%)}
+.xaxis span:nth-child(1){left:0;transform:none}
+.xaxis span:nth-child(2){left:25%}
+.xaxis span:nth-child(3){left:50%}
+.xaxis span:nth-child(4){left:75%}
+.xaxis span:last-child{left:auto;right:0;transform:none}
+.xaxis.stat-axis{font-size:var(--fs-10)}
+.xaxis.stat-axis span:nth-child(1){left:25%;transform:translateX(-50%)}
+.xaxis.stat-axis span:nth-child(2){left:50%;transform:translateX(-50%)}
+.xaxis.stat-axis span:nth-child(3){left:75%;transform:translateX(-50%)}
+.xaxis.stat-axis span:last-child{left:auto;right:0;transform:none}
+
+/* cores */
+.cores-body{flex:1 1 auto;min-height:0;display:grid;grid-auto-flow:column;grid-template-rows:repeat(16,minmax(0,1fr));grid-auto-columns:minmax(0,1fr);gap:0 6px;padding:4px 8px;overflow:hidden}
+.core-row{min-width:0;min-height:0;display:flex;align-items:center;gap:2px;overflow-x:clip;font-size:8px;line-height:1;color:var(--muted)}
+.core-row .cl{flex:none}
+.core-row .meter{flex:1 1 0;min-width:0;height:3px}
+.core-row .cv{flex:none;text-align:right;color:color-mix(in srgb-linear,var(--crit) clamp(0%,(var(--value) - 50) * 2%,100%),color-mix(in srgb-linear,var(--warn) clamp(0%,var(--value) * 2%,100%),var(--ok)))}
+.core-row .cv i{font-style:normal;color:var(--text)}
+.meter{position:relative;display:block;overflow:hidden;background:var(--border)}
+.meter::after{content:"";position:absolute;inset:0 auto 0 0;width:calc(var(--value,0) * 1%);background:linear-gradient(in srgb-linear to right,var(--ok),var(--warn),var(--crit))}
+.core-row .meter::after,.gpu-bars .meter::after{inset:0;width:auto;background:linear-gradient(in srgb-linear to right,var(--ok),var(--warn),var(--crit));clip-path:inset(0 calc(100% - var(--value,0) * 1%) 0 0)}
+
+/* gauges */
+.gauge-body{container-type:size;container-name:gauge;flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 8px;overflow:hidden}
+.gauge{flex:0 0 auto;min-width:0;width:min(calc(100cqh * 112 / 114),calc(100% - 10px - var(--gauge-side-w)));height:auto;aspect-ratio:112 / 114}
+.gauge svg{display:block;width:100%;height:100%}
+.g-track,.g-fill{fill:none;stroke-width:8}
+.g-track{stroke:var(--border)}
+.g-fill{stroke:var(--ok)}
+.g-fill.warn{stroke:var(--warn)}
+.g-fill.crit{stroke:var(--crit)}
+.g-tick{fill:none;stroke:var(--muted);stroke-width:1}
+.g-tick.major{stroke-width:1.5}
+.g-scale,.g-value,.g-label{fill:currentColor;text-anchor:middle}
+.g-scale{color:var(--muted);font-size:8px;dominant-baseline:central}
+.g-value{color:var(--text-strong);font-size:16px;font-weight:600;letter-spacing:-.02em}
+.g-unit{fill:var(--muted);font-size:.5625em;font-weight:500;letter-spacing:0}
+.g-label{color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}
+.gauge-side{flex:0 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.facts{gap:8px}
+.fact{display:flex;flex-direction:column;gap:1px;overflow:hidden;font-size:var(--fs-10);color:var(--muted);white-space:nowrap}
+.fact b{overflow:hidden;font-size:var(--fs-12);font-weight:500;color:var(--text);text-overflow:ellipsis}
+.fact small{font-size:var(--fs-9);font-weight:400;color:var(--muted)}
+.fact.load b{white-space:normal}
+.load-cell{white-space:nowrap}
+.mem-row{display:flex;align-items:center;gap:8px;height:20px;overflow:hidden;border-top:1px solid var(--div-line);font-size:var(--fs-10);color:var(--muted);white-space:nowrap}
+.mem-bar + .mem-row{border-top:0}
+.mem-row span:first-child{flex:1 1 auto;min-width:0}
+.mem-row b{font-weight:500;color:var(--text)}
+.mem-bar{display:flex;flex:0 0 auto;height:6px;margin-bottom:4px;overflow:hidden}
+.mem-seg,.mem-key{background:var(--seg)}
+.mem-key{display:inline-block;width:7px;height:7px;margin-right:5px}
+[data-seg="used"]{--seg:var(--chart-mem-used)}
+[data-seg="cache"]{--seg:var(--chart-mem-cached)}
+[data-seg="other"]{--seg:var(--muted)}
+[data-seg="free"]{--seg:var(--chart-mem-free)}
+
+/* gpu and network bodies */
+.net-body{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) var(--legend-w);gap:10px;padding:5px 8px 4px}
+#p-gpu .net-body{display:flex;flex-direction:column;gap:4px}
+.gpu-lane{position:relative;flex:1 1 0;min-height:0;display:grid;grid-template-columns:var(--scale-w) minmax(0,1fr) var(--gpu-legend-w);grid-template-rows:minmax(0,1fr);column-gap:10px}
+.gpu-boundary{flex:none;height:1px;margin:-2.5px 0;background:color-mix(in srgb,var(--border) 55%,var(--surface))}
+.net-plots{min-width:0;min-height:0;display:flex;flex-direction:column;gap:4px}
+.net-plot-row{flex:1 1 0;min-height:0;display:grid;grid-template-columns:var(--scale-w) minmax(0,1fr);column-gap:10px}
+.net-plot{flex:1 1 0;min-height:0;margin:3px 0}
+.net-boundary{flex:none;height:1px;margin:-2.5px 0;background:color-mix(in srgb,var(--border) 55%,var(--surface))}
+.plot-scale{position:relative;margin:3px 0;font-size:var(--fs-9);line-height:1;color:var(--muted);white-space:nowrap}
+.plot-scale > span{position:absolute;right:0}
+.plot-scale > .scale-total{top:0}
+.plot-scale > .scale-mid{top:calc(100% - var(--at) * 1%);transform:translateY(-50%)}
+.plot-scale > .scale-zero{bottom:0}
+.net-x{margin-left:37px}
+.gpu-x{margin-right:calc(var(--gpu-legend-w) + 10px);margin-left:37px}
+.net-legend{min-width:0;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:12px;padding:2px 0 2px 10px;overflow:hidden;border-left:1px solid var(--div-line)}
+.legend-item{display:grid;grid-template-columns:8px minmax(0,1fr);column-gap:6px;row-gap:1px;align-items:center;min-width:0}
+.sw{flex:none;grid-row:1 / span 5;align-self:start;width:8px;height:8px;margin-top:3px}
+.sw-down{background:var(--chart-net-down)}
+.sw-up{background:var(--chart-net-up)}
+.sw-gpu-0{background:var(--chart-gpu-0)}
+.sw-gpu-1{background:var(--chart-gpu-1)}
+.sw-gpu-2{background:var(--chart-gpu-2)}
+.legend-name{grid-column:2;font-size:var(--fs-10);color:var(--text);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.legend-value{grid-column:2;font-size:var(--lg-v);font-weight:600;line-height:1.1;color:var(--text-strong);white-space:nowrap}
+.legend-meta{grid-column:2;overflow:hidden;font-size:var(--fs-9);color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
+#p-gpu .net-legend{padding:0 0 0 10px}
+#p-gpu .legend-item{grid-template-columns:3px minmax(0,1fr) 48px}
+#p-gpu .sw{width:3px;height:auto;margin-top:0;align-self:stretch}
+#p-gpu .legend-name{display:flex;gap:5px;min-width:0}
+#p-gpu .legend-value{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.lg-model{min-width:0;overflow:hidden;color:var(--muted);text-overflow:ellipsis;text-transform:none;letter-spacing:0}
+.lg-vram{margin-left:6px;font-size:var(--fs-10);font-weight:400;color:var(--text)}
+.gpu-bars{grid-column:3;grid-row:1 / span 3;align-self:center;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:1px 3px}
+.gbl{font-style:normal;font-size:var(--fs-9);line-height:1;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+
+/* processes: app.js fitProc() sizes the rows to the wrap, so 12 rows fill the
+   table without a scrollbar: (284.91 - 22) / 12 = 21.91 px, written at the
+   1/64 px unit */
+.proc-wrap{flex:1 1 auto;min-height:0;overflow:hidden;--proc-row-h:21.90625px}
+.ptable{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--fs-11)}
+.ptable th{height:var(--row-h);padding:1px 8px 0;background:var(--surface);border-bottom:1px solid var(--div-line);font-size:var(--fs-10);font-weight:500;color:var(--muted);text-align:left;white-space:nowrap}
+.ptable td{height:var(--proc-row-h,var(--row-h));padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptable tbody tr:nth-child(even){background:var(--zebra)}
+.ptable .num{text-align:right}
+.ptable .mono{font-family:var(--mono);font-size:var(--fs-11)}
+.cpu-ok{color:var(--ok)}
+.cpu-zero{color:var(--muted)}
+[data-chart="proc"]{float:left;width:36px;height:12px;margin-top:calc((1lh - 12px) / 2)}
+[data-chart="proc"] path{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.filter{width:var(--filter-w);height:18px;padding:0 4px;border:1px solid var(--border);border-radius:2px;background:none;color:var(--text);font-family:var(--ui);font-size:10px}
+.filter::placeholder{color:var(--muted)}
+.proc-count{flex:0 0 auto}
+</style>
+</head>
+<body>
+<header class="utility">
+  <span class="brand">btop<span>-web</span></span>
+  <span class="u-meta">0.6.30</span>
+  <span class="u-meta">9db478eb1afe</span>
+  <span class="u-meta u-int">250 ms</span>
+  <span class="utility-right">
+    <span class="u-meta">15:42</span>
+    <span class="chip chip-container"><span class="up">container</span></span>
+    <span class="chip chip-live"><i class="lamp"></i><span class="up">live</span><b class="live-age">0.2 s</b></span>
+    <span class="chip chip-readonly"><i class="lamp"></i><span class="up">read-only</span></span>
+    <button class="chip chip-config" type="button"><span class="up">config</span></button>
+  </span>
+</header>
+<main class="page">
+  <div class="band band-1" data-band="1">
+      <section class="panel" id="p-cpu-stat" data-panel="cpu-stat" style="border-color:var(--border-cpu)">
+        <header class="ph">
+          <div class="gutter">469.33 px</div>
+          <div class="ph-row">
+            <h2>CPU</h2>
+            
+            <span class="head-right"><span>load <b>26</b>/1m <b>23</b>/5m <b>22</b>/15m</span></span>
+          </div>
+        </header>
+        
+        <div class="stat-body">
+          <div class="stat-tile"><span class="stat-value ok" data-w="100">1</span><span class="stat-unit">%</span></div>
+          <div class="stat-chart" data-chart="cpu-stat"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 -1.8 L5.6 -26.4 L11.2 -2.8 L16.8 0.1 L22.3 19.8 L27.9 -3.2 L33.5 -45.6 L39.1 -23.6 L44.7 -43.2 L50.3 -18.0 L55.9 -22.6 L61.5 -15.9 L67.0 43.3 L72.6 -37.4 L78.2 -26.2 L83.8 -26.0 L89.4 44.1 L95.0 45.8 L100.6 18.5 L106.1 5.0 L111.7 -19.8 L117.3 -8.5 L122.9 -26.7 L128.5 10.6 L134.1 -19.9 L139.7 -22.6 L145.3 11.2 L150.8 -65.0 L156.4 -27.8 L162.0 -48.3 L167.6 9.9 L173.2 13.7 L178.8 1.0 L184.4 -6.6 L189.9 -30.2 L195.5 -17.9 L201.1 4.3 L206.7 20.6 L212.3 6.7 L217.9 -49.1 L223.5 15.9 L229.1 -17.8 L234.6 -23.6 L240.2 37.7 L245.8 -11.6 L251.4 -51.8 L257.0 54.5 L262.6 0.3 L268.2 -6.6 L273.7 16.1 L279.3 -26.0 L284.9 -8.2 L290.5 35.9 L296.1 -40.0 L301.7 -42.6 L307.3 -70.5 L312.8 -125.8 L318.4 -159.2 L324.0 -246.2 L329.6 -304.3 L335.2 -445.0 L340.8 -429.8 L346.4 -393.1 L352.0 -277.3 L357.5 -182.9 L363.1 -108.5 L368.7 -107.2 L374.3 31.8 L379.9 28.4 L385.5 -20.2 L391.1 -56.8 L396.6 -28.7 L402.2 50.8 L407.8 70.6 L413.4 -21.4 L419.0 13.6 L424.6 25.8 L430.2 -41.3 L435.8 -45.3 L441.3 -15.0 L446.9 -17.9 L452.5 -23.9 L458.1 -61.0 L463.7 -29.8 L469.3 -26.6 L474.9 -27.5 L480.4 40.2 L486.0 -51.0 L491.6 -40.6 L497.2 -27.0 L502.8 53.0 L508.4 9.3 L514.0 -40.6 L519.6 36.5 L525.1 -33.8 L530.7 -106.2 L536.3 -80.2 L541.9 -224.9 L547.5 -223.8 L553.1 -199.5 L558.7 -179.1 L564.2 -137.7 L569.8 -73.3 L575.4 -73.9 L581.0 0.9 L586.6 0.1 L592.2 -44.4 L597.8 -15.0 L603.4 -16.9 L608.9 -205.0 L614.5 -471.9 L620.1 -555.7 L625.7 -370.6 L631.3 -162.4 L636.9 -37.7 L642.5 -4.1 L648.0 -55.2 L653.6 22.9 L659.2 -50.3 L664.8 30.6 L670.4 15.2 L676.0 -30.2 L681.6 -46.1 L687.2 -37.5 L692.7 -21.0 L698.3 -14.6 L703.9 -14.9 L709.5 -28.4 L715.1 -4.4 L720.7 -18.9 L726.3 -28.3 L731.8 -10.0 L737.4 -34.4 L743.0 -28.1 L748.6 -74.3 L754.2 -20.4 L759.8 3.7 L765.4 1.9 L770.9 -9.6 L776.5 -39.6 L782.1 0.8 L787.7 -22.3 L793.3 -68.8 L798.9 72.1 L804.5 26.0 L810.1 -17.8 L815.6 -22.7 L821.2 -17.6 L826.8 3.8 L832.4 -31.0 L838.0 -19.0 L843.6 6.7 L849.2 -87.8 L854.7 -21.4 L860.3 7.7 L865.9 -6.8 L871.5 -2.8 L877.1 -8.1 L882.7 77.0 L888.3 4.7 L893.9 -44.3 L899.4 23.0 L905.0 -16.9 L910.6 -57.8 L916.2 -68.2 L921.8 -109.0 L927.4 -35.2 L933.0 -114.1 L938.5 -155.0 L944.1 -226.5 L949.7 -276.1 L955.3 -177.9 L960.9 -304.6 L966.5 -211.8 L972.1 -253.0 L977.7 -146.2 L983.2 -158.3 L988.8 -151.5 L994.4 -75.0 L1000.0 -60.1 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 -1.8 L5.6 -26.4 L11.2 -2.8 L16.8 0.1 L22.3 19.8 L27.9 -3.2 L33.5 -45.6 L39.1 -23.6 L44.7 -43.2 L50.3 -18.0 L55.9 -22.6 L61.5 -15.9 L67.0 43.3 L72.6 -37.4 L78.2 -26.2 L83.8 -26.0 L89.4 44.1 L95.0 45.8 L100.6 18.5 L106.1 5.0 L111.7 -19.8 L117.3 -8.5 L122.9 -26.7 L128.5 10.6 L134.1 -19.9 L139.7 -22.6 L145.3 11.2 L150.8 -65.0 L156.4 -27.8 L162.0 -48.3 L167.6 9.9 L173.2 13.7 L178.8 1.0 L184.4 -6.6 L189.9 -30.2 L195.5 -17.9 L201.1 4.3 L206.7 20.6 L212.3 6.7 L217.9 -49.1 L223.5 15.9 L229.1 -17.8 L234.6 -23.6 L240.2 37.7 L245.8 -11.6 L251.4 -51.8 L257.0 54.5 L262.6 0.3 L268.2 -6.6 L273.7 16.1 L279.3 -26.0 L284.9 -8.2 L290.5 35.9 L296.1 -40.0 L301.7 -42.6 L307.3 -70.5 L312.8 -125.8 L318.4 -159.2 L324.0 -246.2 L329.6 -304.3 L335.2 -445.0 L340.8 -429.8 L346.4 -393.1 L352.0 -277.3 L357.5 -182.9 L363.1 -108.5 L368.7 -107.2 L374.3 31.8 L379.9 28.4 L385.5 -20.2 L391.1 -56.8 L396.6 -28.7 L402.2 50.8 L407.8 70.6 L413.4 -21.4 L419.0 13.6 L424.6 25.8 L430.2 -41.3 L435.8 -45.3 L441.3 -15.0 L446.9 -17.9 L452.5 -23.9 L458.1 -61.0 L463.7 -29.8 L469.3 -26.6 L474.9 -27.5 L480.4 40.2 L486.0 -51.0 L491.6 -40.6 L497.2 -27.0 L502.8 53.0 L508.4 9.3 L514.0 -40.6 L519.6 36.5 L525.1 -33.8 L530.7 -106.2 L536.3 -80.2 L541.9 -224.9 L547.5 -223.8 L553.1 -199.5 L558.7 -179.1 L564.2 -137.7 L569.8 -73.3 L575.4 -73.9 L581.0 0.9 L586.6 0.1 L592.2 -44.4 L597.8 -15.0 L603.4 -16.9 L608.9 -205.0 L614.5 -471.9 L620.1 -555.7 L625.7 -370.6 L631.3 -162.4 L636.9 -37.7 L642.5 -4.1 L648.0 -55.2 L653.6 22.9 L659.2 -50.3 L664.8 30.6 L670.4 15.2 L676.0 -30.2 L681.6 -46.1 L687.2 -37.5 L692.7 -21.0 L698.3 -14.6 L703.9 -14.9 L709.5 -28.4 L715.1 -4.4 L720.7 -18.9 L726.3 -28.3 L731.8 -10.0 L737.4 -34.4 L743.0 -28.1 L748.6 -74.3 L754.2 -20.4 L759.8 3.7 L765.4 1.9 L770.9 -9.6 L776.5 -39.6 L782.1 0.8 L787.7 -22.3 L793.3 -68.8 L798.9 72.1 L804.5 26.0 L810.1 -17.8 L815.6 -22.7 L821.2 -17.6 L826.8 3.8 L832.4 -31.0 L838.0 -19.0 L843.6 6.7 L849.2 -87.8 L854.7 -21.4 L860.3 7.7 L865.9 -6.8 L871.5 -2.8 L877.1 -8.1 L882.7 77.0 L888.3 4.7 L893.9 -44.3 L899.4 23.0 L905.0 -16.9 L910.6 -57.8 L916.2 -68.2 L921.8 -109.0 L927.4 -35.2 L933.0 -114.1 L938.5 -155.0 L944.1 -226.5 L949.7 -276.1 L955.3 -177.9 L960.9 -304.6 L966.5 -211.8 L972.1 -253.0 L977.7 -146.2 L983.2 -158.3 L988.8 -151.5 L994.4 -75.0 L1000.0 -60.1"></path></g></svg></div>
+          <div class="xaxis stat-axis"><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
+        </div>
+      </section>
+      <section class="panel" id="p-mem-stat" data-panel="mem-stat" style="border-color:var(--border-mem)">
+        <header class="ph">
+          <div class="gutter">469.33 px</div>
+          <div class="ph-row">
+            <h2>Memory</h2>
+            
+            <span class="head-right"><span>of 503 GiB</span><span><b>4%</b> used</span><span><b>37%</b> available</span></span>
+          </div>
+        </header>
+        
+        <div class="stat-body">
+          <div class="stat-tile"><span class="stat-value" data-w="0000">22.6</span><span class="stat-unit">GiB</span></div>
+          <div class="stat-chart" data-chart="mem-stat"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 -337.6 L5.6 -340.8 L11.2 -342.0 L16.8 -339.0 L22.3 -337.4 L27.9 -339.9 L33.5 -341.0 L39.1 -342.3 L44.7 -337.7 L50.3 -337.5 L55.9 -341.5 L61.5 -341.1 L67.0 -343.2 L72.6 -342.2 L78.2 -340.0 L83.8 -339.7 L89.4 -345.4 L95.0 -339.8 L100.6 -338.8 L106.1 -338.1 L111.7 -340.6 L117.3 -340.8 L122.9 -339.8 L128.5 -340.5 L134.1 -341.2 L139.7 -342.1 L145.3 -342.9 L150.8 -341.2 L156.4 -337.2 L162.0 -342.3 L167.6 -338.1 L173.2 -340.7 L178.8 -338.1 L184.4 -341.1 L189.9 -339.6 L195.5 -341.7 L201.1 -347.9 L206.7 -341.3 L212.3 -343.1 L217.9 -338.9 L223.5 -341.0 L229.1 -343.0 L234.6 -341.5 L240.2 -342.5 L245.8 -342.1 L251.4 -339.9 L257.0 -343.1 L262.6 -340.5 L268.2 -345.9 L273.7 -341.2 L279.3 -343.7 L284.9 -342.4 L290.5 -344.4 L296.1 -341.4 L301.7 -344.6 L307.3 -342.5 L312.8 -345.3 L318.4 -344.1 L324.0 -343.3 L329.6 -341.5 L335.2 -344.7 L340.8 -344.2 L346.4 -346.6 L352.0 -342.7 L357.5 -344.6 L363.1 -344.6 L368.7 -344.3 L374.3 -344.2 L379.9 -344.2 L385.5 -342.8 L391.1 -342.0 L396.6 -343.4 L402.2 -345.4 L407.8 -347.4 L413.4 -346.4 L419.0 -346.7 L424.6 -346.2 L430.2 -346.1 L435.8 -345.2 L441.3 -346.5 L446.9 -348.6 L452.5 -344.5 L458.1 -343.9 L463.7 -349.3 L469.3 -345.9 L474.9 -347.5 L480.4 -347.4 L486.0 -343.5 L491.6 -350.8 L497.2 -349.5 L502.8 -346.5 L508.4 -347.7 L514.0 -346.6 L519.6 -344.7 L525.1 -346.3 L530.7 -347.4 L536.3 -349.0 L541.9 -348.3 L547.5 -347.1 L553.1 -349.8 L558.7 -345.7 L564.2 -349.0 L569.8 -349.7 L575.4 -347.0 L581.0 -344.2 L586.6 -346.0 L592.2 -348.5 L597.8 -349.2 L603.4 -351.3 L608.9 -346.3 L614.5 -348.5 L620.1 -349.9 L625.7 -348.4 L631.3 -344.1 L636.9 -350.6 L642.5 -353.7 L648.0 -351.3 L653.6 -347.5 L659.2 -348.7 L664.8 -350.1 L670.4 -354.7 L676.0 -351.1 L681.6 -350.3 L687.2 -353.3 L692.7 -350.1 L698.3 -354.1 L703.9 -349.2 L709.5 -349.7 L715.1 -352.3 L720.7 -353.8 L726.3 -352.4 L731.8 -351.8 L737.4 -347.7 L743.0 -350.0 L748.6 -350.4 L754.2 -350.6 L759.8 -353.0 L765.4 -351.3 L770.9 -353.7 L776.5 -352.4 L782.1 -351.7 L787.7 -352.7 L793.3 -353.4 L798.9 -354.4 L804.5 -351.8 L810.1 -352.4 L815.6 -350.3 L821.2 -356.3 L826.8 -356.1 L832.4 -353.0 L838.0 -352.5 L843.6 -351.1 L849.2 -354.0 L854.7 -354.1 L860.3 -358.2 L865.9 -354.4 L871.5 -352.4 L877.1 -349.2 L882.7 -357.0 L888.3 -354.6 L893.9 -351.1 L899.4 -354.7 L905.0 -351.2 L910.6 -361.4 L916.2 -356.8 L921.8 -355.7 L927.4 -354.3 L933.0 -350.4 L938.5 -354.5 L944.1 -351.7 L949.7 -356.0 L955.3 -350.6 L960.9 -353.1 L966.5 -357.4 L972.1 -358.2 L977.7 -352.6 L983.2 -351.9 L988.8 -356.7 L994.4 -356.7 L1000.0 -353.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 -337.6 L5.6 -340.8 L11.2 -342.0 L16.8 -339.0 L22.3 -337.4 L27.9 -339.9 L33.5 -341.0 L39.1 -342.3 L44.7 -337.7 L50.3 -337.5 L55.9 -341.5 L61.5 -341.1 L67.0 -343.2 L72.6 -342.2 L78.2 -340.0 L83.8 -339.7 L89.4 -345.4 L95.0 -339.8 L100.6 -338.8 L106.1 -338.1 L111.7 -340.6 L117.3 -340.8 L122.9 -339.8 L128.5 -340.5 L134.1 -341.2 L139.7 -342.1 L145.3 -342.9 L150.8 -341.2 L156.4 -337.2 L162.0 -342.3 L167.6 -338.1 L173.2 -340.7 L178.8 -338.1 L184.4 -341.1 L189.9 -339.6 L195.5 -341.7 L201.1 -347.9 L206.7 -341.3 L212.3 -343.1 L217.9 -338.9 L223.5 -341.0 L229.1 -343.0 L234.6 -341.5 L240.2 -342.5 L245.8 -342.1 L251.4 -339.9 L257.0 -343.1 L262.6 -340.5 L268.2 -345.9 L273.7 -341.2 L279.3 -343.7 L284.9 -342.4 L290.5 -344.4 L296.1 -341.4 L301.7 -344.6 L307.3 -342.5 L312.8 -345.3 L318.4 -344.1 L324.0 -343.3 L329.6 -341.5 L335.2 -344.7 L340.8 -344.2 L346.4 -346.6 L352.0 -342.7 L357.5 -344.6 L363.1 -344.6 L368.7 -344.3 L374.3 -344.2 L379.9 -344.2 L385.5 -342.8 L391.1 -342.0 L396.6 -343.4 L402.2 -345.4 L407.8 -347.4 L413.4 -346.4 L419.0 -346.7 L424.6 -346.2 L430.2 -346.1 L435.8 -345.2 L441.3 -346.5 L446.9 -348.6 L452.5 -344.5 L458.1 -343.9 L463.7 -349.3 L469.3 -345.9 L474.9 -347.5 L480.4 -347.4 L486.0 -343.5 L491.6 -350.8 L497.2 -349.5 L502.8 -346.5 L508.4 -347.7 L514.0 -346.6 L519.6 -344.7 L525.1 -346.3 L530.7 -347.4 L536.3 -349.0 L541.9 -348.3 L547.5 -347.1 L553.1 -349.8 L558.7 -345.7 L564.2 -349.0 L569.8 -349.7 L575.4 -347.0 L581.0 -344.2 L586.6 -346.0 L592.2 -348.5 L597.8 -349.2 L603.4 -351.3 L608.9 -346.3 L614.5 -348.5 L620.1 -349.9 L625.7 -348.4 L631.3 -344.1 L636.9 -350.6 L642.5 -353.7 L648.0 -351.3 L653.6 -347.5 L659.2 -348.7 L664.8 -350.1 L670.4 -354.7 L676.0 -351.1 L681.6 -350.3 L687.2 -353.3 L692.7 -350.1 L698.3 -354.1 L703.9 -349.2 L709.5 -349.7 L715.1 -352.3 L720.7 -353.8 L726.3 -352.4 L731.8 -351.8 L737.4 -347.7 L743.0 -350.0 L748.6 -350.4 L754.2 -350.6 L759.8 -353.0 L765.4 -351.3 L770.9 -353.7 L776.5 -352.4 L782.1 -351.7 L787.7 -352.7 L793.3 -353.4 L798.9 -354.4 L804.5 -351.8 L810.1 -352.4 L815.6 -350.3 L821.2 -356.3 L826.8 -356.1 L832.4 -353.0 L838.0 -352.5 L843.6 -351.1 L849.2 -354.0 L854.7 -354.1 L860.3 -358.2 L865.9 -354.4 L871.5 -352.4 L877.1 -349.2 L882.7 -357.0 L888.3 -354.6 L893.9 -351.1 L899.4 -354.7 L905.0 -351.2 L910.6 -361.4 L916.2 -356.8 L921.8 -355.7 L927.4 -354.3 L933.0 -350.4 L938.5 -354.5 L944.1 -351.7 L949.7 -356.0 L955.3 -350.6 L960.9 -353.1 L966.5 -357.4 L972.1 -358.2 L977.7 -352.6 L983.2 -351.9 L988.8 -356.7 L994.4 -356.7 L1000.0 -353.0"></path></g></svg></div>
+          <div class="xaxis stat-axis"><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
+        </div>
+      </section>
+      <section class="panel" id="p-proc-stat" data-panel="proc-stat" style="border-color:var(--border-proc)">
+        <header class="ph">
+          <div class="gutter">469.33 px</div>
+          <div class="ph-row">
+            <h2>Processes</h2>
+            
+            <span class="head-right"><span>top <b>2.1.312 0.1%</b></span><span>80% cpu <b>3</b></span><span>80% mem <b>114</b></span></span>
+          </div>
+        </header>
+        
+        <div class="stat-body">
+          <div class="stat-tile"><span class="stat-value" data-w="000">317</span><span class="proc-facts"><span>running <b>0</b></span><span>sleeping <b>317</b></span><span>waiting <b>0</b></span><span>zombie <b>0</b></span><span>threads <b>5210</b></span><span>gpu <b>3</b></span></span></div>
+          <div class="stat-chart" data-chart="proc-stat"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 -30382.8 L5.6 -30703.6 L11.2 -30243.4 L16.8 -30043.8 L22.3 -30456.9 L27.9 -30533.2 L33.5 -30486.0 L39.1 -30514.1 L44.7 -30389.4 L50.3 -30294.9 L55.9 -30263.9 L61.5 -30372.9 L67.0 -30341.1 L72.6 -30604.3 L78.2 -30543.3 L83.8 -30166.6 L89.4 -30560.0 L95.0 -30414.6 L100.6 -30644.8 L106.1 -30722.6 L111.7 -30532.8 L117.3 -30063.0 L122.9 -30552.6 L128.5 -30106.8 L134.1 -30737.5 L139.7 -30288.7 L145.3 -30383.6 L150.8 -30789.2 L156.4 -30065.7 L162.0 -30427.8 L167.6 -30205.1 L173.2 -30316.9 L178.8 -30260.6 L184.4 -30559.7 L189.9 -30361.1 L195.5 -30492.6 L201.1 -30554.2 L206.7 -30085.1 L212.3 -30733.8 L217.9 -30448.3 L223.5 -30258.8 L229.1 -30622.8 L234.6 -31153.3 L240.2 -31412.8 L245.8 -31240.2 L251.4 -31438.6 L257.0 -31356.6 L262.6 -31306.2 L268.2 -30834.0 L273.7 -30866.1 L279.3 -30358.2 L284.9 -30323.9 L290.5 -30574.8 L296.1 -30575.1 L301.7 -30414.7 L307.3 -30546.3 L312.8 -30465.4 L318.4 -30579.6 L324.0 -30660.1 L329.6 -30529.0 L335.2 -30590.4 L340.8 -30343.0 L346.4 -30309.7 L352.0 -29943.9 L357.5 -30506.5 L363.1 -30429.7 L368.7 -30531.8 L374.3 -30041.8 L379.9 -30324.2 L385.5 -30309.5 L391.1 -30055.4 L396.6 -30608.3 L402.2 -30672.3 L407.8 -30163.6 L413.4 -30514.0 L419.0 -30775.2 L424.6 -30175.8 L430.2 -30624.9 L435.8 -30747.4 L441.3 -30804.2 L446.9 -30145.0 L452.5 -30206.1 L458.1 -30466.0 L463.7 -30669.2 L469.3 -30166.3 L474.9 -30269.8 L480.4 -30195.4 L486.0 -30649.4 L491.6 -30309.2 L497.2 -30540.5 L502.8 -30555.4 L508.4 -30660.8 L514.0 -30508.9 L519.6 -30492.7 L525.1 -30660.6 L530.7 -30520.9 L536.3 -30165.0 L541.9 -30313.4 L547.5 -30608.8 L553.1 -30451.8 L558.7 -30350.9 L564.2 -30472.8 L569.8 -31101.2 L575.4 -30410.7 L581.0 -30518.2 L586.6 -30510.2 L592.2 -30356.5 L597.8 -30649.5 L603.4 -30570.6 L608.9 -30461.8 L614.5 -30081.5 L620.1 -30588.4 L625.7 -30448.6 L631.3 -30225.0 L636.9 -29627.3 L642.5 -30092.3 L648.0 -29766.8 L653.6 -29868.5 L659.2 -29701.8 L664.8 -29522.1 L670.4 -29786.2 L676.0 -29494.1 L681.6 -29629.5 L687.2 -29101.9 L692.7 -29209.2 L698.3 -29504.5 L703.9 -29297.6 L709.5 -29116.9 L715.1 -29144.8 L720.7 -29290.0 L726.3 -29495.2 L731.8 -29764.6 L737.4 -29768.0 L743.0 -30005.7 L748.6 -30129.2 L754.2 -30077.0 L759.8 -30400.8 L765.4 -30357.5 L770.9 -30225.1 L776.5 -30274.1 L782.1 -30338.6 L787.7 -30216.2 L793.3 -30110.6 L798.9 -30406.7 L804.5 -30302.5 L810.1 -30534.0 L815.6 -30294.7 L821.2 -30439.8 L826.8 -30461.9 L832.4 -30325.2 L838.0 -30462.0 L843.6 -30274.0 L849.2 -30334.6 L854.7 -30587.2 L860.3 -30502.5 L865.9 -30421.8 L871.5 -30261.2 L877.1 -30565.5 L882.7 -30832.4 L888.3 -29975.4 L893.9 -30638.3 L899.4 -30466.9 L905.0 -30648.1 L910.6 -30662.1 L916.2 -30213.5 L921.8 -30779.4 L927.4 -30300.6 L933.0 -30370.8 L938.5 -30551.0 L944.1 -30404.7 L949.7 -30477.0 L955.3 -30316.0 L960.9 -30208.9 L966.5 -30425.5 L972.1 -30197.8 L977.7 -30697.6 L983.2 -30471.9 L988.8 -30710.2 L994.4 -30165.8 L1000.0 -29994.7 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 -30382.8 L5.6 -30703.6 L11.2 -30243.4 L16.8 -30043.8 L22.3 -30456.9 L27.9 -30533.2 L33.5 -30486.0 L39.1 -30514.1 L44.7 -30389.4 L50.3 -30294.9 L55.9 -30263.9 L61.5 -30372.9 L67.0 -30341.1 L72.6 -30604.3 L78.2 -30543.3 L83.8 -30166.6 L89.4 -30560.0 L95.0 -30414.6 L100.6 -30644.8 L106.1 -30722.6 L111.7 -30532.8 L117.3 -30063.0 L122.9 -30552.6 L128.5 -30106.8 L134.1 -30737.5 L139.7 -30288.7 L145.3 -30383.6 L150.8 -30789.2 L156.4 -30065.7 L162.0 -30427.8 L167.6 -30205.1 L173.2 -30316.9 L178.8 -30260.6 L184.4 -30559.7 L189.9 -30361.1 L195.5 -30492.6 L201.1 -30554.2 L206.7 -30085.1 L212.3 -30733.8 L217.9 -30448.3 L223.5 -30258.8 L229.1 -30622.8 L234.6 -31153.3 L240.2 -31412.8 L245.8 -31240.2 L251.4 -31438.6 L257.0 -31356.6 L262.6 -31306.2 L268.2 -30834.0 L273.7 -30866.1 L279.3 -30358.2 L284.9 -30323.9 L290.5 -30574.8 L296.1 -30575.1 L301.7 -30414.7 L307.3 -30546.3 L312.8 -30465.4 L318.4 -30579.6 L324.0 -30660.1 L329.6 -30529.0 L335.2 -30590.4 L340.8 -30343.0 L346.4 -30309.7 L352.0 -29943.9 L357.5 -30506.5 L363.1 -30429.7 L368.7 -30531.8 L374.3 -30041.8 L379.9 -30324.2 L385.5 -30309.5 L391.1 -30055.4 L396.6 -30608.3 L402.2 -30672.3 L407.8 -30163.6 L413.4 -30514.0 L419.0 -30775.2 L424.6 -30175.8 L430.2 -30624.9 L435.8 -30747.4 L441.3 -30804.2 L446.9 -30145.0 L452.5 -30206.1 L458.1 -30466.0 L463.7 -30669.2 L469.3 -30166.3 L474.9 -30269.8 L480.4 -30195.4 L486.0 -30649.4 L491.6 -30309.2 L497.2 -30540.5 L502.8 -30555.4 L508.4 -30660.8 L514.0 -30508.9 L519.6 -30492.7 L525.1 -30660.6 L530.7 -30520.9 L536.3 -30165.0 L541.9 -30313.4 L547.5 -30608.8 L553.1 -30451.8 L558.7 -30350.9 L564.2 -30472.8 L569.8 -31101.2 L575.4 -30410.7 L581.0 -30518.2 L586.6 -30510.2 L592.2 -30356.5 L597.8 -30649.5 L603.4 -30570.6 L608.9 -30461.8 L614.5 -30081.5 L620.1 -30588.4 L625.7 -30448.6 L631.3 -30225.0 L636.9 -29627.3 L642.5 -30092.3 L648.0 -29766.8 L653.6 -29868.5 L659.2 -29701.8 L664.8 -29522.1 L670.4 -29786.2 L676.0 -29494.1 L681.6 -29629.5 L687.2 -29101.9 L692.7 -29209.2 L698.3 -29504.5 L703.9 -29297.6 L709.5 -29116.9 L715.1 -29144.8 L720.7 -29290.0 L726.3 -29495.2 L731.8 -29764.6 L737.4 -29768.0 L743.0 -30005.7 L748.6 -30129.2 L754.2 -30077.0 L759.8 -30400.8 L765.4 -30357.5 L770.9 -30225.1 L776.5 -30274.1 L782.1 -30338.6 L787.7 -30216.2 L793.3 -30110.6 L798.9 -30406.7 L804.5 -30302.5 L810.1 -30534.0 L815.6 -30294.7 L821.2 -30439.8 L826.8 -30461.9 L832.4 -30325.2 L838.0 -30462.0 L843.6 -30274.0 L849.2 -30334.6 L854.7 -30587.2 L860.3 -30502.5 L865.9 -30421.8 L871.5 -30261.2 L877.1 -30565.5 L882.7 -30832.4 L888.3 -29975.4 L893.9 -30638.3 L899.4 -30466.9 L905.0 -30648.1 L910.6 -30662.1 L916.2 -30213.5 L921.8 -30779.4 L927.4 -30300.6 L933.0 -30370.8 L938.5 -30551.0 L944.1 -30404.7 L949.7 -30477.0 L955.3 -30316.0 L960.9 -30208.9 L966.5 -30425.5 L972.1 -30197.8 L977.7 -30697.6 L983.2 -30471.9 L988.8 -30710.2 L994.4 -30165.8 L1000.0 -29994.7"></path></g></svg></div>
+          <div class="xaxis stat-axis"><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
+        </div>
+      </section>
+  </div>
+  <div class="band band-2" data-band="2">
+      <section class="panel" id="p-cores" data-panel="cores" style="border-color:var(--border-cores)">
+        <header class="ph">
+          <div class="gutter">469.33 px</div>
+          <div class="ph-row">
+            <h2>Cores</h2>
+            
+            <span class="head-right"><span>64 · 0&ndash;100%</span></span>
+          </div>
+        </header>
+        
+        <div class="cores-body"><div class="core-row" style="--value:2"><span class="cl">C00</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C01</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C02</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C03</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C04</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C05</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C06</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:9"><span class="cl">C07</span><span class="meter"></span><span class="cv"><span data-w="100">9</span><i>%</i></span></div><div class="core-row" style="--value:8"><span class="cl">C08</span><span class="meter"></span><span class="cv"><span data-w="100">8</span><i>%</i></span></div><div class="core-row" style="--value:8"><span class="cl">C09</span><span class="meter"></span><span class="cv"><span data-w="100">8</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C10</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:3"><span class="cl">C11</span><span class="meter"></span><span class="cv"><span data-w="100">3</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C12</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C13</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C14</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C15</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C16</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C17</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C18</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C19</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C20</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:4"><span class="cl">C21</span><span class="meter"></span><span class="cv"><span data-w="100">4</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C22</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C23</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:3"><span class="cl">C24</span><span class="meter"></span><span class="cv"><span data-w="100">3</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C25</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C26</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C27</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C28</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C29</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C30</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C31</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C32</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C33</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C34</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C35</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C36</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C37</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C38</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C39</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C40</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C41</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C42</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C43</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C44</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C45</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C46</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C47</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C48</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C49</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C50</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C51</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C52</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C53</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:3"><span class="cl">C54</span><span class="meter"></span><span class="cv"><span data-w="100">3</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C55</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C56</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C57</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C58</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:0"><span class="cl">C59</span><span class="meter"></span><span class="cv"><span data-w="100">0</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C60</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:2"><span class="cl">C61</span><span class="meter"></span><span class="cv"><span data-w="100">2</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C62</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div><div class="core-row" style="--value:1"><span class="cl">C63</span><span class="meter"></span><span class="cv"><span data-w="100">1</span><i>%</i></span></div></div>
+      </section>
+      <section class="panel" id="p-cpu-gauge" data-panel="cpu-gauge" style="border-color:var(--border-cpu)">
+        <header class="ph">
+          <div class="gutter">469.33 px</div>
+          <div class="ph-row">
+            <h2>CPU</h2>
+            <span class="cpu-name">Ryzen Threadripper PRO</span>
+            <span class="head-right"><span>64 cores</span></span>
+          </div>
+        </header>
+        
+        <div class="gauge-body">
+          <div class="gauge"><svg viewBox="0 0 112 114" aria-hidden="true"><path class="g-track" d="M25.72 94.28 A40 40 0 1 1 82.28 94.28"></path><path class="g-fill ok" d="M25.72 94.28 A40 40 0 0 1 24.41 92.92"></path><path class="g-tick" d="M10.25 80.21L6.45 81.45M8.57 58.80L4.62 58.18M16.79 38.96L13.55 36.61M33.12 25.01L31.30 21.45M74.88 25.01L76.70 21.45M91.21 38.96L94.45 36.61M99.43 58.80L103.38 58.18M97.75 80.21L101.55 81.45"></path><path class="g-tick major" d="M21.47 98.53L16.52 103.48M54.00 20.00L54.00 13.00M86.53 98.53L91.48 103.48"></path><text class="g-scale" x="10.87" y="109.13">0</text><text class="g-scale" x="54.00" y="5.00">50</text><text class="g-scale" x="97.13" y="109.13">100</text><text class="g-value" x="54" y="66">1<tspan class="g-unit" dx="2.65">%</tspan></text><text class="g-label" x="54" y="78">total</text></svg></div>
+          <div class="gauge-side facts">
+          <div class="fact load"><span>load</span><b><span class="load-cell"><span data-w="100%">26%</span>/1m</span> <span class="load-cell"><span data-w="100%">23%</span>/5m</span> <span class="load-cell"><span data-w="100%">22%</span>/15m</span></b></div>
+          <div class="fact"><span>cores busy</span><b><span data-w="64.0">0.6</span> <small>of 64</small></b></div></div>
+        </div>
+      </section>
+      <section class="panel" id="p-mem-gauge" data-panel="mem-gauge" style="border-color:var(--border-mem)">
+        <header class="ph">
+          <div class="gutter">469.33 px</div>
+          <div class="ph-row">
+            <h2>Memory</h2>
+            
+            <span class="head-right"><span>of 503 GiB</span></span>
+          </div>
+        </header>
+        
+        <div class="gauge-body">
+          <div class="gauge"><svg viewBox="0 0 112 114" aria-hidden="true"><path class="g-track" d="M25.72 94.28 A40 40 0 1 1 82.28 94.28"></path><path class="g-fill ok" d="M25.72 94.28 A40 40 0 0 1 20.40 87.70"></path><path class="g-tick" d="M10.25 80.21L6.45 81.45M8.57 58.80L4.62 58.18M16.79 38.96L13.55 36.61M33.12 25.01L31.30 21.45M74.88 25.01L76.70 21.45M91.21 38.96L94.45 36.61M99.43 58.80L103.38 58.18M97.75 80.21L101.55 81.45"></path><path class="g-tick major" d="M21.47 98.53L16.52 103.48M54.00 20.00L54.00 13.00M86.53 98.53L91.48 103.48"></path><text class="g-scale" x="10.87" y="109.13">0</text><text class="g-scale" x="54.00" y="5.00">50</text><text class="g-scale" x="97.13" y="109.13">100</text><text class="g-value" x="54" y="66">22.6<tspan class="g-unit" dx="2.65">GiB</tspan></text><text class="g-label" x="54" y="78">used</text></svg></div>
+          <div class="gauge-side mem-rows"><div class="mem-bar" aria-hidden="true"><span class="mem-seg" data-seg="used" style="width:4%"></span><span class="mem-seg" data-seg="cache" style="width:22%"></span><span class="mem-seg" data-seg="other" style="width:59%"></span><span class="mem-seg" data-seg="free" style="width:15%"></span></div>
+          <div class="mem-row"><span><i class="mem-key" data-seg="used"></i>used</span><b>22.5 GiB</b><span class="pct" data-w="100%">4%</span></div>
+          <div class="mem-row"><span><i class="mem-key" data-seg="cache"></i>cache</span><b>108 GiB</b><span class="pct" data-w="100%">22%</span></div>
+          <div class="mem-row"><span><i class="mem-key" data-seg="other"></i>other</span><b>295 GiB</b><span class="pct" data-w="100%">59%</span></div>
+          <div class="mem-row"><span><i class="mem-key" data-seg="free"></i>free</span><b>77.5 GiB</b><span class="pct" data-w="100%">15%</span></div>
+          <div class="mem-row"><span>available = free + cache</span><b data-w="0000 MiB">185 GiB</b></div>
+          <div class="mem-row swap"><span>swap</span><b>0 Byte / 128 GiB</b><span class="pct" data-w="100%">0%</span></div></div>
+        </div>
+      </section>
+  </div>
+  <div class="band band-3" data-band="3">
+      <section class="panel" id="p-gpu" data-panel="gpu" style="border-color:var(--border-gpu)">
+        <header class="ph">
+          <div class="gutter">786.67 px</div>
+          <div class="ph-row">
+            <h2>GPU</h2>
+            
+            <span class="head-right"><span>3 devices</span><span>0&ndash;100% &middot; 180 s</span></span>
+          </div>
+        </header>
+        
+        <div class="net-body">
+          <div class="gpu-lane">
+            <div class="plot-scale" aria-hidden="true"><span class="scale-total">100%</span><span class="scale-mid" style="--at:75">75%</span><span class="scale-mid" style="--at:50">50%</span><span class="scale-mid" style="--at:25">25%</span><span class="scale-zero">0%</span></div>
+            <div class="net-plot" data-chart="gpu"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 99.3 L5.6 100.0 L11.2 99.9 L16.8 100.0 L22.3 100.0 L27.9 100.0 L33.5 100.0 L39.1 100.0 L44.7 99.9 L50.3 99.7 L55.9 99.9 L61.5 99.7 L67.0 99.9 L72.6 100.0 L78.2 100.0 L83.8 100.0 L89.4 100.0 L95.0 100.0 L100.6 100.0 L106.1 99.9 L111.7 99.9 L117.3 100.0 L122.9 100.0 L128.5 100.0 L134.1 99.7 L139.7 100.0 L145.3 100.0 L150.8 100.0 L156.4 100.0 L162.0 100.0 L167.6 100.0 L173.2 99.9 L178.8 100.0 L184.4 99.9 L189.9 100.0 L195.5 100.0 L201.1 100.0 L206.7 100.0 L212.3 99.9 L217.9 99.8 L223.5 99.9 L229.1 100.0 L234.6 99.9 L240.2 99.9 L245.8 99.8 L251.4 99.9 L257.0 100.0 L262.6 100.0 L268.2 100.0 L273.7 99.7 L279.3 100.0 L284.9 99.8 L290.5 99.9 L296.1 100.0 L301.7 100.0 L307.3 99.9 L312.8 99.9 L318.4 100.0 L324.0 99.9 L329.6 100.0 L335.2 100.0 L340.8 100.0 L346.4 100.0 L352.0 100.0 L357.5 99.6 L363.1 99.3 L368.7 99.7 L374.3 99.9 L379.9 99.5 L385.5 99.9 L391.1 100.0 L396.6 100.0 L402.2 99.8 L407.8 100.0 L413.4 100.0 L419.0 100.0 L424.6 100.0 L430.2 100.0 L435.8 99.7 L441.3 100.0 L446.9 100.0 L452.5 99.9 L458.1 100.0 L463.7 100.0 L469.3 99.3 L474.9 100.0 L480.4 100.0 L486.0 99.9 L491.6 100.0 L497.2 100.0 L502.8 100.0 L508.4 100.0 L514.0 100.0 L519.6 99.7 L525.1 99.7 L530.7 100.0 L536.3 100.0 L541.9 99.5 L547.5 99.8 L553.1 100.0 L558.7 100.0 L564.2 100.0 L569.8 100.0 L575.4 100.0 L581.0 100.0 L586.6 100.0 L592.2 100.0 L597.8 99.7 L603.4 99.9 L608.9 100.0 L614.5 100.0 L620.1 100.0 L625.7 99.7 L631.3 99.7 L636.9 100.0 L642.5 99.6 L648.0 99.8 L653.6 100.0 L659.2 99.6 L664.8 99.5 L670.4 99.6 L676.0 99.1 L681.6 98.6 L687.2 98.0 L692.7 98.4 L698.3 97.9 L703.9 98.0 L709.5 98.2 L715.1 98.8 L720.7 98.4 L726.3 98.7 L731.8 98.9 L737.4 99.4 L743.0 99.3 L748.6 99.7 L754.2 99.6 L759.8 100.0 L765.4 99.9 L770.9 100.0 L776.5 100.0 L782.1 100.0 L787.7 100.0 L793.3 100.0 L798.9 100.0 L804.5 100.0 L810.1 99.4 L815.6 99.5 L821.2 99.7 L826.8 99.8 L832.4 100.0 L838.0 99.9 L843.6 100.0 L849.2 100.0 L854.7 100.0 L860.3 100.0 L865.9 99.7 L871.5 100.0 L877.1 99.3 L882.7 100.0 L888.3 99.8 L893.9 100.0 L899.4 99.7 L905.0 100.0 L910.6 99.9 L916.2 100.0 L921.8 99.8 L927.4 99.8 L933.0 99.9 L938.5 100.0 L944.1 99.4 L949.7 100.0 L955.3 100.0 L960.9 100.0 L966.5 100.0 L972.1 100.0 L977.7 100.0 L983.2 99.9 L988.8 100.0 L994.4 99.9 L1000.0 100.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 99.3 L5.6 100.0 L11.2 99.9 L16.8 100.0 L22.3 100.0 L27.9 100.0 L33.5 100.0 L39.1 100.0 L44.7 99.9 L50.3 99.7 L55.9 99.9 L61.5 99.7 L67.0 99.9 L72.6 100.0 L78.2 100.0 L83.8 100.0 L89.4 100.0 L95.0 100.0 L100.6 100.0 L106.1 99.9 L111.7 99.9 L117.3 100.0 L122.9 100.0 L128.5 100.0 L134.1 99.7 L139.7 100.0 L145.3 100.0 L150.8 100.0 L156.4 100.0 L162.0 100.0 L167.6 100.0 L173.2 99.9 L178.8 100.0 L184.4 99.9 L189.9 100.0 L195.5 100.0 L201.1 100.0 L206.7 100.0 L212.3 99.9 L217.9 99.8 L223.5 99.9 L229.1 100.0 L234.6 99.9 L240.2 99.9 L245.8 99.8 L251.4 99.9 L257.0 100.0 L262.6 100.0 L268.2 100.0 L273.7 99.7 L279.3 100.0 L284.9 99.8 L290.5 99.9 L296.1 100.0 L301.7 100.0 L307.3 99.9 L312.8 99.9 L318.4 100.0 L324.0 99.9 L329.6 100.0 L335.2 100.0 L340.8 100.0 L346.4 100.0 L352.0 100.0 L357.5 99.6 L363.1 99.3 L368.7 99.7 L374.3 99.9 L379.9 99.5 L385.5 99.9 L391.1 100.0 L396.6 100.0 L402.2 99.8 L407.8 100.0 L413.4 100.0 L419.0 100.0 L424.6 100.0 L430.2 100.0 L435.8 99.7 L441.3 100.0 L446.9 100.0 L452.5 99.9 L458.1 100.0 L463.7 100.0 L469.3 99.3 L474.9 100.0 L480.4 100.0 L486.0 99.9 L491.6 100.0 L497.2 100.0 L502.8 100.0 L508.4 100.0 L514.0 100.0 L519.6 99.7 L525.1 99.7 L530.7 100.0 L536.3 100.0 L541.9 99.5 L547.5 99.8 L553.1 100.0 L558.7 100.0 L564.2 100.0 L569.8 100.0 L575.4 100.0 L581.0 100.0 L586.6 100.0 L592.2 100.0 L597.8 99.7 L603.4 99.9 L608.9 100.0 L614.5 100.0 L620.1 100.0 L625.7 99.7 L631.3 99.7 L636.9 100.0 L642.5 99.6 L648.0 99.8 L653.6 100.0 L659.2 99.6 L664.8 99.5 L670.4 99.6 L676.0 99.1 L681.6 98.6 L687.2 98.0 L692.7 98.4 L698.3 97.9 L703.9 98.0 L709.5 98.2 L715.1 98.8 L720.7 98.4 L726.3 98.7 L731.8 98.9 L737.4 99.4 L743.0 99.3 L748.6 99.7 L754.2 99.6 L759.8 100.0 L765.4 99.9 L770.9 100.0 L776.5 100.0 L782.1 100.0 L787.7 100.0 L793.3 100.0 L798.9 100.0 L804.5 100.0 L810.1 99.4 L815.6 99.5 L821.2 99.7 L826.8 99.8 L832.4 100.0 L838.0 99.9 L843.6 100.0 L849.2 100.0 L854.7 100.0 L860.3 100.0 L865.9 99.7 L871.5 100.0 L877.1 99.3 L882.7 100.0 L888.3 99.8 L893.9 100.0 L899.4 99.7 L905.0 100.0 L910.6 99.9 L916.2 100.0 L921.8 99.8 L927.4 99.8 L933.0 99.9 L938.5 100.0 L944.1 99.4 L949.7 100.0 L955.3 100.0 L960.9 100.0 L966.5 100.0 L972.1 100.0 L977.7 100.0 L983.2 99.9 L988.8 100.0 L994.4 99.9 L1000.0 100.0"></path></g></svg></div>
+            <div class="net-legend">
+              <div class="legend-item">
+                <i class="sw sw-gpu-0"></i>
+                <span class="legend-name">GPU 0 <span class="lg-model">RTX PRO 4000 Blackwell</span></span>
+                <b class="legend-value"><span data-w="100%">0%</span><span class="lg-vram">452 MiB / 23.8 GiB</span></b>
+                <span class="legend-meta"><span data-w="100&deg;C">37&deg;C</span> &middot; 3 W</span>
+                <span class="gpu-bars" aria-hidden="true"><i class="gbl">load</i><span class="meter" style="--value:0"></span><i class="gbl">mem</i><span class="meter" style="--value:2"></span><i class="gbl">pwr</i><span class="meter" style="--value:1"></span></span>
+              </div>
+            </div>
+          </div><div class="gpu-boundary" aria-hidden="true"></div>
+          <div class="gpu-lane">
+            <div class="plot-scale" aria-hidden="true"><span class="scale-total">100%</span><span class="scale-mid" style="--at:75">75%</span><span class="scale-mid" style="--at:50">50%</span><span class="scale-mid" style="--at:25">25%</span><span class="scale-zero">0%</span></div>
+            <div class="net-plot" data-chart="gpu"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L5.6 100.0 L11.2 99.9 L16.8 100.0 L22.3 100.0 L27.9 100.0 L33.5 100.0 L39.1 99.7 L44.7 99.8 L50.3 99.9 L55.9 100.0 L61.5 99.8 L67.0 99.8 L72.6 100.0 L78.2 100.0 L83.8 100.0 L89.4 100.0 L95.0 100.0 L100.6 99.9 L106.1 99.8 L111.7 100.0 L117.3 99.8 L122.9 100.0 L128.5 100.0 L134.1 100.0 L139.7 100.0 L145.3 100.0 L150.8 100.0 L156.4 100.0 L162.0 99.8 L167.6 100.0 L173.2 100.0 L178.8 100.0 L184.4 100.0 L189.9 100.0 L195.5 100.0 L201.1 100.0 L206.7 100.0 L212.3 99.6 L217.9 99.7 L223.5 100.0 L229.1 99.9 L234.6 99.9 L240.2 99.9 L245.8 99.8 L251.4 99.9 L257.0 100.0 L262.6 99.9 L268.2 100.0 L273.7 99.9 L279.3 100.0 L284.9 100.0 L290.5 99.8 L296.1 100.0 L301.7 99.7 L307.3 100.0 L312.8 99.9 L318.4 100.0 L324.0 100.0 L329.6 99.5 L335.2 99.6 L340.8 99.9 L346.4 99.9 L352.0 100.0 L357.5 99.7 L363.1 99.6 L368.7 99.6 L374.3 100.0 L379.9 100.0 L385.5 100.0 L391.1 100.0 L396.6 100.0 L402.2 100.0 L407.8 100.0 L413.4 99.8 L419.0 100.0 L424.6 99.9 L430.2 100.0 L435.8 100.0 L441.3 100.0 L446.9 99.9 L452.5 100.0 L458.1 100.0 L463.7 100.0 L469.3 99.9 L474.9 99.9 L480.4 99.7 L486.0 99.9 L491.6 99.9 L497.2 100.0 L502.8 100.0 L508.4 100.0 L514.0 100.0 L519.6 99.8 L525.1 99.8 L530.7 100.0 L536.3 100.0 L541.9 100.0 L547.5 100.0 L553.1 100.0 L558.7 100.0 L564.2 100.0 L569.8 99.8 L575.4 99.9 L581.0 100.0 L586.6 99.6 L592.2 100.0 L597.8 99.7 L603.4 100.0 L608.9 99.9 L614.5 100.0 L620.1 100.0 L625.7 100.0 L631.3 100.0 L636.9 99.9 L642.5 99.9 L648.0 100.0 L653.6 99.9 L659.2 99.8 L664.8 100.0 L670.4 99.6 L676.0 100.0 L681.6 100.0 L687.2 100.0 L692.7 100.0 L698.3 99.6 L703.9 99.9 L709.5 99.7 L715.1 100.0 L720.7 100.0 L726.3 99.7 L731.8 99.9 L737.4 99.8 L743.0 99.9 L748.6 99.8 L754.2 100.0 L759.8 100.0 L765.4 99.9 L770.9 100.0 L776.5 99.8 L782.1 99.8 L787.7 99.8 L793.3 100.0 L798.9 100.0 L804.5 99.9 L810.1 99.9 L815.6 100.0 L821.2 100.0 L826.8 100.0 L832.4 99.7 L838.0 100.0 L843.6 99.9 L849.2 100.0 L854.7 100.0 L860.3 100.0 L865.9 99.8 L871.5 100.0 L877.1 99.7 L882.7 100.0 L888.3 100.0 L893.9 99.9 L899.4 100.0 L905.0 100.0 L910.6 99.4 L916.2 99.9 L921.8 100.0 L927.4 100.0 L933.0 99.9 L938.5 100.0 L944.1 99.6 L949.7 100.0 L955.3 100.0 L960.9 100.0 L966.5 100.0 L972.1 100.0 L977.7 99.9 L983.2 99.9 L988.8 100.0 L994.4 99.9 L1000.0 100.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L5.6 100.0 L11.2 99.9 L16.8 100.0 L22.3 100.0 L27.9 100.0 L33.5 100.0 L39.1 99.7 L44.7 99.8 L50.3 99.9 L55.9 100.0 L61.5 99.8 L67.0 99.8 L72.6 100.0 L78.2 100.0 L83.8 100.0 L89.4 100.0 L95.0 100.0 L100.6 99.9 L106.1 99.8 L111.7 100.0 L117.3 99.8 L122.9 100.0 L128.5 100.0 L134.1 100.0 L139.7 100.0 L145.3 100.0 L150.8 100.0 L156.4 100.0 L162.0 99.8 L167.6 100.0 L173.2 100.0 L178.8 100.0 L184.4 100.0 L189.9 100.0 L195.5 100.0 L201.1 100.0 L206.7 100.0 L212.3 99.6 L217.9 99.7 L223.5 100.0 L229.1 99.9 L234.6 99.9 L240.2 99.9 L245.8 99.8 L251.4 99.9 L257.0 100.0 L262.6 99.9 L268.2 100.0 L273.7 99.9 L279.3 100.0 L284.9 100.0 L290.5 99.8 L296.1 100.0 L301.7 99.7 L307.3 100.0 L312.8 99.9 L318.4 100.0 L324.0 100.0 L329.6 99.5 L335.2 99.6 L340.8 99.9 L346.4 99.9 L352.0 100.0 L357.5 99.7 L363.1 99.6 L368.7 99.6 L374.3 100.0 L379.9 100.0 L385.5 100.0 L391.1 100.0 L396.6 100.0 L402.2 100.0 L407.8 100.0 L413.4 99.8 L419.0 100.0 L424.6 99.9 L430.2 100.0 L435.8 100.0 L441.3 100.0 L446.9 99.9 L452.5 100.0 L458.1 100.0 L463.7 100.0 L469.3 99.9 L474.9 99.9 L480.4 99.7 L486.0 99.9 L491.6 99.9 L497.2 100.0 L502.8 100.0 L508.4 100.0 L514.0 100.0 L519.6 99.8 L525.1 99.8 L530.7 100.0 L536.3 100.0 L541.9 100.0 L547.5 100.0 L553.1 100.0 L558.7 100.0 L564.2 100.0 L569.8 99.8 L575.4 99.9 L581.0 100.0 L586.6 99.6 L592.2 100.0 L597.8 99.7 L603.4 100.0 L608.9 99.9 L614.5 100.0 L620.1 100.0 L625.7 100.0 L631.3 100.0 L636.9 99.9 L642.5 99.9 L648.0 100.0 L653.6 99.9 L659.2 99.8 L664.8 100.0 L670.4 99.6 L676.0 100.0 L681.6 100.0 L687.2 100.0 L692.7 100.0 L698.3 99.6 L703.9 99.9 L709.5 99.7 L715.1 100.0 L720.7 100.0 L726.3 99.7 L731.8 99.9 L737.4 99.8 L743.0 99.9 L748.6 99.8 L754.2 100.0 L759.8 100.0 L765.4 99.9 L770.9 100.0 L776.5 99.8 L782.1 99.8 L787.7 99.8 L793.3 100.0 L798.9 100.0 L804.5 99.9 L810.1 99.9 L815.6 100.0 L821.2 100.0 L826.8 100.0 L832.4 99.7 L838.0 100.0 L843.6 99.9 L849.2 100.0 L854.7 100.0 L860.3 100.0 L865.9 99.8 L871.5 100.0 L877.1 99.7 L882.7 100.0 L888.3 100.0 L893.9 99.9 L899.4 100.0 L905.0 100.0 L910.6 99.4 L916.2 99.9 L921.8 100.0 L927.4 100.0 L933.0 99.9 L938.5 100.0 L944.1 99.6 L949.7 100.0 L955.3 100.0 L960.9 100.0 L966.5 100.0 L972.1 100.0 L977.7 99.9 L983.2 99.9 L988.8 100.0 L994.4 99.9 L1000.0 100.0"></path></g></svg></div>
+            <div class="net-legend">
+              <div class="legend-item">
+                <i class="sw sw-gpu-1"></i>
+                <span class="legend-name">GPU 1 <span class="lg-model">RTX PRO 6000 Blackwell</span></span>
+                <b class="legend-value"><span data-w="100%">0%</span><span class="lg-vram">512 MiB / 95.5 GiB</span></b>
+                <span class="legend-meta"><span data-w="100&deg;C">38&deg;C</span> &middot; 13 W</span>
+                <span class="gpu-bars" aria-hidden="true"><i class="gbl">load</i><span class="meter" style="--value:0"></span><i class="gbl">mem</i><span class="meter" style="--value:1"></span><i class="gbl">pwr</i><span class="meter" style="--value:2"></span></span>
+              </div>
+            </div>
+          </div><div class="gpu-boundary" aria-hidden="true"></div>
+          <div class="gpu-lane">
+            <div class="plot-scale" aria-hidden="true"><span class="scale-total">100%</span><span class="scale-mid" style="--at:75">75%</span><span class="scale-mid" style="--at:50">50%</span><span class="scale-mid" style="--at:25">25%</span><span class="scale-zero">0%</span></div>
+            <div class="net-plot" data-chart="gpu"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 99.5 L5.6 100.0 L11.2 100.0 L16.8 99.1 L22.3 99.7 L27.9 99.6 L33.5 99.8 L39.1 98.3 L44.7 99.0 L50.3 98.7 L55.9 100.0 L61.5 100.0 L67.0 100.0 L72.6 100.0 L78.2 100.0 L83.8 98.3 L89.4 99.8 L95.0 99.9 L100.6 99.1 L106.1 100.0 L111.7 99.7 L117.3 99.2 L122.9 100.0 L128.5 98.1 L134.1 99.8 L139.7 99.3 L145.3 100.0 L150.8 100.0 L156.4 98.2 L162.0 100.0 L167.6 100.0 L173.2 99.5 L178.8 98.4 L184.4 100.0 L189.9 98.4 L195.5 99.7 L201.1 99.0 L206.7 100.0 L212.3 99.6 L217.9 98.3 L223.5 100.0 L229.1 100.0 L234.6 100.0 L240.2 100.0 L245.8 99.1 L251.4 99.8 L257.0 100.0 L262.6 99.1 L268.2 100.0 L273.7 100.0 L279.3 97.3 L284.9 100.0 L290.5 98.2 L296.1 100.0 L301.7 100.0 L307.3 99.4 L312.8 100.0 L318.4 100.0 L324.0 100.0 L329.6 100.0 L335.2 99.2 L340.8 97.9 L346.4 100.0 L352.0 100.0 L357.5 99.2 L363.1 99.4 L368.7 98.8 L374.3 100.0 L379.9 99.3 L385.5 100.0 L391.1 100.0 L396.6 99.5 L402.2 100.0 L407.8 99.4 L413.4 100.0 L419.0 100.0 L424.6 97.7 L430.2 98.3 L435.8 99.5 L441.3 99.6 L446.9 100.0 L452.5 98.6 L458.1 99.3 L463.7 100.0 L469.3 100.0 L474.9 100.0 L480.4 100.0 L486.0 99.0 L491.6 100.0 L497.2 100.0 L502.8 99.5 L508.4 99.9 L514.0 99.0 L519.6 98.8 L525.1 100.0 L530.7 100.0 L536.3 86.1 L541.9 54.1 L547.5 15.2 L553.1 21.0 L558.7 57.6 L564.2 88.0 L569.8 98.8 L575.4 99.3 L581.0 99.8 L586.6 99.7 L592.2 98.6 L597.8 98.6 L603.4 98.6 L608.9 99.5 L614.5 99.8 L620.1 99.3 L625.7 99.6 L631.3 100.0 L636.9 99.5 L642.5 98.9 L648.0 100.0 L653.6 100.0 L659.2 99.2 L664.8 100.0 L670.4 100.0 L676.0 100.0 L681.6 100.0 L687.2 99.4 L692.7 100.0 L698.3 99.7 L703.9 98.5 L709.5 98.5 L715.1 99.8 L720.7 100.0 L726.3 100.0 L731.8 100.0 L737.4 98.7 L743.0 97.9 L748.6 98.8 L754.2 98.8 L759.8 98.9 L765.4 98.7 L770.9 99.8 L776.5 98.4 L782.1 99.7 L787.7 100.0 L793.3 99.2 L798.9 97.5 L804.5 99.4 L810.1 100.0 L815.6 97.8 L821.2 98.8 L826.8 98.4 L832.4 99.5 L838.0 98.4 L843.6 97.2 L849.2 99.5 L854.7 98.1 L860.3 98.4 L865.9 99.6 L871.5 98.5 L877.1 98.0 L882.7 99.5 L888.3 97.3 L893.9 99.7 L899.4 97.2 L905.0 97.7 L910.6 98.1 L916.2 99.1 L921.8 99.1 L927.4 100.0 L933.0 98.2 L938.5 98.3 L944.1 97.5 L949.7 97.0 L955.3 97.9 L960.9 98.4 L966.5 97.0 L972.1 98.0 L977.7 98.0 L983.2 99.2 L988.8 96.9 L994.4 98.7 L1000.0 95.9 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 99.5 L5.6 100.0 L11.2 100.0 L16.8 99.1 L22.3 99.7 L27.9 99.6 L33.5 99.8 L39.1 98.3 L44.7 99.0 L50.3 98.7 L55.9 100.0 L61.5 100.0 L67.0 100.0 L72.6 100.0 L78.2 100.0 L83.8 98.3 L89.4 99.8 L95.0 99.9 L100.6 99.1 L106.1 100.0 L111.7 99.7 L117.3 99.2 L122.9 100.0 L128.5 98.1 L134.1 99.8 L139.7 99.3 L145.3 100.0 L150.8 100.0 L156.4 98.2 L162.0 100.0 L167.6 100.0 L173.2 99.5 L178.8 98.4 L184.4 100.0 L189.9 98.4 L195.5 99.7 L201.1 99.0 L206.7 100.0 L212.3 99.6 L217.9 98.3 L223.5 100.0 L229.1 100.0 L234.6 100.0 L240.2 100.0 L245.8 99.1 L251.4 99.8 L257.0 100.0 L262.6 99.1 L268.2 100.0 L273.7 100.0 L279.3 97.3 L284.9 100.0 L290.5 98.2 L296.1 100.0 L301.7 100.0 L307.3 99.4 L312.8 100.0 L318.4 100.0 L324.0 100.0 L329.6 100.0 L335.2 99.2 L340.8 97.9 L346.4 100.0 L352.0 100.0 L357.5 99.2 L363.1 99.4 L368.7 98.8 L374.3 100.0 L379.9 99.3 L385.5 100.0 L391.1 100.0 L396.6 99.5 L402.2 100.0 L407.8 99.4 L413.4 100.0 L419.0 100.0 L424.6 97.7 L430.2 98.3 L435.8 99.5 L441.3 99.6 L446.9 100.0 L452.5 98.6 L458.1 99.3 L463.7 100.0 L469.3 100.0 L474.9 100.0 L480.4 100.0 L486.0 99.0 L491.6 100.0 L497.2 100.0 L502.8 99.5 L508.4 99.9 L514.0 99.0 L519.6 98.8 L525.1 100.0 L530.7 100.0 L536.3 86.1 L541.9 54.1 L547.5 15.2 L553.1 21.0 L558.7 57.6 L564.2 88.0 L569.8 98.8 L575.4 99.3 L581.0 99.8 L586.6 99.7 L592.2 98.6 L597.8 98.6 L603.4 98.6 L608.9 99.5 L614.5 99.8 L620.1 99.3 L625.7 99.6 L631.3 100.0 L636.9 99.5 L642.5 98.9 L648.0 100.0 L653.6 100.0 L659.2 99.2 L664.8 100.0 L670.4 100.0 L676.0 100.0 L681.6 100.0 L687.2 99.4 L692.7 100.0 L698.3 99.7 L703.9 98.5 L709.5 98.5 L715.1 99.8 L720.7 100.0 L726.3 100.0 L731.8 100.0 L737.4 98.7 L743.0 97.9 L748.6 98.8 L754.2 98.8 L759.8 98.9 L765.4 98.7 L770.9 99.8 L776.5 98.4 L782.1 99.7 L787.7 100.0 L793.3 99.2 L798.9 97.5 L804.5 99.4 L810.1 100.0 L815.6 97.8 L821.2 98.8 L826.8 98.4 L832.4 99.5 L838.0 98.4 L843.6 97.2 L849.2 99.5 L854.7 98.1 L860.3 98.4 L865.9 99.6 L871.5 98.5 L877.1 98.0 L882.7 99.5 L888.3 97.3 L893.9 99.7 L899.4 97.2 L905.0 97.7 L910.6 98.1 L916.2 99.1 L921.8 99.1 L927.4 100.0 L933.0 98.2 L938.5 98.3 L944.1 97.5 L949.7 97.0 L955.3 97.9 L960.9 98.4 L966.5 97.0 L972.1 98.0 L977.7 98.0 L983.2 99.2 L988.8 96.9 L994.4 98.7 L1000.0 95.9"></path></g></svg></div>
+            <div class="net-legend">
+              <div class="legend-item">
+                <i class="sw sw-gpu-2"></i>
+                <span class="legend-name">GPU 2 <span class="lg-model">RTX PRO 5000 72GB Blackwell</span></span>
+                <b class="legend-value"><span data-w="100%">88%</span><span class="lg-vram">1.83 GiB / 71.6 GiB</span></b>
+                <span class="legend-meta"><span data-w="100&deg;C">38&deg;C</span> &middot; 20 W</span>
+                <span class="gpu-bars" aria-hidden="true"><i class="gbl">load</i><span class="meter" style="--value:88"></span><i class="gbl">mem</i><span class="meter" style="--value:3"></span><i class="gbl">pwr</i><span class="meter" style="--value:3"></span></span>
+              </div>
+            </div>
+          </div>
+          <div class="xaxis gpu-x"><span>180 s</span><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
+        </div>
+      </section>
+      <section class="panel" id="p-net" data-panel="net" style="border-color:var(--border-net)">
+        <header class="ph">
+          <div class="gutter">629.33 px</div>
+          <div class="ph-row">
+            <h2>Network</h2>
+            
+            <span class="head-right"><span>eth0</span><span>scale &#9660; <span data-w="999M">1.5M</span> &#9650; <span data-w="999M">1.5M</span> &middot; 180 s</span></span>
+          </div>
+        </header>
+        
+        <div class="net-body">
+          <div class="net-plots">
+            <div class="net-plot-row">
+              <div class="plot-scale" aria-hidden="true"><span class="scale-total">1.5M</span><span class="scale-mid" style="--at:50">782K</span><span class="scale-zero">0B</span></div>
+              <div class="net-plot" data-chart="net-down"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 99.1 L5.6 98.1 L11.2 97.5 L16.8 98.1 L22.3 97.9 L27.9 98.9 L33.5 98.2 L39.1 98.2 L44.7 97.4 L50.3 97.9 L55.9 98.0 L61.5 98.5 L67.0 98.5 L72.6 98.0 L78.2 97.2 L83.8 99.2 L89.4 99.8 L95.0 96.7 L100.6 97.0 L106.1 97.6 L111.7 97.8 L117.3 98.2 L122.9 98.2 L128.5 98.7 L134.1 97.6 L139.7 98.1 L145.3 99.2 L150.8 98.3 L156.4 98.3 L162.0 98.4 L167.6 96.8 L173.2 97.3 L178.8 100.0 L184.4 97.7 L189.9 97.3 L195.5 97.1 L201.1 97.5 L206.7 99.2 L212.3 97.4 L217.9 97.9 L223.5 97.1 L229.1 97.7 L234.6 98.9 L240.2 96.8 L245.8 98.7 L251.4 97.3 L257.0 97.7 L262.6 98.2 L268.2 99.0 L273.7 97.6 L279.3 96.8 L284.9 95.3 L290.5 94.1 L296.1 92.1 L301.7 92.7 L307.3 92.9 L312.8 95.4 L318.4 96.1 L324.0 96.2 L329.6 96.8 L335.2 97.3 L340.8 98.2 L346.4 98.6 L352.0 96.9 L357.5 98.4 L363.1 98.2 L368.7 97.0 L374.3 97.9 L379.9 98.4 L385.5 97.5 L391.1 98.1 L396.6 97.2 L402.2 98.1 L407.8 98.5 L413.4 96.4 L419.0 97.2 L424.6 97.9 L430.2 98.1 L435.8 98.8 L441.3 98.4 L446.9 98.8 L452.5 97.4 L458.1 97.2 L463.7 98.2 L469.3 98.3 L474.9 97.8 L480.4 98.0 L486.0 97.7 L491.6 97.7 L497.2 97.7 L502.8 97.6 L508.4 98.6 L514.0 97.5 L519.6 99.3 L525.1 97.9 L530.7 98.2 L536.3 97.8 L541.9 98.1 L547.5 97.8 L553.1 99.1 L558.7 98.3 L564.2 98.5 L569.8 97.8 L575.4 97.9 L581.0 98.3 L586.6 98.3 L592.2 98.5 L597.8 98.1 L603.4 97.7 L608.9 97.6 L614.5 98.1 L620.1 98.7 L625.7 98.5 L631.3 97.6 L636.9 98.7 L642.5 98.2 L648.0 99.5 L653.6 97.5 L659.2 98.0 L664.8 98.4 L670.4 98.2 L676.0 97.6 L681.6 98.1 L687.2 97.9 L692.7 98.0 L698.3 98.8 L703.9 99.1 L709.5 97.4 L715.1 98.4 L720.7 97.3 L726.3 97.3 L731.8 98.3 L737.4 98.4 L743.0 98.4 L748.6 96.9 L754.2 97.1 L759.8 92.9 L765.4 77.1 L770.9 47.7 L776.5 15.6 L782.1 11.2 L787.7 38.5 L793.3 72.5 L798.9 90.9 L804.5 96.5 L810.1 98.5 L815.6 98.7 L821.2 97.8 L826.8 98.7 L832.4 98.2 L838.0 97.5 L843.6 98.0 L849.2 96.9 L854.7 98.1 L860.3 99.0 L865.9 97.8 L871.5 97.9 L877.1 97.5 L882.7 98.9 L888.3 98.1 L893.9 97.3 L899.4 97.9 L905.0 97.3 L910.6 98.5 L916.2 97.7 L921.8 98.0 L927.4 97.0 L933.0 98.6 L938.5 97.3 L944.1 97.9 L949.7 98.0 L955.3 98.4 L960.9 98.7 L966.5 98.9 L972.1 97.8 L977.7 98.6 L983.2 97.3 L988.8 97.7 L994.4 97.7 L1000.0 97.3 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 99.1 L5.6 98.1 L11.2 97.5 L16.8 98.1 L22.3 97.9 L27.9 98.9 L33.5 98.2 L39.1 98.2 L44.7 97.4 L50.3 97.9 L55.9 98.0 L61.5 98.5 L67.0 98.5 L72.6 98.0 L78.2 97.2 L83.8 99.2 L89.4 99.8 L95.0 96.7 L100.6 97.0 L106.1 97.6 L111.7 97.8 L117.3 98.2 L122.9 98.2 L128.5 98.7 L134.1 97.6 L139.7 98.1 L145.3 99.2 L150.8 98.3 L156.4 98.3 L162.0 98.4 L167.6 96.8 L173.2 97.3 L178.8 100.0 L184.4 97.7 L189.9 97.3 L195.5 97.1 L201.1 97.5 L206.7 99.2 L212.3 97.4 L217.9 97.9 L223.5 97.1 L229.1 97.7 L234.6 98.9 L240.2 96.8 L245.8 98.7 L251.4 97.3 L257.0 97.7 L262.6 98.2 L268.2 99.0 L273.7 97.6 L279.3 96.8 L284.9 95.3 L290.5 94.1 L296.1 92.1 L301.7 92.7 L307.3 92.9 L312.8 95.4 L318.4 96.1 L324.0 96.2 L329.6 96.8 L335.2 97.3 L340.8 98.2 L346.4 98.6 L352.0 96.9 L357.5 98.4 L363.1 98.2 L368.7 97.0 L374.3 97.9 L379.9 98.4 L385.5 97.5 L391.1 98.1 L396.6 97.2 L402.2 98.1 L407.8 98.5 L413.4 96.4 L419.0 97.2 L424.6 97.9 L430.2 98.1 L435.8 98.8 L441.3 98.4 L446.9 98.8 L452.5 97.4 L458.1 97.2 L463.7 98.2 L469.3 98.3 L474.9 97.8 L480.4 98.0 L486.0 97.7 L491.6 97.7 L497.2 97.7 L502.8 97.6 L508.4 98.6 L514.0 97.5 L519.6 99.3 L525.1 97.9 L530.7 98.2 L536.3 97.8 L541.9 98.1 L547.5 97.8 L553.1 99.1 L558.7 98.3 L564.2 98.5 L569.8 97.8 L575.4 97.9 L581.0 98.3 L586.6 98.3 L592.2 98.5 L597.8 98.1 L603.4 97.7 L608.9 97.6 L614.5 98.1 L620.1 98.7 L625.7 98.5 L631.3 97.6 L636.9 98.7 L642.5 98.2 L648.0 99.5 L653.6 97.5 L659.2 98.0 L664.8 98.4 L670.4 98.2 L676.0 97.6 L681.6 98.1 L687.2 97.9 L692.7 98.0 L698.3 98.8 L703.9 99.1 L709.5 97.4 L715.1 98.4 L720.7 97.3 L726.3 97.3 L731.8 98.3 L737.4 98.4 L743.0 98.4 L748.6 96.9 L754.2 97.1 L759.8 92.9 L765.4 77.1 L770.9 47.7 L776.5 15.6 L782.1 11.2 L787.7 38.5 L793.3 72.5 L798.9 90.9 L804.5 96.5 L810.1 98.5 L815.6 98.7 L821.2 97.8 L826.8 98.7 L832.4 98.2 L838.0 97.5 L843.6 98.0 L849.2 96.9 L854.7 98.1 L860.3 99.0 L865.9 97.8 L871.5 97.9 L877.1 97.5 L882.7 98.9 L888.3 98.1 L893.9 97.3 L899.4 97.9 L905.0 97.3 L910.6 98.5 L916.2 97.7 L921.8 98.0 L927.4 97.0 L933.0 98.6 L938.5 97.3 L944.1 97.9 L949.7 98.0 L955.3 98.4 L960.9 98.7 L966.5 98.9 L972.1 97.8 L977.7 98.6 L983.2 97.3 L988.8 97.7 L994.4 97.7 L1000.0 97.3"></path></g></svg></div>
+            </div>
+            <div class="net-boundary" aria-hidden="true"></div>
+            <div class="net-plot-row">
+              <div class="plot-scale" aria-hidden="true"><span class="scale-total">1.5M</span><span class="scale-mid" style="--at:50">782K</span><span class="scale-zero">0B</span></div>
+              <div class="net-plot" data-chart="net-up"><svg class="chart" preserveAspectRatio="none" viewBox="0 0 1000 100" aria-hidden="true"><g class="series"><path class="area" d="M0.0 96.5 L5.6 98.1 L11.2 97.4 L16.8 95.3 L22.3 100.0 L27.9 90.8 L33.5 95.3 L39.1 93.9 L44.7 95.1 L50.3 93.5 L55.9 95.7 L61.5 93.6 L67.0 93.6 L72.6 93.9 L78.2 96.0 L83.8 92.6 L89.4 94.7 L95.0 94.0 L100.6 93.3 L106.1 90.0 L111.7 91.4 L117.3 80.5 L122.9 72.6 L128.5 64.6 L134.1 51.2 L139.7 48.1 L145.3 52.9 L150.8 63.5 L156.4 73.0 L162.0 83.0 L167.6 85.0 L173.2 94.1 L178.8 92.7 L184.4 99.5 L189.9 94.6 L195.5 92.5 L201.1 95.4 L206.7 98.6 L212.3 95.8 L217.9 94.3 L223.5 95.7 L229.1 95.7 L234.6 95.1 L240.2 95.2 L245.8 97.2 L251.4 94.4 L257.0 93.3 L262.6 93.4 L268.2 96.9 L273.7 95.0 L279.3 91.8 L284.9 97.4 L290.5 93.8 L296.1 96.0 L301.7 93.1 L307.3 94.7 L312.8 92.6 L318.4 93.0 L324.0 95.1 L329.6 93.9 L335.2 95.2 L340.8 92.4 L346.4 93.4 L352.0 93.0 L357.5 87.4 L363.1 77.4 L368.7 71.9 L374.3 67.0 L379.9 66.3 L385.5 70.3 L391.1 72.3 L396.6 79.6 L402.2 89.2 L407.8 90.8 L413.4 91.0 L419.0 94.1 L424.6 94.9 L430.2 94.1 L435.8 94.2 L441.3 93.6 L446.9 96.0 L452.5 94.8 L458.1 98.0 L463.7 97.8 L469.3 95.3 L474.9 95.7 L480.4 96.7 L486.0 97.3 L491.6 93.0 L497.2 94.9 L502.8 97.8 L508.4 99.0 L514.0 92.7 L519.6 96.1 L525.1 99.3 L530.7 97.7 L536.3 94.4 L541.9 92.7 L547.5 91.8 L553.1 93.7 L558.7 95.8 L564.2 96.1 L569.8 94.2 L575.4 92.7 L581.0 95.0 L586.6 96.1 L592.2 96.1 L597.8 92.9 L603.4 95.3 L608.9 90.9 L614.5 95.8 L620.1 99.9 L625.7 96.9 L631.3 97.3 L636.9 95.5 L642.5 92.7 L648.0 97.1 L653.6 94.0 L659.2 91.4 L664.8 93.5 L670.4 93.7 L676.0 93.2 L681.6 92.7 L687.2 95.5 L692.7 91.7 L698.3 88.7 L703.9 77.9 L709.5 57.8 L715.1 42.0 L720.7 33.4 L726.3 48.2 L731.8 61.5 L737.4 78.6 L743.0 89.5 L748.6 94.6 L754.2 96.8 L759.8 95.4 L765.4 94.7 L770.9 96.1 L776.5 93.7 L782.1 96.8 L787.7 93.0 L793.3 96.1 L798.9 93.8 L804.5 95.8 L810.1 89.6 L815.6 99.2 L821.2 91.6 L826.8 93.5 L832.4 92.5 L838.0 98.0 L843.6 96.0 L849.2 99.0 L854.7 95.2 L860.3 95.0 L865.9 94.0 L871.5 92.8 L877.1 90.8 L882.7 83.1 L888.3 74.0 L893.9 71.4 L899.4 71.4 L905.0 70.5 L910.6 74.8 L916.2 83.9 L921.8 88.5 L927.4 89.2 L933.0 92.4 L938.5 96.9 L944.1 95.6 L949.7 97.1 L955.3 92.2 L960.9 95.7 L966.5 96.4 L972.1 97.6 L977.7 91.3 L983.2 94.6 L988.8 92.9 L994.4 95.9 L1000.0 92.5 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 96.5 L5.6 98.1 L11.2 97.4 L16.8 95.3 L22.3 100.0 L27.9 90.8 L33.5 95.3 L39.1 93.9 L44.7 95.1 L50.3 93.5 L55.9 95.7 L61.5 93.6 L67.0 93.6 L72.6 93.9 L78.2 96.0 L83.8 92.6 L89.4 94.7 L95.0 94.0 L100.6 93.3 L106.1 90.0 L111.7 91.4 L117.3 80.5 L122.9 72.6 L128.5 64.6 L134.1 51.2 L139.7 48.1 L145.3 52.9 L150.8 63.5 L156.4 73.0 L162.0 83.0 L167.6 85.0 L173.2 94.1 L178.8 92.7 L184.4 99.5 L189.9 94.6 L195.5 92.5 L201.1 95.4 L206.7 98.6 L212.3 95.8 L217.9 94.3 L223.5 95.7 L229.1 95.7 L234.6 95.1 L240.2 95.2 L245.8 97.2 L251.4 94.4 L257.0 93.3 L262.6 93.4 L268.2 96.9 L273.7 95.0 L279.3 91.8 L284.9 97.4 L290.5 93.8 L296.1 96.0 L301.7 93.1 L307.3 94.7 L312.8 92.6 L318.4 93.0 L324.0 95.1 L329.6 93.9 L335.2 95.2 L340.8 92.4 L346.4 93.4 L352.0 93.0 L357.5 87.4 L363.1 77.4 L368.7 71.9 L374.3 67.0 L379.9 66.3 L385.5 70.3 L391.1 72.3 L396.6 79.6 L402.2 89.2 L407.8 90.8 L413.4 91.0 L419.0 94.1 L424.6 94.9 L430.2 94.1 L435.8 94.2 L441.3 93.6 L446.9 96.0 L452.5 94.8 L458.1 98.0 L463.7 97.8 L469.3 95.3 L474.9 95.7 L480.4 96.7 L486.0 97.3 L491.6 93.0 L497.2 94.9 L502.8 97.8 L508.4 99.0 L514.0 92.7 L519.6 96.1 L525.1 99.3 L530.7 97.7 L536.3 94.4 L541.9 92.7 L547.5 91.8 L553.1 93.7 L558.7 95.8 L564.2 96.1 L569.8 94.2 L575.4 92.7 L581.0 95.0 L586.6 96.1 L592.2 96.1 L597.8 92.9 L603.4 95.3 L608.9 90.9 L614.5 95.8 L620.1 99.9 L625.7 96.9 L631.3 97.3 L636.9 95.5 L642.5 92.7 L648.0 97.1 L653.6 94.0 L659.2 91.4 L664.8 93.5 L670.4 93.7 L676.0 93.2 L681.6 92.7 L687.2 95.5 L692.7 91.7 L698.3 88.7 L703.9 77.9 L709.5 57.8 L715.1 42.0 L720.7 33.4 L726.3 48.2 L731.8 61.5 L737.4 78.6 L743.0 89.5 L748.6 94.6 L754.2 96.8 L759.8 95.4 L765.4 94.7 L770.9 96.1 L776.5 93.7 L782.1 96.8 L787.7 93.0 L793.3 96.1 L798.9 93.8 L804.5 95.8 L810.1 89.6 L815.6 99.2 L821.2 91.6 L826.8 93.5 L832.4 92.5 L838.0 98.0 L843.6 96.0 L849.2 99.0 L854.7 95.2 L860.3 95.0 L865.9 94.0 L871.5 92.8 L877.1 90.8 L882.7 83.1 L888.3 74.0 L893.9 71.4 L899.4 71.4 L905.0 70.5 L910.6 74.8 L916.2 83.9 L921.8 88.5 L927.4 89.2 L933.0 92.4 L938.5 96.9 L944.1 95.6 L949.7 97.1 L955.3 92.2 L960.9 95.7 L966.5 96.4 L972.1 97.6 L977.7 91.3 L983.2 94.6 L988.8 92.9 L994.4 95.9 L1000.0 92.5"></path></g></svg></div>
+            </div>
+            <div class="xaxis net-x"><span>180 s</span><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
+          </div>
+          <aside class="net-legend" aria-label="Network legend">
+            <div class="legend-item">
+              <i class="sw sw-down"></i>
+              <span class="legend-name">download <span class="down">&#9660;</span></span>
+              <b class="legend-value">63.7 KiB/s</b>
+              <span class="legend-meta">now 0.50 Mibps</span>
+              <span class="legend-meta">top 1.4 MiB/s</span>
+              <span class="legend-meta">total 9.88 GiB</span>
+            </div>
+            <div class="legend-item">
+              <i class="sw sw-up"></i>
+              <span class="legend-name">upload <span class="up-arrow">&#9650;</span></span>
+              <b class="legend-value">381 KiB/s</b>
+              <span class="legend-meta">now 2.98 Mibps</span>
+              <span class="legend-meta">top 1002 KiB/s</span>
+              <span class="legend-meta">total 68.4 GiB</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+  </div>
+  <div class="band band-4" data-band="4">
+      <section class="panel" id="p-proc" data-panel="proc" style="border-color:var(--border-proc)">
+        <header class="ph">
+          <div class="gutter">1424.00 px</div>
+          <div class="ph-row">
+            <h2>Processes</h2>
+            
+            <span class="head-right"><span class="proc-count">42/317</span><input class="filter" type="search" placeholder="filter" aria-label="Filter processes"></span>
+          </div>
+        </header>
+        
+        <div class="proc-wrap">
+          <table class="ptable">
+            <colgroup><col style="width:76px"><col style="width:150px"><col><col style="width:70px"><col style="width:72px"><col style="width:72px"><col style="width:106px"></colgroup>
+            <thead><tr><th class="num">Pid</th><th>Program</th><th>Command</th><th class="num">Threads</th><th>User</th><th class="num">MemB &#9660;</th><th class="num">Cpu%</th></tr></thead>
+            <tbody><tr><td class="num">525</td><td class="mono">python3</td><td class="mono">/opt/conda/bin/python3 -I -m galaxalab_utils.labserver jupyterhub-singleuser --ServerApp.disable_check_xsrf=True</td><td class="num">3499</td><td>lab</td><td class="num">27G</td><td class="num cpu-ok"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 57.5 L43.5 64.8 L87.0 63.6 L130.4 59.4 L173.9 61.2 L217.4 62.4 L260.9 59.0 L304.3 58.7 L347.8 62.3 L391.3 58.6 L434.8 56.0 L478.3 50.6 L521.7 36.1 L565.2 27.2 L608.7 19.1 L652.2 30.0 L695.7 44.9 L739.1 53.9 L782.6 59.0 L826.1 57.2 L869.6 57.4 L913.0 59.9 L956.5 57.3 L1000.0 61.7 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 57.5 L43.5 64.8 L87.0 63.6 L130.4 59.4 L173.9 61.2 L217.4 62.4 L260.9 59.0 L304.3 58.7 L347.8 62.3 L391.3 58.6 L434.8 56.0 L478.3 50.6 L521.7 36.1 L565.2 27.2 L608.7 19.1 L652.2 30.0 L695.7 44.9 L739.1 53.9 L782.6 59.0 L826.1 57.2 L869.6 57.4 L913.0 59.9 L956.5 57.3 L1000.0 61.7"></path></g></svg>0.1</td></tr><tr><td class="num">120</td><td class="mono">start mflow</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/13_start_mflow.sh</td><td class="num">755</td><td>lab</td><td class="num">2.9G</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 100.0 L87.0 97.3 L130.4 100.0 L173.9 100.0 L217.4 100.0 L260.9 97.0 L304.3 98.1 L347.8 99.7 L391.3 98.5 L434.8 100.0 L478.3 97.0 L521.7 97.1 L565.2 100.0 L608.7 100.0 L652.2 99.0 L695.7 100.0 L739.1 98.6 L782.6 100.0 L826.1 100.0 L869.6 99.0 L913.0 99.1 L956.5 97.8 L1000.0 100.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 100.0 L87.0 97.3 L130.4 100.0 L173.9 100.0 L217.4 100.0 L260.9 97.0 L304.3 98.1 L347.8 99.7 L391.3 98.5 L434.8 100.0 L478.3 97.0 L521.7 97.1 L565.2 100.0 L608.7 100.0 L652.2 99.0 L695.7 100.0 L739.1 98.6 L782.6 100.0 L826.1 100.0 L869.6 99.0 L913.0 99.1 L956.5 97.8 L1000.0 100.0"></path></g></svg>0.0</td></tr><tr><td class="num">640536</td><td class="mono">claude</td><td class="mono">/home/lab/.local/bin/claude daemon run --origin transient --spawned-by {"label":"claude --bg","cwd":"/home/lab/workspace/private...</td><td class="num">187</td><td>lab</td><td class="num">1.3G</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 100.0 L87.0 100.0 L130.4 100.0 L173.9 100.0 L217.4 100.0 L260.9 100.0 L304.3 100.0 L347.8 100.0 L391.3 99.2 L434.8 99.0 L478.3 98.3 L521.7 100.0 L565.2 97.8 L608.7 99.3 L652.2 100.0 L695.7 96.6 L739.1 100.0 L782.6 96.5 L826.1 98.6 L869.6 99.5 L913.0 100.0 L956.5 97.6 L1000.0 100.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 100.0 L87.0 100.0 L130.4 100.0 L173.9 100.0 L217.4 100.0 L260.9 100.0 L304.3 100.0 L347.8 100.0 L391.3 99.2 L434.8 99.0 L478.3 98.3 L521.7 100.0 L565.2 97.8 L608.7 99.3 L652.2 100.0 L695.7 96.6 L739.1 100.0 L782.6 96.5 L826.1 98.6 L869.6 99.5 L913.0 100.0 L956.5 97.6 L1000.0 100.0"></path></g></svg>0.0</td></tr><tr><td class="num">213775</td><td class="mono">tmux: server</td><td class="mono">/usr/bin/tmux -f /home/lab/.config/tmux/tmux.conf new-session -d -s tmux-main /usr/bin/fish --login</td><td class="num">135</td><td>lab</td><td class="num">738M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 100.0 L87.0 98.1 L130.4 97.7 L173.9 98.3 L217.4 100.0 L260.9 100.0 L304.3 97.6 L347.8 98.5 L391.3 100.0 L434.8 100.0 L478.3 100.0 L521.7 100.0 L565.2 94.5 L608.7 100.0 L652.2 100.0 L695.7 100.0 L739.1 100.0 L782.6 98.7 L826.1 100.0 L869.6 99.8 L913.0 98.2 L956.5 100.0 L1000.0 99.8 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 100.0 L87.0 98.1 L130.4 97.7 L173.9 98.3 L217.4 100.0 L260.9 100.0 L304.3 97.6 L347.8 98.5 L391.3 100.0 L434.8 100.0 L478.3 100.0 L521.7 100.0 L565.2 94.5 L608.7 100.0 L652.2 100.0 L695.7 100.0 L739.1 100.0 L782.6 98.7 L826.1 100.0 L869.6 99.8 L913.0 98.2 L956.5 100.0 L1000.0 99.8"></path></g></svg>0.0</td></tr><tr><td class="num">3727843</td><td class="mono">bash</td><td class="mono">/bin/bash -c source /home/lab/.claude/shell-snapshots/snapshot-bash-1793198988626-0wl1cp.sh 2>/dev/null || true && shopt -u extg...</td><td class="num">72</td><td>lab</td><td class="num">230M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 100.0 L87.0 100.0 L130.4 96.3 L173.9 100.0 L217.4 97.5 L260.9 99.5 L304.3 98.7 L347.8 100.0 L391.3 100.0 L434.8 99.9 L478.3 100.0 L521.7 99.0 L565.2 98.6 L608.7 100.0 L652.2 100.0 L695.7 100.0 L739.1 98.9 L782.6 99.3 L826.1 98.5 L869.6 97.4 L913.0 100.0 L956.5 100.0 L1000.0 98.6 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 100.0 L87.0 100.0 L130.4 96.3 L173.9 100.0 L217.4 97.5 L260.9 99.5 L304.3 98.7 L347.8 100.0 L391.3 100.0 L434.8 99.9 L478.3 100.0 L521.7 99.0 L565.2 98.6 L608.7 100.0 L652.2 100.0 L695.7 100.0 L739.1 98.9 L782.6 99.3 L826.1 98.5 L869.6 97.4 L913.0 100.0 L956.5 100.0 L1000.0 98.6"></path></g></svg>0.0</td></tr><tr><td class="num">562665</td><td class="mono">jupyter-server</td><td class="mono">/opt/conda/bin/python3.14 /opt/conda/bin/jupyter-server --port=44655 --no-browser --IdentityProvider.token=probe --ServerApp.roo...</td><td class="num">9</td><td>lab</td><td class="num">229M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 97.6 L87.0 100.0 L130.4 100.0 L173.9 100.0 L217.4 100.0 L260.9 98.6 L304.3 100.0 L347.8 100.0 L391.3 100.0 L434.8 100.0 L478.3 100.0 L521.7 100.0 L565.2 100.0 L608.7 100.0 L652.2 97.1 L695.7 97.1 L739.1 100.0 L782.6 100.0 L826.1 100.0 L869.6 98.8 L913.0 100.0 L956.5 95.8 L1000.0 99.9 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 97.6 L87.0 100.0 L130.4 100.0 L173.9 100.0 L217.4 100.0 L260.9 98.6 L304.3 100.0 L347.8 100.0 L391.3 100.0 L434.8 100.0 L478.3 100.0 L521.7 100.0 L565.2 100.0 L608.7 100.0 L652.2 97.1 L695.7 97.1 L739.1 100.0 L782.6 100.0 L826.1 100.0 L869.6 98.8 L913.0 100.0 L956.5 95.8 L1000.0 99.9"></path></g></svg>0.0</td></tr><tr><td class="num">562255</td><td class="mono">jupyter-server</td><td class="mono">/opt/conda/bin/python3.14 /opt/conda/bin/jupyter-server --port=34445 --no-browser --IdentityProvider.token=probe --ServerApp.roo...</td><td class="num">9</td><td>lab</td><td class="num">228M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 99.2 L43.5 98.8 L87.0 98.9 L130.4 98.9 L173.9 97.8 L217.4 98.9 L260.9 100.0 L304.3 100.0 L347.8 98.0 L391.3 100.0 L434.8 98.4 L478.3 100.0 L521.7 100.0 L565.2 95.9 L608.7 100.0 L652.2 100.0 L695.7 100.0 L739.1 99.3 L782.6 100.0 L826.1 100.0 L869.6 99.2 L913.0 100.0 L956.5 99.2 L1000.0 99.8 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 99.2 L43.5 98.8 L87.0 98.9 L130.4 98.9 L173.9 97.8 L217.4 98.9 L260.9 100.0 L304.3 100.0 L347.8 98.0 L391.3 100.0 L434.8 98.4 L478.3 100.0 L521.7 100.0 L565.2 95.9 L608.7 100.0 L652.2 100.0 L695.7 100.0 L739.1 99.3 L782.6 100.0 L826.1 100.0 L869.6 99.2 L913.0 100.0 L956.5 99.2 L1000.0 99.8"></path></g></svg>0.0</td></tr><tr><td class="num">127</td><td class="mono">conda</td><td class="mono">/opt/conda/bin/conda run -n base --no-capture-output /bin/bash -c echo "Launching tensorflow training monitorin...</td><td class="num">215</td><td>lab</td><td class="num">176M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 97.3 L43.5 99.2 L87.0 100.0 L130.4 100.0 L173.9 95.3 L217.4 99.1 L260.9 100.0 L304.3 99.1 L347.8 100.0 L391.3 100.0 L434.8 100.0 L478.3 95.4 L521.7 100.0 L565.2 95.3 L608.7 100.0 L652.2 100.0 L695.7 99.2 L739.1 100.0 L782.6 97.7 L826.1 98.6 L869.6 99.6 L913.0 100.0 L956.5 96.9 L1000.0 100.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 97.3 L43.5 99.2 L87.0 100.0 L130.4 100.0 L173.9 95.3 L217.4 99.1 L260.9 100.0 L304.3 99.1 L347.8 100.0 L391.3 100.0 L434.8 100.0 L478.3 95.4 L521.7 100.0 L565.2 95.3 L608.7 100.0 L652.2 100.0 L695.7 99.2 L739.1 100.0 L782.6 97.7 L826.1 98.6 L869.6 99.6 L913.0 100.0 L956.5 96.9 L1000.0 100.0"></path></g></svg>0.0</td></tr><tr><td class="num">323109</td><td class="mono">uv</td><td class="mono">uv run --no-project --with pypiserver==2.3.2 python -m pypiserver run -p 8103 -a . -P . --overwrite -v --log-file /tmp/pypiserve...</td><td class="num">6</td><td>lab</td><td class="num">61M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 99.3 L87.0 100.0 L130.4 99.6 L173.9 100.0 L217.4 100.0 L260.9 100.0 L304.3 97.8 L347.8 99.0 L391.3 99.6 L434.8 100.0 L478.3 100.0 L521.7 99.6 L565.2 100.0 L608.7 99.6 L652.2 95.8 L695.7 98.2 L739.1 100.0 L782.6 97.3 L826.1 100.0 L869.6 98.6 L913.0 100.0 L956.5 97.6 L1000.0 100.0 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 99.3 L87.0 100.0 L130.4 99.6 L173.9 100.0 L217.4 100.0 L260.9 100.0 L304.3 97.8 L347.8 99.0 L391.3 99.6 L434.8 100.0 L478.3 100.0 L521.7 99.6 L565.2 100.0 L608.7 99.6 L652.2 95.8 L695.7 98.2 L739.1 100.0 L782.6 97.3 L826.1 100.0 L869.6 98.6 L913.0 100.0 L956.5 97.6 L1000.0 100.0"></path></g></svg>0.0</td></tr><tr><td class="num">3249102</td><td class="mono">btop-web</td><td class="mono">./target/release/btop-web</td><td class="num">68</td><td>lab</td><td class="num">35M</td><td class="num cpu-ok"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 64.6 L43.5 65.7 L87.0 64.3 L130.4 64.4 L173.9 61.2 L217.4 64.8 L260.9 63.5 L304.3 66.5 L347.8 61.5 L391.3 65.6 L434.8 64.9 L478.3 58.6 L521.7 48.6 L565.2 35.9 L608.7 28.6 L652.2 38.0 L695.7 50.5 L739.1 62.4 L782.6 64.5 L826.1 65.4 L869.6 66.2 L913.0 66.7 L956.5 64.4 L1000.0 66.1 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 64.6 L43.5 65.7 L87.0 64.3 L130.4 64.4 L173.9 61.2 L217.4 64.8 L260.9 63.5 L304.3 66.5 L347.8 61.5 L391.3 65.6 L434.8 64.9 L478.3 58.6 L521.7 48.6 L565.2 35.9 L608.7 28.6 L652.2 38.0 L695.7 50.5 L739.1 62.4 L782.6 64.5 L826.1 65.4 L869.6 66.2 L913.0 66.7 L956.5 64.4 L1000.0 66.1"></path></g></svg>0.1</td></tr><tr><td class="num">3359599</td><td class="mono">python3</td><td class="mono">python3 -m pypiserver run -p 8081 -P . -a . -o -v /tmp/pkgss-test2</td><td class="num">2</td><td>lab</td><td class="num">34M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 98.2 L43.5 100.0 L87.0 100.0 L130.4 100.0 L173.9 100.0 L217.4 98.6 L260.9 100.0 L304.3 100.0 L347.8 99.4 L391.3 99.6 L434.8 98.5 L478.3 97.9 L521.7 99.6 L565.2 93.6 L608.7 99.8 L652.2 100.0 L695.7 100.0 L739.1 99.8 L782.6 99.0 L826.1 100.0 L869.6 100.0 L913.0 97.4 L956.5 100.0 L1000.0 99.9 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 98.2 L43.5 100.0 L87.0 100.0 L130.4 100.0 L173.9 100.0 L217.4 98.6 L260.9 100.0 L304.3 100.0 L347.8 99.4 L391.3 99.6 L434.8 98.5 L478.3 97.9 L521.7 99.6 L565.2 93.6 L608.7 99.8 L652.2 100.0 L695.7 100.0 L739.1 99.8 L782.6 99.0 L826.1 100.0 L869.6 100.0 L913.0 97.4 L956.5 100.0 L1000.0 99.9"></path></g></svg>0.0</td></tr><tr><td class="num">3069261</td><td class="mono">btop-web</td><td class="mono">./target/release/btop-web</td><td class="num">68</td><td>lab</td><td class="num">34M</td><td class="num cpu-zero"><svg data-chart="proc" class="" viewBox="0 0 36 12" aria-hidden="true"><g class="series"><path class="area" d="M0.0 100.0 L43.5 100.0 L87.0 100.0 L130.4 96.7 L173.9 100.0 L217.4 100.0 L260.9 100.0 L304.3 100.0 L347.8 97.6 L391.3 97.0 L434.8 96.1 L478.3 100.0 L521.7 96.9 L565.2 100.0 L608.7 95.2 L652.2 98.9 L695.7 100.0 L739.1 99.0 L782.6 100.0 L826.1 100.0 L869.6 97.6 L913.0 99.9 L956.5 98.1 L1000.0 99.1 L1000 100 L0 100 Z"></path><path class="line" d="M0.0 100.0 L43.5 100.0 L87.0 100.0 L130.4 96.7 L173.9 100.0 L217.4 100.0 L260.9 100.0 L304.3 100.0 L347.8 97.6 L391.3 97.0 L434.8 96.1 L478.3 100.0 L521.7 96.9 L565.2 100.0 L608.7 95.2 L652.2 98.9 L695.7 100.0 L739.1 99.0 L782.6 100.0 L826.1 100.0 L869.6 97.6 L913.0 99.9 L956.5 98.1 L1000.0 99.1"></path></g></svg>0.0</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+  </div>
+</main>
+</body>
+</html>

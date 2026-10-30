@@ -301,11 +301,14 @@ What the panels render and how an unavailable value is drawn
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:24:04Z @kj added
   - log: 2026-10-28T22:02:43Z @kj closed
-- [ ] `DEF-VIEW-64-TOOLTIP-DELAY` **Tooltip opens immediately on hover** - MEDIUM; The stat tooltip shows on the first pointermove over a stat; it must wait 3 s of rest on the same stat, and a move off, a click or a re-render must cancel the pending wait
+- [x] `DEF-VIEW-64-TOOLTIP-DELAY` **Tooltip opens immediately on hover** - MEDIUM; The stat tooltip shows on the first pointermove over a stat; it must wait 3 s of rest on the same stat, and a move off, a click or a re-render must cancel the pending wait
+  - evidence: same issue as DEF-VIEW-75-TIP-DWELL, fixed there: wf_2e33f366-62b gate 9 measured the box opening at 3.003 s, resetting only on a different stat
   - repro: hover any stat in the top bar or a panel header; the tooltip box appears at once
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T20:47:53Z @kj added
-- [ ] `DEF-VIEW-65-TREE-GLYPHS` **Tree glyphs render malformed** - MINOR; Tree glyphs are mixed and misaligned: one root paints U+250C, another root U+25BE, a depth-1 row U+2502 U+2514, and the vertical bar runs past the last sibling; the column clips at 10 px
+  - log: 2026-10-29T02:13:06Z @kj closed
+- [x] `DEF-VIEW-65-TREE-GLYPHS` **Tree glyphs render malformed** - MINOR; Tree glyphs are mixed and misaligned: one root paints U+250C, another root U+25BE, a depth-1 row U+2502 U+2514, and the vertical bar runs past the last sibling; the column clips at 10 px
+  - evidence: round 2 gate 11: forms ' ┌─ ', ' ├─ ', ' └─ ', ' │  ├─ ' with triangles U+25BE/U+25B8 and U+2002 after them, no ASCII bar, no clipping at 10 px
   - root-cause: 2026-10-28T20:56:34Z @kj btop 1.3.0 btop_shared.cpp:188 uses fixed 3-char slots: ' │ ' per depth, then ' ├─ ' or ' └─ ' for the last child, '[+]─'/'[-]─' for a node with children, ' ┌─ ' first root; ours glues a bare │ per level and puts the twisty in the branch slot
   - repro: process panel, tree view: compare the glyph before each row with its depth in data-raw
   - test-tags: FUNCTIONAL
@@ -317,25 +320,34 @@ What the panels render and how an unavailable value is drawn
   - log: 2026-10-28T21:09:30Z @kj gap after the triangle is tuned in CSS, smaller than a full space (around 0.2em), not a literal space character
   - log: 2026-10-28T21:09:39Z @kj the gap is perceptible, not zero and not a full space - triangle, small gap, name
   - log: 2026-10-28T21:09:52Z @kj use a half-space character after the triangle (U+2002 en space, U+2009 thin space if the font lacks it), measured in the browser so it renders narrower than a normal space
-- [ ] `DEF-VIEW-66-TREE-COLLAPSED` **Collapsed tree hides almost every process without a cue** - MEDIUM; With tree nodes collapsed the panel showed 3 of 325 processes with nothing on screen saying 322 rows were hidden; the list reads as broken
+  - log: 2026-10-29T01:31:19Z @kj closed
+- [x] `DEF-VIEW-66-TREE-COLLAPSED` **Collapsed tree hides almost every process without a cue** - MEDIUM; With tree nodes collapsed the panel showed 3 of 325 processes with nothing on screen saying 322 rows were hidden; the list reads as broken
+  - evidence: round 2 gate 11: fresh profile with tree view shows level 3, 17 of 24 rows visible, deepest depth 3, folded triangles point right
   - repro: CONFIG, procs tree, tree nodes collapsed, expand the root: 3 rows
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T20:55:26Z @kj added
-- [ ] `DEF-VIEW-67-SPARKLINE-TONE` **Zero process shows a grey sparkline with visible history** - MINOR; A row reading 0.0 keeps a visible sparkline of its decayed history, painted in the zero tone (grey); tone follows the current value while the shape follows the window, so the bar reads as a leftover
+  - log: 2026-10-29T01:31:19Z @kj closed
+- [x] `DEF-VIEW-67-SPARKLINE-TONE` **Zero process shows a grey sparkline with visible history** - MINOR; A row reading 0.0 keeps a visible sparkline of its decayed history, painted in the zero tone (grey); tone follows the current value while the shape follows the window, so the bar reads as a leftover
+  - evidence: verify: a burner that peaked at 1.5 percent and fell to 0.0 with the spike still in its 20 s window painted the peak's band, not the zero tone
   - repro: process list: find a row at 0.0 whose history had a spike; grey bar, no colour
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T21:13:09Z @kj added
-- [ ] `DEF-VIEW-68-UNIT-GAP` **Stat number sits far from its unit** - MINOR; The CPU tile shows 3 at the left edge of a reserve as wide as 100, leaving a wide gap before the %; the digits must sit against the unit, with the reserve falling before the number
+  - log: 2026-10-29T10:04:14Z @kj closed
+- [x] `DEF-VIEW-68-UNIT-GAP` **Stat number sits far from its unit** - MINOR; The CPU tile shows 3 at the left edge of a reserve as wide as 100, leaving a wide gap before the %; the digits must sit against the unit, with the reserve falling before the number
+  - evidence: round 2 gate 10: ink gap 5.0-6.5 px (spread 1.5) at 1440x900 and 5.0 px at 1024x768 across the CPU tile, memory tile and both gauges
   - overrides: ACC-VIEW-87-NUMBER-PLACE
   - root-cause: 2026-10-28T21:30:49Z @kj [data-w] in app.css reserves the widest form as a hidden ::before after the number and left-aligns the digits (ACC-VIEW-87-NUMBER-PLACE), so a short value leaves its reserve between the digits and the unit
   - repro: CPU panel, a one-digit total: the % stands about 30 px right of the digits
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T21:30:49Z @kj added
-- [ ] `DEF-VIEW-69-GAUGE-GAP` **Gauge unit spacing differs between CPU and Memory** - MINOR; The CPU gauge sets the percent sign against the digits while the Memory gauge leaves a small gap before GiB; both gauges must place the unit at the same distance, from one spacing token
+  - log: 2026-10-29T01:31:14Z @kj closed
+- [x] `DEF-VIEW-69-GAUGE-GAP` **Gauge unit spacing differs between CPU and Memory** - MINOR; The CPU gauge sets the percent sign against the digits while the Memory gauge leaves a small gap before GiB; both gauges must place the unit at the same distance, from one spacing token
+  - evidence: round 2 gate 10: box gap 4.00 px identical in the CPU tile, memory tile and both gauges at both viewports
   - related: DEF-VIEW-68-UNIT-GAP
   - repro: CPU and Memory panels side by side at 1440x900: 2% is tight, 21.1 GiB has a gap
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T21:36:43Z @kj added
+  - log: 2026-10-29T01:31:14Z @kj closed
 - [x] `DEF-VIEW-70-ANIM-STATIC` **Animation page shows no motion in the owner's browser** - MAJOR; The ten-concept page animates in headless Chromium (25-34 running animations, 8 of 8 distinct frames) but the owner sees a static page; cause unknown, the served snapshot was also stale until 22:44
   - evidence: root cause found by the owner: his OS turns animations off, so Chrome reports prefers-reduced-motion reduce and the page obeyed it; the rebuilt page shows a motion-state chip and a FORCE MOTION button, which he used and saw the animations
   - repro: Open proxy/41887 in the owner's Chrome, 0.25x, any interval: numbers update, nothing transitions
@@ -346,21 +358,116 @@ What the panels render and how an unavailable value is drawn
   - repro: Watch card 02 or 07 at 0.25x through one value change: the old digits vanish, the new ones assemble from scattered dots
   - log: 2026-10-28T21:47:15Z @kj added
   - log: 2026-10-28T22:17:43Z @kj closed
-- [ ] `DEF-VIEW-72-MOTION-GATE` **Plots stay static because the OS turns animations off** - MAJOR; app.js motionAllowed() also requires prefers-reduced-motion to be unset, so the owner's machine, which sets it for every page, freezes the charts even with CONFIG motion on; the app's own motion toggle must be the only switch
+- [x] `DEF-VIEW-72-MOTION-GATE` **Plots stay static because the OS turns animations off** - MAJOR; app.js motionAllowed() also requires prefers-reduced-motion to be unset, so the owner's machine, which sets it for every page, freezes the charts even with CONFIG motion on; the app's own motion toggle must be the only switch
+  - evidence: the prefers-reduced-motion check is gone: grep finds no occurrence in assets/app.js or assets/app.css, and the config batch measured motion running with the OS setting on; the owner's page scrolls with animations off in the OS
   - repro: CONFIG motion is on, CONFIG mode dark; a plot does not scroll between samples while the OS animation setting is off
   - log: 2026-10-28T21:50:51Z @kj added
-- [ ] `DEF-VIEW-73-LOAD-CRYPTIC` **CPU footer load is three unlabelled integers** - MEDIUM; The CPU footer keeps its three numbers; the hover tooltip, which appears after 3 seconds, must explain them in plain words: tasks runnable or blocked on I/O, averaged over 1, 5 and 15 minutes, not a count of cores; today's tip says only load average, unit tasks
+  - log: 2026-10-29T02:13:06Z @kj closed
+- [x] `DEF-VIEW-73-LOAD-CRYPTIC` **CPU footer load is three unlabelled integers** - MEDIUM; The CPU footer keeps its three numbers; the hover tooltip, which appears after 3 seconds, must explain them in plain words: tasks runnable or blocked on I/O, averaged over 1, 5 and 15 minutes, not a count of cores; today's tip says only load average, unit tasks
+  - evidence: live build e086b9e9acfb0f07: CPU footer reads 'load 4%/1m 3%/5m 2%/15m' with a tip naming percent of all cores, tasks runnable or blocked in I/O wait, the three windows and /proc/loadavg; tooltip wait now 1.5 s
   - repro: look at the CPU panel footer at 1440x900: load 40 37 32
   - log: 2026-10-28T21:56:01Z @kj added
   - log: 2026-10-28T21:56:41Z @kj amended text "templates/partials/cpu_stat.html prints load 40 37 32: no word names the metric, no time span names each value, and {:.0} drops the two decimals the collector keeps, so no reader can tell what the numbers are" -> "The CPU footer keeps its three numbers; the hover tooltip, which appears after 3 seconds, must explain them in plain words: tasks runnable or blocked on I/O, averaged over 1, 5 and 15 minutes, not a count of cores; today's tip says only load average, unit tasks"
-- [ ] `DEF-VIEW-74-DOUBLE-TIP` **Container chip shows two tooltips at once** - MEDIUM; templates/index.html gives the CONTAINER chip both a data-tip, drawn by the house tooltip, and a title, drawn by the browser; hovering shows two boxes with different text. An element with data-tip must carry no title
+  - log: 2026-10-29T18:11:52Z @kj closed
+- [x] `DEF-VIEW-74-DOUBLE-TIP` **Container chip shows two tooltips at once** - MEDIUM; templates/index.html gives the CONTAINER chip both a data-tip, drawn by the house tooltip, and a title, drawn by the browser; hovering shows two boxes with different text. An element with data-tip must carry no title
+  - evidence: templates/index.html:25 now gives the CONTAINER chip data-tip only with no title, and wf_2e33f366-62b gate 9 measured one box only
   - repro: hover the CONTAINER chip for a moment: the scope box and the browser's title box appear together
   - root-cause: 2026-10-28T22:07:46Z @kj the chip carries title={{ title }} alongside data-tip in the same element
   - log: 2026-10-28T22:07:46Z @kj added
-- [ ] `DEF-VIEW-75-TIP-DWELL` **Tooltip needs cursor movement and opens away from the pointer** - MAJOR; Measured on the live build: the box opens 3.1 s after the pointer arrives with no further movement, but it flips away from the pointer - 68 px above a stat value and 219 px left of the Memory total fact - so it reads as not appearing at the cursor; the placement must follow the pointer and flip only at the viewport edge
+  - log: 2026-10-29T02:13:07Z @kj closed
+- [x] `DEF-VIEW-75-TIP-DWELL` **Tooltip needs cursor movement and opens away from the pointer** - MAJOR; Measured on the live build: the box opens 3.1 s after the pointer arrives with no further movement, but it flips away from the pointer - 68 px above a stat value and 219 px left of the Memory total fact - so it reads as not appearing at the cursor; the placement must follow the pointer and flip only at the viewport edge
+  - evidence: round 2 gate 9: box opens at 3.003 s under a 1 px jiggle every 150 ms, resets only on a different stat, placed 12 px right and 16 px below the pointer, one box
   - repro: hover the Memory used value, keep moving the mouse slightly, then stop: the box appears late and away from the cursor
   - log: 2026-10-28T23:42:36Z @kj added
   - log: 2026-10-28T23:43:57Z @kj amended text "On the live page the stat tooltip appears only after several seconds of moving the cursor, and away from it; it must open 3 s after the pointer rests on a stat, at the pointer, and small movement inside the same stat must not restart the wait" -> "Measured on the live build: the box opens 3.1 s after the pointer arrives with no further movement, but it flips away from the pointer - 68 px above a stat value and 219 px left of the Memory total fact - so it reads as not appearing at the cursor; the placement must follow the pointer and flip only at the viewport edge"; reason: measured reproduction differs from the first report; the placement is the confirmed cause
+  - log: 2026-10-29T01:31:14Z @kj closed
+- [x] `DEF-VIEW-79-FOOTER-GAP` **Wide hole inside the process footer facts** - MEDIUM; the Processes tile footer reserves up to four digits for the 80 percent counts, so '80% cpu' is followed by a wide hole before the single digit; the reserve must sit outside the label-value pair, so the fact reads '80% cpu 4' and the empty part falls between facts
+  - evidence: verify: the foot reads 80% cpu 3 with an ink gap of -0.59 and 0.09 px and the reserve falls after the digits; the next fact stays put with a four-digit reserve
+  - repro: open the dashboard and read the Processes tile footer: '80% cpu', a wide gap, then '4', then '80% mem 135'
+  - root-cause: 2026-10-29T01:38:28Z @kj data-w on the count equals the chart maximum width, up to four digits, and the number is right-aligned inside that reserve, so a one-digit value leaves three digits of hole
+  - log: 2026-10-29T01:38:28Z @kj added
+  - log: 2026-10-29T10:04:10Z @kj closed
+- [x] `DEF-VIEW-80-SEGMENT-FLIP` **Segment flip effect is broken and comes out** - MEDIUM; the segment flip number effect does not render correctly; the owner's treatment is removal, not repair: the effect leaves the CONFIG number list, its code is deleted, and the list returns to five options
+  - evidence: verify: the number list holds five options, odometer selected, and no segment code remains
+  - repro: select segment in CONFIG and watch a changing stat: the digits do not form a correct segment display
+  - root-cause: 2026-10-29T01:40:37Z @kj unknown; the owner's treatment is removal, so no cause is pursued
+  - log: 2026-10-29T01:40:37Z @kj added
+  - log: 2026-10-29T10:04:11Z @kj closed
+- [x] `DEF-VIEW-81-ODOMETER-SMALL` **Small numbers blink under odometer** - MEDIUM; with odometer selected the small numbers blink - the 80 percent process counts roll through partial glyphs at 10 px; treatment: exclude small numbers from every number effect, so footers, table cells and axis labels switch instantly and only the large stat values animate
+  - evidence: verify: 20 footer count changes under odometer produced 0 animation hosts and 0 animations; 12 live-frame samples over 22 small values stayed still
+  - repro: choose odometer in CONFIG and watch the 80 percent counts in the Processes tile footer
+  - root-cause: 2026-10-29T01:41:31Z @kj the odometer clips each digit into a sliding window sized for the 32 px stat values, so at 10 px the frame between positions shows a partial glyph
+  - log: 2026-10-29T01:41:31Z @kj added
+  - log: 2026-10-29T01:41:43Z @kj amended text "with odometer selected the small numbers blink: the 80 percent process counts in the Processes footer roll through partial glyphs at 10 px and read as flicker; small text must switch instantly under every effect, leaving the animation on the large stat values" -> "with odometer selected the small numbers blink - the 80 percent process counts roll through partial glyphs at 10 px; treatment: exclude small numbers from every number effect, so footers, table cells and axis labels switch instantly and only the large stat values animate"
+  - log: 2026-10-29T10:04:14Z @kj closed
+- [x] `DEF-VIEW-82-VALUE-HEIGHT` **Big stat number sits too high** - MINOR; CPU, Memory and Processes: the big value sits 9 px too high. Target: its ink bottom level with the bottom of the Processes text block (running/sleeping lines), value and unit moving together. Every stat tile at every size step.
+  - evidence: verify: the value moved down 4 px at all three viewports and now shares one ink bottom with the Processes block within 2 px
+  - repro: open 40290 at 1440x900 and compare the digit top with the header rule in CPU, Memory and Processes: about 15 px
+  - test-tags: MANUAL
+  - log: 2026-10-29T02:46:49Z @kj added
+  - log: 2026-10-29T02:49:15Z @kj amended text "CPU, Memory and Processes: the big value sits at the top of its tile, close to the header rule, and the owner wants it a little lower. Every stat tile at every size step." -> "CPU, Memory and Processes: the big value sits 9 px too high. Target: its ink bottom level with the bottom of the Processes text block (running/sleeping lines), value and unit moving together. Every stat tile at every size step."
+  - log: 2026-10-29T02:49:15Z @kj second screenshot paste-20261029-034741.png: value ink 100-133, processes text ink 105-141, red lines at 135 and 144
+  - log: 2026-10-29T10:04:10Z @kj closed
+- [x] `DEF-VIEW-83-TIP-OFFSET` **Gauge tooltip opens far below the pointer** - MEDIUM; With the pointer on the CPU dial the tooltip opens about 150 px below it, under the panel edge: textBox unions every text run inside the anchor, so the collision rule pushes the box below the whole gauge. It must avoid only the text run under the pointer.
+  - evidence: verify: 36 probes across three viewports and both modes; every tooltip opens within 24 px of the pointer and never covers the text run under it
+  - repro: hover the CPU gauge dial at 1440x900 with the pointer at the dial centre: the box appears about 150 px lower, outside the panel
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-29T07:39:25Z @kj textBox unions every text run under the anchor and the gauge carries TOTAL and the tick labels across its full height, so the box is pushed below a 200 px element
+  - log: 2026-10-29T07:39:25Z @kj added
+  - log: 2026-10-29T10:04:14Z @kj closed
+- [x] `DEF-VIEW-84-TIP-VISIBLE` **Tooltip is indistinguishable from the dashboard** - MEDIUM; The tooltip shares the panel surface and text colour and carries no border or shadow, so it reads as part of the dashboard rather than an overlay: it needs its own surface step, an accent border, a drop shadow and a two-tone text ramp, with every line at 4.5:1.
+  - evidence: verify: fill on panel 1.26 and 1.27, border 3.72 to 8.63 against fill and panel, shadow present, every line 4.5:1 on Default, Steel and cyberpunk
+  - repro: hover the CPU gauge: the box sits on the panel with the same background and text colour, no visible edge and no shadow
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-29T07:43:20Z @kj the box inherits the panel surface and text tokens and defines no border or shadow token, so nothing separates it from what it covers
+  - log: 2026-10-29T07:43:20Z @kj added
+  - log: 2026-10-29T10:04:14Z @kj closed
+- [-] `DEF-VIEW-85-CORE-METER` **Core meters are squeezed between the label and the value** - MEDIUM; Cores: each meter is the flex remainder after the core label and a 4.6ch value box, so at 1440 wide a 97 px row leaves 51.8 px of meter and a 27 percent core paints a 14 px pip. The meter needs a larger share of the row.
+  - repro: at 1440x900 read the Cores panel: label 15.8 px, meter 51.8 px, value 23.4 px per row, so a normal load reads as a dash rather than a bar
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-29T09:49:48Z @kj the six-column grid gives a 97 px row, the label and the value box take 39 px of it plus two 3 px gaps, and the meter is only the remainder
+  - log: 2026-10-29T09:49:48Z @kj added
+  - log: 2026-10-29T09:50:50Z @kj rejected: owner reclassified it as ACC-VIEW-163-CORE-METER
+- [x] `DEF-VIEW-87-GAUGE-SIZE` **CPU and Memory gauges differ in size** - MAJOR; At 1440x900 the CPU gauge draws about 110 px wide and the Memory gauge about 250 px. The owner requires both the same size, and a circle where the space allows it, falling back to the squircle only where a circle cannot fit.
+  - evidence: live at 1440x900: both gauges 132.00 x 134.34 px; 96.00 x 97.70 px at 1024x768; circle at both, squircle only at body heights 541-640; 0 and 100 percent end on the track; no clip or scroll; contrast 4.52:1; make ci 310 green
+  - repro: open the dashboard at 1440x900 and compare the CPU and Memory gauge widths; the CPU gauge is less than half the Memory gauge
+  - log: 2026-10-29T12:26:59Z @kj added
+  - log: 2026-10-29T13:04:57Z @kj closed
+- [x] `DEF-VIEW-91-MEM-CONFUSE` **Memory rows cache and other are unexplained** - MAJOR; Owner asked why cache exists and whether it is swap, and what other means. The panel shows used, cache, other, free, available and swap, none of them labelled with their source. Either label each row with what it counts or return to btop's Used, Cached, Free, Available.
+  - evidence: rows read container used, file cache, outside (host), host free, available = free + cache, swap; cache tooltip says not swap; no label clips at 1440x900 or 1024x768
+  - repro: open the Memory panel and try to tell from the labels what cache counts, whether it is swap, and what other is
+  - log: 2026-10-29T14:07:13Z @kj added
+  - log: 2026-10-29T15:51:53Z @kj closed
+- [x] `DEF-VIEW-95-SCOPE-MIX` **Memory panel mixes host and container scopes** - MAJOR; btop shows host used 59.2 GiB and cached 325 GiB; the page shows used 22.5, cache 108 and other 296 against the host's 503 GiB total. Used and cache are this container's, free and other are the host's. Make the panel one scope, or state each row's scope.
+  - evidence: bar segments used 15.275 + cache 10.834 + other 58.535 + free 15.356 = 100.000 percent of the header total; each row states its scope in the label and its source in the tooltip; btop's host figure stated beside it
+  - repro: compare btop's mem box with the Memory panel at the same moment: Used 59.2 vs 22.5 GiB, Cached 325 vs cache 108 GiB
+  - log: 2026-10-29T14:51:47Z @kj added
+  - log: 2026-10-29T14:54:03Z @kj hub reports this container at 76.6 GB; page says 22.5 GiB; docker working set is memory.current minus inactive_file (141.1 - 58.4 = 82.6 GB), page subtracts active_file and slab_reclaimable too; adopt docker's definition
+  - log: 2026-10-29T15:51:53Z @kj closed
+- [x] `DEF-VIEW-96-MEM-WRONG` **Container memory reads a third of what the platform reports** - CRITICAL; The page reads 22.5 GiB where docker and the hub read 76.6 GB for this container, because used subtracts active_file and slab_reclaimable as well as inactive_file. Use docker's working set: used = memory.current - inactive_file, cache = inactive_file.
+  - evidence: used is docker's working set: page 76.8 GiB against a hand memory.current - inactive_file of the same window; cache 54.5 GiB equals inactive_file within the sample; 17 frames over 951 cgroup samples
+  - repro: compare the hub's server list with the Memory panel: 76.6 GB against 22.5 GiB; memory.current 141.1 GB, inactive_file 58.4 GB, active_file 47.4 GB, slab_reclaimable 10.8 GB
+  - log: 2026-10-29T14:55:15Z @kj added
+  - log: 2026-10-29T14:55:46Z @kj target confirmed: docker working set in GiB, now 82.6e9 B = 76.9 GiB, against 503 GiB total; the page must read about 77, not 22.5
+  - log: 2026-10-29T15:51:53Z @kj closed
+- [x] `DEF-VIEW-97-MEM-UNITS` **Memory unit and total do not say what they are** - MAJOR; The panel shows GiB while the platform shows GB, seven percent apart at this size, and its header says of 503 GiB although the container's memory.max is unlimited. State the unit and say the total is the host's.
+  - evidence: header reads of 503 GiB (host total) with the unit and whose total; a recorded memory.max 8 GiB renders of 8.00 GiB (container limit) and drops other
+  - repro: compare a value in the hub's server list, 76.6 GB, with the same value on the page, 71 to 77 GiB depending on formula
+  - log: 2026-10-29T14:55:15Z @kj added
+  - log: 2026-10-29T14:55:46Z @kj correction: the hub's 76.6 GB is 76.6 GiB in bytes, so the page's GiB matches it; no unit conversion, only the label needs to say GiB
+  - log: 2026-10-29T15:51:53Z @kj closed
+- [x] `DEF-VIEW-98-ASSET-STALE` **An open tab can mix an old script with new markup** - MAJOR; After a deploy an open tab can run the previous app.js against the new gauge markup, so both shapes draw at once. A fresh load shows one. Version the asset URLs with the build so a reload always fetches a matching set.
+  - evidence: every asset URL carries the build stamp, live page /assets/app.css?v=e40f143e020d2002; two different builds tested: a reload fetches matching assets and one build keeps its stamp
+  - repro: open the page before a deploy, deploy, keep the tab; the gauge panel shows a circle and a squircle stacked; a fresh browser shows only the circle
+  - log: 2026-10-29T15:23:18Z @kj added
+  - log: 2026-10-29T16:43:34Z @kj closed
+- [x] `DEF-VIEW-100-SCALE-STEP` **GalaxaTron shrinks the gauge scale to 7 px** - MINOR; With GalaxaTron stored, the gauge scale labels render 7 px at 1440x900 while the system face renders 8 px; the fit box of 0.7275 em per character is smaller than the face's rendered ink of 0.733 em, so the fit steps the design size down.
+  - evidence: wf_71380fb5-1d8 verify: box 0.78 em (6.24 px at font 8) bounds the widest 6.064 px advance; gauge scale reads 8 px in both faces at 1440x900, 1280x720 and 1024x768, 0 overlaps; live build 3d1cc820ac1fe38f confirms 8 px with GalaxaTron stored
+  - repro: store btop-web-font=galaxatron, load at 1440x900 and read the computed font-size of the gauge scale text
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-29T18:35:56Z @kj GAUGE_SCALE_BOX.per_char 5.82 and chart.rs 0.7275 em bound the advance plus tracking, but the drawn ink is wider, so the fit rejects 8 px
+  - log: 2026-10-29T18:35:56Z @kj added
+  - log: 2026-10-29T18:58:12Z @kj closed
 
 ## Process collection `PROC`
 
@@ -469,6 +576,41 @@ Page fit, density and use of space
   - root-cause: 2026-10-28T14:25:42Z @kj the drop-p2 tier keeps the version, interval, live chip, READ-ONLY and CONFIG at fixed gaps; docs/design/notes.md:464 predicted it
   - log: 2026-10-28T14:25:42Z @kj added
   - log: 2026-10-28T18:03:55Z @kj closed
+- [x] `DEF-LAYOUT-88-PANEL-WIDTH` **CPU and Memory panels differ in width** - MAJOR; The second band is 5:3:4 of twelve columns, so Cores gets 620 px, CPU 375 and Memory 500 at 1500 px wide. The two gauges are the same size but sit in unequal panels and never line up. Owner: completely misaligned; cores take too much horizontal space.
+  - evidence: band 2 4:4:4: Cores, CPU and Memory measure 469.33 / 469.34 / 469.33 px at 1440x900 and 333 each at 1024x768; both gauges 11 px inside their panels; no scroll, contrast 4.51 across 20 theme and mode combinations
+  - repro: open the dashboard at 1440x900 and compare the left edges of the CPU and Memory panels; they are 125 px apart, and the Cores panel is wider than either
+  - log: 2026-10-29T14:03:50Z @kj added
+  - log: 2026-10-29T14:47:09Z @kj owner: shorten the bars so the 1:1:1 scheme fits (three containers), and the cpu box needs to be wider and aligned with Memory
+  - log: 2026-10-29T15:20:25Z @kj closed
+- [x] `DEF-LAYOUT-89-MEM-LEGEND` **Memory legend stretches and holds the gauge small** - MAJOR; Memory legend rows fill the 305 px side column; the gauge is pinned at 132 px though the 164 px body holds 147. Owner: the overextended table shrank the gauge. Give the legend its natural width and let both gauges take the body's height.
+  - evidence: legend rows 178.86 px at 1440x900 and 165.77 at 1024x768, max-content not stretched; gauges 147.61 x 150.23 and 133.58 x 135.95, equal across panels, filling the body within 0.02 and 6.49 px; reserved widths hold
+  - repro: at 1440x900 the Memory legend rows measure 305.3 px wide and the gauge 132 px inside a 164.3 px body; the CPU side column is 188.5 px
+  - log: 2026-10-29T14:05:09Z @kj added
+  - log: 2026-10-29T14:47:09Z @kj owner: the widened table took space from the gauge for no good reason; the cache row is not explained
+  - log: 2026-10-29T15:20:25Z @kj closed
+- [x] `DEF-LAYOUT-90-LOAD-SHIFT` **Page re-sizes itself after the first frame** - MAJOR; Every load re-sizes the Memory table and both gauges after the first frame: the stored layout applies on DOM ready, the gauge is redrawn after the first SSE frame, and the webfont swaps in late. Settle all three before first paint or reserve their final size.
+  - evidence: five cold-cache scenarios with a stored layout: the first painted frame equals the settled frame in gauge box, shape and legend width; the shape is chosen without script; the webfont does not re-lay text
+  - repro: open the page with a stored layout and watch the Memory legend and both gauges change size after the first frame; a cold cache adds the webfont swap
+  - log: 2026-10-29T14:06:53Z @kj added
+  - log: 2026-10-29T14:07:41Z @kj squircle is the server render and app.js swaps it to the circle after the first frame; choose the shape without script - render both shapes in the fragment and switch them with a height media query
+  - log: 2026-10-29T15:20:25Z @kj closed
+- [x] `DEF-LAYOUT-93-NET-DEADSPACE` **Network panel leaves an empty block** - CRITICAL; The Network panel leaves a tall empty block under the upload legend: the legend column ends well above the panel's bottom and nothing fills the rest. Grow the plot or the legend so the panel has no dead space. Owner: why empty space? critical UX defect.
+  - evidence: wf_831dc4c3-94d + wf_cf3a81ba-bd4 verify: empty block 157 x 14.48 px at 1440x900 now 0; entries fill the cell, 0 px at every content edge, 12 px between; live build e086b9e9acfb0f07
+  - repro: open the dashboard at 1440x900 and look below the UPLOAD block in the Network panel's right column
+  - log: 2026-10-29T14:47:13Z @kj added
+  - log: 2026-10-29T14:47:20Z @kj owner marked the empty block under the upload legend; the 1:1:1 split and the shortened bars are in the running layout batch
+  - log: 2026-10-29T18:11:21Z @kj closed
+- [x] `DEF-LAYOUT-94-SHORT-VIEW` **Gauges shrink to a squircle at 1280x600** - MAJOR; At 1280x600 the gauge token is 117.8 px but the body is 110 px tall, so both gauges fall back to an 88 px squircle while the Memory panel keeps about 230 px unused. Keep the design size at this size or spend the spare width.
+  - evidence: wf_cf3a81ba-bd4 verify: at 1280x600 both gauges 609.09 x 96.00 px in the 629.09 x 110.00 body, 0 px dead space, no scroll; live build e086b9e9acfb0f07
+  - repro: open the dashboard in a 1280x600 viewport; both gauges measure 88.1 x 96 px as squircles and the Memory panel leaves about 230 px of width empty
+  - log: 2026-10-29T14:50:58Z @kj added
+  - log: 2026-10-29T18:11:21Z @kj closed
+- [x] `DEF-LAYOUT-99-NET-CLIP` **Network legend clipped at 1280x720** - MAJOR; At 1280x720 the Network legend overflows its 113.61 px cell: two entries of 64.23 px each need 128.46 px, so the DOWNLOAD label and the upload total line are cut off by the panel body.
+  - evidence: wf_cf3a81ba-bd4 verify: at 1280x720 entries 55.80 px in a 118 px cell, scrollHeight 118 = clientHeight, 0 px edges, 6 px between, 0 fields cut; live build e086b9e9acfb0f07
+  - repro: open the page at 1280x720 and measure the two #p-net .legend-item boxes against the legend content box
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-29T17:38:53Z @kj added
+  - log: 2026-10-29T18:11:21Z @kj closed
 
 ## Graphs and sparklines `GRAPH`
 
@@ -568,6 +710,30 @@ Palette tokens, variants and contrast across the shipped pairs
   - log: 2026-10-27T12:11:28Z @kj added
   - log: 2026-10-27T19:41:48Z @kj owner 20:4x reported it again on build 44a72c34; fix d-38 is in the proc-tile run wf_8ca31f9f-9b8 (building), not yet deployed
   - log: 2026-10-28T02:00:20Z @kj closed; reason: evidence names the measured result and the checkpoint
+- [x] `DEF-THEME-78-FONT-PARTIAL` **Galaxa face reaches only a few places** - MAJOR; only stat values and panel headings switched to the Galaxa face; every other label, chip, tooltip, table cell and footer still renders the system font, while the owner requires the whole page on Galaxa except the process names in the process list
+  - evidence: wf_0e18da24-415 gate 1: 155 sampled text nodes, 0 failures - every family is GalaxaLabsTron except the process Program and Command cells on mono; five box-drawing glyphs fall back inside those mono cells only
+  - repro: open the live page and compare the face of a stat value against a label, a tooltip and a table cell
+  - root-cause: 2026-10-29T01:34:02Z @kj the change wired --font-display into .stat-value and .ph h2 only; every other rule sets its font-family from the system stacks
+  - log: 2026-10-29T01:34:02Z @kj added
+  - log: 2026-10-29T02:25:12Z @kj closed
+- [x] `DEF-THEME-86-FONT-SCOPE` **GalaxaTron reaches only the big values and the headings** - MEDIUM; With GalaxaTron selected only the stat values and panel headings take the narrow face; the core rows, memory legend, gauge scale, network readouts, footers, axis labels, chips and top bar still render in the system font. Only the process list and the CONFIG menu may stay system.
+  - evidence: 12 combos at 1440x900, 1024x768 and 390x844, Default and Steel, dark and light: 212 element signatures, every dashboard class computes GalaxaLabsTron Narrow; process table and CONFIG compute system-ui; System restores 3824 rows; SSE fragments byte-identical; make ci 309 green
+  - repro: select GalaxaTron in CONFIG and compare a core row and a memory legend row with the big value: the small numbers are the system face
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-29T09:56:34Z @kj the font token is scoped to the stat value and heading selectors, not to the dashboard-wide number and label rules
+  - log: 2026-10-29T09:56:34Z @kj added
+  - log: 2026-10-29T12:07:55Z @kj closed
+  - log: 2026-10-29T12:28:17Z @kj regressed as DEF-THEME-86-FONT-SCOPE-1
+- [x] `DEF-THEME-86-FONT-SCOPE-1` **GalaxaTron reaches only the big values and the headings** - MEDIUM; With GalaxaTron selected only the stat values and panel headings take the narrow face; the core rows, memory legend, gauge scale, network readouts, footers, axis labels, chips and top bar still render in the system font. Only the process list and the CONFIG menu may stay system.
+  - evidence: wf_b03878d9-571 verify: with GalaxaTron selected 0 face violations over 679/669/208 text elements at 1440x900, 1024x768 and 390x844; only GalaxaLabsTron Narrow loads; process list and CONFIG stay system by design
+  - log: 2026-10-29T12:28:17Z @kj regression of DEF-THEME-86-FONT-SCOPE; reason: owner reports numbers still on the system face after the 13:07 deploy; fresh-browser walk measured 482 numeric nodes, all narrow except the process panel, so the cause is not yet known
+  - log: 2026-10-29T18:11:52Z @kj closed
+- [x] `DEF-THEME-92-GLYPH-TOUCH` **Narrow face glyphs touch at small sizes** - MAJOR; In the narrow face at small sizes the glyphs touch: 2, 8 and M run together and read as a rendering fault. Add tracking to the narrow face, proportional to size, and check the tightest pairs - 2/8, 0/O, M - at 8, 10 and 12 px so none touches.
+  - evidence: tracking calc(0.5px + 0.01em) applied per element; pairs 2/8, 0/O, M/W, W/M, 0/0 and percent separated at 8, 10 and 12 px; canvas ink gap 1 to 2 px on every named pair
+  - repro: with GalaxaTron selected, zoom the network scale label or a legend value on the live page; 2, 8 and M touch at 8 to 10 px
+  - log: 2026-10-29T14:23:03Z @kj added
+  - log: 2026-10-29T14:23:40Z @kj owner confirms: a little more character spacing; small tracking increase, then re-measure every reserved width
+  - log: 2026-10-29T16:43:33Z @kj closed
 
 ## Documentation `DOCS`
 
@@ -612,15 +778,21 @@ CPU, memory and wire cost of the server and the page against their recorded base
 
 - log: 2026-10-29T00:22:32Z @kj category created
 
-- [ ] `DEF-PERF-76-SERVER-COST` **Server costs 2.2x its recorded CPU per tick** - MEDIUM; one SSE client at 250 ms now costs 19.5 ms of server CPU per tick, 7.8 percent of one core, against the 6.66 and 8.8 ms recorded on 2026-10-26; the GPU sweep adds about 40 ms once a second and the process set is 374 rows
+- [x] `DEF-PERF-76-SERVER-COST` **Server costs 2.2x its recorded CPU per tick** - MEDIUM; one SSE client at 250 ms now costs 19.5 ms of server CPU per tick, 7.8 percent of one core, against the 6.66 and 8.8 ms recorded on 2026-10-26; the GPU sweep adds about 40 ms once a second and the process set is 374 rows
+  - evidence: verify PASS: one client, live /proc, 250 ms: 10.250 and 11.417 ms/tick at 350 rows against 19.722 before; idle 60 s 0 jiffies; proc fragment sha256 a343c0b6 byte-identical; make ci green; patch reverses
   - repro: attach one SSE client to the deployed build at 250 ms for 60 s and read utime+stime from /proc/<pid>/stat; tmp/workflows/btop-web-vs-btop/checkpoints/measure.json
   - root-cause: 2026-10-29T00:22:32Z @kj unknown; likely the NVML sweep at most once a second plus the 374-row process walk, both inside the tick
   - log: 2026-10-29T00:22:32Z @kj added
   - log: 2026-10-29T00:40:31Z @kj second measurement 2026-10-29: 18.2 ms per tick idle and 19.2 ms with one client, against 8.3 and 8.8 ms recorded on 2026-10-26, so growth is 2.1 to 2.2 times; the 1.92 ms figure is collection only, not the whole tick
   - log: 2026-10-29T01:12:33Z @kj cause: process walk 9.3 ms of 18.2 per tick over 390 rows, all GPU work 5.5 (holder fd walk 3.0-3.4), fixed collection 3.3, load count 1.4, one client 0.8, charts under 0.3; the sweep claim was 2-5x too high
-- [ ] `DEF-PERF-77-PAGE-COST` **One open tab uses half a core in headless Chromium** - MEDIUM; one headless tab of the dashboard spends 33.1 s of renderer CPU per 60 s, 0.55 of one core, with 14.7 s of main-thread tasks and 59.7 fps; headless Chromium rasterises on the CPU, so a GPU-accelerated browser may cost less; unmeasured
+  - log: 2026-10-29T01:47:39Z @kj deep pass 2026-10-29 at 412 processes: process walk compute 6.7 ms, GPU holder fd sweep 3.9 (15,591 readlinks every 5 s), walk file I/O 3.7, residual 1.9, load count 0.7, fixed reads 0.7, NVML 0.45, readdir 0.44, charts 0.3; /proc/cpuinfo and cgroup.procs are re-read every tick
+  - log: 2026-10-29T03:28:40Z @kj closed
+- [x] `DEF-PERF-77-PAGE-COST` **One open tab uses half a core in headless Chromium** - MEDIUM; one headless tab of the dashboard spends 33.1 s of renderer CPU per 60 s, 0.55 of one core, with 14.7 s of main-thread tasks and 59.7 fps; headless Chromium rasterises on the CPU, so a GPU-accelerated browser may cost less; unmeasured
+  - evidence: wf_c9a64f48-f38: the chart scroll became a CSS compositor animation instead of a per-frame style write (8.78 s/60 s of the old cost); the tab now measures 0.2283 core, 60.02 fps, 0 long tasks against 0.55 core and 59.7 fps recorded; live build 0231bd00513aa12c measures 59.8 fps
   - repro: open the dashboard in headless Chromium at 1440x900 for 60 s and read the renderer process CPU from /proc; tmp/workflows/btop-web-perf/checkpoints/measure.json
   - root-cause: 2026-10-29T00:40:43Z @kj unknown; likely software rasterisation of four chart swaps per second plus the number-effect frame loop; a GPU-accelerated run and a per-feature profile are needed
   - log: 2026-10-29T00:40:43Z @kj added
   - log: 2026-10-29T01:12:33Z @kj cause: at 1440x900 the tab uses 26.34 s renderer CPU per 60 s; chart scroll from a 60 fps style loop 13.26 s, event stream 11.45 s with the process panel 6.35, stale page 1.63; number effects off, spring blur adds 28.33
+  - log: 2026-10-29T01:47:39Z @kj deep pass 2026-10-29: software raster of the single document layer is 7.3 s of the 27.4 s per 60 s; the chart scroll is 13.3 s of which raster and compositing 10.6, style 0.6, layout 0.2; process-row paint is 0.02-0.70 s, not the 4.82 of the first pass
+  - log: 2026-10-30T03:34:49Z @kj closed
 

@@ -8,20 +8,24 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use btop_web::AppState;
-use btop_web::chart::{ChartPath, PROC_GRAPH, gauge_arc, gpu_lane};
+use btop_web::chart::{ChartPath, PROC_GRAPH, gauge_arc, gauge_arc_circle, gpu_lane};
+use btop_web::collector::frame::{Frame, fragments};
 use btop_web::collector::{
     CoreUsage, CpuSnapshot, GpuDevice, MemSnapshot, Snapshot, cpu, gpu, mem, net, proc,
 };
-use btop_web::config::{CONFIG_PAGES, Config, SERVER_OPTIONS, default_config_text};
+use btop_web::config::{
+    CONFIG_PAGES, Config, Connect, ConnectKey, Control, LoadScale, SERVER_OPTIONS,
+    default_config_text,
+};
 use btop_web::routes::READ_ONLY_REFUSAL;
 use btop_web::routes::dashboard::PANELS;
-use btop_web::routes::events::fragments;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 use tower::ServiceExt;
 
 fn app(snapshot: Option<Snapshot>, readonly: bool) -> Router {
-    let (_sender, receiver) = watch::channel(snapshot);
+    let (_sender, receiver) =
+        watch::channel(snapshot.map(|snapshot| Arc::new(Frame::new(snapshot))));
     btop_web::app(AppState::new(receiver, readonly))
 }
 
@@ -37,7 +41,12 @@ fn recorded_snapshot_with(relative: &str, ticks: usize, config: Config) -> Snaps
     let mut snapshot = Snapshot::default();
     for _ in 0..ticks {
         let mut gpu = gpu::collect(&root, &config);
-        gpu::attach_charts(&root, &mut gpu.devices, config.update_ms);
+        gpu::attach_charts(
+            &root,
+            &mut gpu.devices,
+            config.update_ms,
+            config.window_ms(),
+        );
         snapshot = Snapshot {
             cpu: cpu::collect(&root, &config),
             mem: mem.collect(&root, &config),
@@ -45,6 +54,9 @@ fn recorded_snapshot_with(relative: &str, ticks: usize, config: Config) -> Snaps
             proc: proc::collect(&root, &config),
             gpu,
             update_ms: config.update_ms,
+            window_ms: btop_web::chart::window(config.window_ms(), config.update_ms),
+            slow_ms: config.proc_refresh_ms.max(config.update_ms),
+            slow_seq: 1,
             container: config.container.is_some(),
         };
     }
@@ -84,6 +96,7 @@ fn fixture_snapshot() -> Snapshot {
         0.0,
         100.0,
     );
+    snapshot.proc.entries[0].graph_tone = "cpu-ok";
     snapshot
 }
 
@@ -156,6 +169,43 @@ async fn get(app: &Router, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
     request(app, Method::GET, uri).await
 }
 
+/// ACC-NET-144-ACCESS-KEY: a GET carrying the agent's key, if any.
+async fn request_with_key(
+    app: &Router,
+    uri: &str,
+    key: Option<&str>,
+) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let mut builder = Request::builder().method(Method::GET).uri(uri);
+    if let Some(key) = key {
+        builder = builder.header(header::AUTHORIZATION, format!("Bearer {key}"));
+    }
+    let response = app
+        .clone()
+        .oneshot(builder.body(Body::empty()).expect("request"))
+        .await
+        .expect("response");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body")
+        .to_vec();
+    (status, headers, body)
+}
+
+/// Status only, for a stream body that never ends.
+async fn status_with_key(app: &Router, uri: &str, key: Option<&str>) -> StatusCode {
+    let mut builder = Request::builder().method(Method::GET).uri(uri);
+    if let Some(key) = key {
+        builder = builder.header(header::AUTHORIZATION, format!("Bearer {key}"));
+    }
+    app.clone()
+        .oneshot(builder.body(Body::empty()).expect("request"))
+        .await
+        .expect("response")
+        .status()
+}
+
 /// Status only: a permitted `/events` body never ends, so it is not read.
 async fn status(app: &Router, method: Method, uri: &str) -> StatusCode {
     let request = Request::builder()
@@ -204,14 +254,22 @@ async fn page_has_every_panel_and_theme_option() {
         "terracotta",
         "ultraviolet",
         "cyberpunk",
+        "steel",
     ] {
         assert!(
             page.contains(&format!("value=\"{theme}\"")),
             "theme picker lacks {theme}"
         );
     }
-    // ACC-THEME-101-CYBERPUNK: the pair lists last, so the picker carries a
-    // ninth option and a number 0-7 already stored in a config keeps its theme.
+    // ACC-THEME-155-FONT-TOGGLE: the font is a control of its own, so the
+    // picker carries no face pair any more.
+    assert!(
+        !page.contains("default-galaxatron") && !page.contains("Default GalaxaTron"),
+        "the theme picker still offers the removed face pair"
+    );
+    // ACC-THEME-101-CYBERPUNK, ACC-THEME-152-STEEL: the appended pairs list
+    // last, cyberpunk ninth and Steel after it, so a stored number keeps its
+    // theme.
     let at = page.find("id=\"theme-picker\"").expect("theme picker");
     let select = &page[at..at + page[at..].find("</select>").expect("closed picker")];
     let options: Vec<&str> = select
@@ -221,8 +279,16 @@ async fn page_has_every_panel_and_theme_option() {
             &value[..value.find('"').expect("option end")]
         })
         .collect();
-    assert_eq!(options.len(), 9, "theme options: {options:?}");
-    assert_eq!(options[8], "cyberpunk", "theme options: {options:?}");
+    assert_eq!(options.len(), 10, "theme options: {options:?}");
+    assert_eq!(options[0], "default", "theme options: {options:?}");
+    let position = |id: &str| {
+        options
+            .iter()
+            .position(|option| *option == id)
+            .unwrap_or_else(|| panic!("theme options lack {id}: {options:?}"))
+    };
+    assert_eq!(position("cyberpunk"), 8, "theme options: {options:?}");
+    assert_eq!(position("steel"), 9, "theme options: {options:?}");
     assert!(
         page.contains("--surface:"),
         "theme variables are not inlined"
@@ -254,21 +320,49 @@ async fn page_references_assets_and_events_relatively() {
     let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
         .expect("utf-8 page");
     for marker in [
-        "href=\"assets/app.css\"",
-        "src=\"assets/htmx.min.js\"",
-        "src=\"assets/htmx-sse.min.js\"",
-        "src=\"assets/theme.js\"",
-        "src=\"assets/app.js\"",
+        "href=\"assets/app.css?v=",
+        "src=\"assets/htmx.min.js?v=",
+        "src=\"assets/htmx-sse.min.js?v=",
+        "src=\"assets/theme.js?v=",
+        "src=\"assets/app.js?v=",
         "sse-connect=\"events\"",
     ] {
         assert!(page.contains(marker), "page lacks {marker}");
     }
-    for absolute in ["\"/assets", "\"/events"] {
+    for absolute in [
+        "\"/assets",
+        "\"/events",
+        "hx-get=\"/agents",
+        "href=\"/?agent",
+    ] {
         assert!(
             !page.contains(absolute),
             "page carries the absolute reference {absolute}"
         );
     }
+}
+
+/// DEF-VIEW-98-ASSET-STALE: one build stamp on every asset URL, and it is the
+/// stamp this build computes, so a reload after a deploy cannot pair an old
+/// script with new markup. The icon travels on the same stamp.
+#[tokio::test]
+async fn every_asset_url_carries_the_one_build_stamp() {
+    let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
+        .expect("utf-8 page");
+    let stamp = btop_web::routes::asset_stamp();
+    let mut urls = 0;
+    for (at, _) in page.match_indices("assets/") {
+        urls += 1;
+        let rest = &page[at..];
+        let end = rest.find(['"', '\'']).unwrap_or(rest.len());
+        let url = &rest[..end];
+        assert!(
+            url.contains(&format!("?v={stamp}")),
+            "asset URL without this build's stamp: {url}"
+        );
+    }
+    // icon.svg, app.css, htmx.min.js, htmx-sse.min.js, theme.js and app.js.
+    assert_eq!(urls, 6, "the page names {urls} asset URLs");
 }
 
 /// DEF-VIEW-7-CPU-NAME: the collected model name is one titled row that CSS
@@ -313,6 +407,13 @@ async fn unavailable_meters_render_their_unknown_state() {
         );
         assert!(!inner.contains("g-fill"), "the {gauge} gauge drew a fill");
         assert!(inner.contains(">unavailable</text>"), "{inner}");
+        // DEF-LAYOUT-94-SHORT-VIEW: the short-view HTML readout says the same.
+        assert!(
+            inner.contains(
+                r#"<div class="g-read" aria-hidden="true"><span>unavailable</span></div>"#
+            ),
+            "the {gauge} gauge lacks its unavailable HTML readout"
+        );
     }
     assert_eq!(
         page.matches(r#"data-state="unavailable""#).count(),
@@ -337,7 +438,7 @@ async fn unavailable_meters_render_their_unknown_state() {
 
 /// DEF-VIEW-50-MEM-TERMS: one bar with a segment and a legend key per part,
 /// in bar order, then one available line.
-fn assert_mem_bar(html: &str, parts: &[&str]) {
+fn assert_mem_bar(html: &str, parts: &[(&str, &str)]) {
     let segments: Vec<&str> = html
         .match_indices(r#"<span class="mem-seg" data-seg=""#)
         .map(|(at, open)| {
@@ -345,13 +446,17 @@ fn assert_mem_bar(html: &str, parts: &[&str]) {
             &name[..name.find('"').expect("quote")]
         })
         .collect();
-    assert_eq!(segments, parts, "bar segments");
-    for part in parts {
+    assert_eq!(
+        segments,
+        parts.iter().map(|(part, _)| *part).collect::<Vec<_>>(),
+        "bar segments"
+    );
+    for (part, label) in parts {
         assert!(
             html.contains(&format!(
-                r#"<span><i class="mem-key" data-seg="{part}"></i>{part}</span><b>"#
+                r#"<span><i class="mem-key" data-seg="{part}"></i>{label}"#
             )),
-            "legend lacks {part}"
+            "legend lacks {part} labelled {label}"
         );
     }
     assert_eq!(html.matches(r#"class="mem-key""#).count(), parts.len());
@@ -366,7 +471,10 @@ async fn host_memory_bar_has_three_segments() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
-        assert_mem_bar(html, &["used", "cache", "free"]);
+        assert_mem_bar(
+            html,
+            &[("used", "used"), ("cache", "cache"), ("free", "free")],
+        );
     }
 }
 
@@ -577,6 +685,20 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
         .expect("utf-8 page");
     let mut documents = vec![("page", page)];
     documents.extend(fragments(&snapshot));
+    // The container tooltips add the scope lines; they hold the same budget.
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/container/proc");
+    let mut config = Config::load(None).expect("config");
+    config.container = btop_web::collector::container::detect(&tree);
+    let container = recorded_snapshot_with("tests/fixtures/container/proc", 1, config);
+    let page = String::from_utf8(get(&app(Some(container.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    documents.push(("container page", page));
+    // This tree records no GPU, so the GPU fragment carries no tooltip.
+    documents.extend(
+        fragments(&container)
+            .into_iter()
+            .filter(|(name, _)| *name == "mem"),
+    );
     for (name, html) in &documents {
         let tips = elements_with(html, "data-tip");
         assert!(!tips.is_empty(), "{name} has no stat tooltip");
@@ -593,7 +715,12 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
             );
             let value = &tag[tag.find("data-tip=\"").expect("tip") + 10..];
             let value = &value[..value.find('"').expect("tip end")];
-            let lines: Vec<&str> = value.split("&#10;").collect();
+            // A template writes its line breaks as &#10;; a tip built in Rust
+            // carries them as newlines.
+            let lines: Vec<&str> = value
+                .split("&#10;")
+                .flat_map(|line| line.split('\n'))
+                .collect();
             assert!(
                 (1..=4).contains(&lines.len()),
                 "{name}: {} lines: {value}",
@@ -657,6 +784,15 @@ async fn stat_tips_sit_on_every_tip_anchor() {
     ] {
         assert!(page.contains(anchor), "no tooltip on {anchor}");
     }
+    // ACC-VIEW-111: the sampling interval in the top bar is a terse stat too.
+    let at = page
+        .find(r#"id="update-interval""#)
+        .expect("sampling interval");
+    let span = &page[at..at + page[at..].find("</span>").expect("span end")];
+    assert!(
+        span.contains(r#"data-tip="Sampling interval"#),
+        "the sampling interval carries no tooltip: {span}"
+    );
 }
 
 /// ACC-GRAPH-67-SMOOTH-SCALE: each network plot draws its area and line in
@@ -667,7 +803,8 @@ async fn network_plots_draw_in_a_series_group() {
     assert!(!snapshot.net.down_chart.line.is_empty());
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
-    // ACC-GRAPH-96: the axis label prints each direction's shown ceiling.
+    // ACC-GRAPH-164-NET-SCALE: the axis label prints each direction's shown
+    // step.
     let down = btop_web::collector::bytes_short(snapshot.net.scale_down.label_max);
     let up = btop_web::collector::bytes_short(snapshot.net.scale_up.label_max);
     assert!(
@@ -722,6 +859,68 @@ async fn network_panel_draws_two_lanes_with_a_boundary() {
             html.matches(r#"data-field="net-x-axis""#).count(),
             1,
             "one shared time axis"
+        );
+    }
+}
+
+/// ACC-VIEW-128-TICK-LABELS: each sparkline carries faint seconds labels
+/// under its interior vertical ticks, the shared axis's wording, and `now` at
+/// the right edge; the labels follow the configured window.
+#[tokio::test]
+async fn sparklines_carry_seconds_axis_labels() {
+    let snapshot = fixture_snapshot();
+    assert_eq!(
+        snapshot.axis_labels(),
+        ["180 s", "135 s", "90 s", "45 s"],
+        "the shared axis keeps the left-edge label"
+    );
+    let labels: Vec<String> = snapshot.tick_labels();
+    assert_eq!(labels, ["135 s", "90 s", "45 s"], "one per interior tick");
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let panel = |id: &str| -> String {
+        elements_with(&page, "data-panel")
+            .into_iter()
+            .find(|(tag, _)| tag.contains(&format!(r#"id="{id}""#)))
+            .map(|(_, inner)| inner.to_string())
+            .expect(id)
+    };
+    let markup = format!(
+        r#"<div class="xaxis stat-axis"{} aria-hidden="true"><span>{}</span><span>{}</span><span>{}</span><span>now</span></div>"#,
+        r#" data-p="3" data-field="{field}""#, labels[0], labels[1], labels[2]
+    );
+    for (id, field) in [
+        ("p-cpu-stat", "cpu-stat-axis"),
+        ("p-mem-stat", "mem-stat-axis"),
+    ] {
+        let expected = markup.replace("{field}", field);
+        assert!(panel(id).contains(&expected), "{id}: {expected}");
+    }
+    // The Processes tile draws no P3 field of its own: its panel is the field.
+    let bare = markup.replace(r#" data-p="3" data-field="{field}""#, "");
+    assert!(panel("p-proc-stat").contains(&bare), "p-proc-stat: {bare}");
+    // The window row offers the five windows as house chips.
+    let page =
+        String::from_utf8(get(&app(Some(snapshot), false), "/").await.2).expect("utf-8 page");
+    let row = elements_with(&page, "data-key")
+        .into_iter()
+        .find(|(tag, _)| tag.contains(r#"data-key="window_s""#))
+        .map(|(_, inner)| inner.to_string())
+        .expect("the time axis row");
+    for (value, label) in [
+        ("60", "1m"),
+        ("120", "2m"),
+        ("180", "3m"),
+        ("300", "5m"),
+        ("600", "10m"),
+    ] {
+        assert!(
+            row.contains(&format!(r#"name="value" value="{value}""#)),
+            "window_s lacks {value}"
+        );
+        assert!(
+            row.contains(&format!(">{label}<")),
+            "window_s lacks {label}"
         );
     }
 }
@@ -850,6 +1049,7 @@ async fn process_rows_draw_a_graph_left_of_cpu() {
         0.0,
         100.0,
     );
+    parent.graph_tone = "cpu-ok";
     let entries = &snapshot.proc.entries;
     for html in proc_documents(&snapshot).await {
         assert_eq!(html.matches(">Cpu%</button></th>").count(), 1);
@@ -864,11 +1064,12 @@ async fn process_rows_draw_a_graph_left_of_cpu() {
                 .as_ref()
                 .is_some_and(|sum| !sum.graph.line.is_empty());
             assert_eq!(
-                cpu_cell.contains(r#"<svg data-chart="proc" viewBox="0 0 10 12""#),
+                cpu_cell.contains(r#"<svg class="cpu-ok" data-chart="proc" viewBox="0 0 10 12""#),
                 has_own
             );
             assert_eq!(
-                cpu_cell.contains(r#"<svg class="sum" data-chart="proc" viewBox="0 0 10 12""#),
+                cpu_cell
+                    .contains(r#"<svg class="sum cpu-ok" data-chart="proc" viewBox="0 0 10 12""#),
                 has_sum
             );
             if has_own || has_sum {
@@ -957,7 +1158,7 @@ async fn process_rows_carry_tree_data() {
 #[tokio::test]
 async fn title_flag_text_is_escaped() {
     let titled = {
-        let (_sender, receiver) = watch::channel(Some(Snapshot::default()));
+        let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(Snapshot::default()))));
         let mut state = AppState::new(receiver, true);
         state.title = r#"lab <1> & "x""#.into();
         btop_web::app(state)
@@ -976,7 +1177,7 @@ async fn title_flag_text_is_escaped() {
 #[tokio::test]
 async fn page_carries_the_starting_proc_view() {
     let page = |view: &'static str| {
-        let (_sender, receiver) = watch::channel(Some(Snapshot::default()));
+        let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(Snapshot::default()))));
         let mut state = AppState::new(receiver, true);
         state.proc_view_flag = Some(view);
         btop_web::app(state)
@@ -1250,26 +1451,56 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let events = fragments(&snapshot);
-    for html in page_and_event(&page, &events, "cpu") {
+    let cpu_docs = page_and_event(&page, &events, "cpu");
+    for (index, html) in cpu_docs.into_iter().enumerate() {
         for marker in [
             format!(
                 r#"<path class="g-fill warn" d="{}">"#,
                 gauge_arc(Some(50.0))
             ),
+            format!(
+                r#"<path class="g-fill warn" d="{}">"#,
+                gauge_arc_circle(Some(50.0))
+            ),
+            r#"<svg class="g-circle" viewBox="0 0 112 114""#.to_string(),
+            r#"<svg class="g-squircle" viewBox="0 0 112 122""#.to_string(),
+            r#"<svg class="g-wide" viewBox="13 19.7 82 86.3" preserveAspectRatio="none""#
+                .to_string(),
             r#"<text class="g-value" x="54" y="66">80<tspan class="g-unit" dx="2.65">%</tspan>"#
                 .to_string(),
             r#"aria-label="CPU total 80 percent""#.to_string(),
-            r#"<span class="stat-value crit" data-w="100" id="cpu-total">80</span>"#.to_string(),
+            r#"<span class="stat-value crit" data-w="100" data-range="100" id="cpu-total">80</span>"#.to_string(),
+            // DEF-LAYOUT-94-SHORT-VIEW: the stretched short-view shape needs
+            // both SVG boxes and the undistorted HTML readout it shows.
+            r#"preserveAspectRatio="none""#.to_string(),
+            r#"<div class="g-read" aria-hidden="true"><b>80<i>%</i></b><span>total</span></div>"#
+                .to_string(),
         ] {
             assert!(html.contains(&marker), "lacks {marker}");
         }
+        // DEF-LAYOUT-90-LOAD-SHIFT, DEF-LAYOUT-94-SHORT-VIEW: the three
+        // shapes each carry the fill and the stylesheet picks one; the page
+        // draws both gauges, the fragment one.
+        let fills = if index == 0 { 6 } else { 3 };
+        assert_eq!(html.matches(r#"<path class="g-fill warn""#).count(), fills);
     }
-    for html in page_and_event(&page, &events, "mem") {
+    let mem_docs = page_and_event(&page, &events, "mem");
+    for (index, html) in mem_docs.into_iter().enumerate() {
         let arc = format!(
             r#"<path class="g-fill warn" d="{}">"#,
             gauge_arc(Some(40.0))
         );
         assert!(html.contains(&arc), "the memory arc is not the EMA");
+        let circle = format!(
+            r#"<path class="g-fill warn" d="{}">"#,
+            gauge_arc_circle(Some(40.0))
+        );
+        assert!(
+            html.contains(&circle),
+            "the memory circle arc is not the EMA"
+        );
+        let fills = if index == 0 { 6 } else { 3 };
+        assert_eq!(html.matches(r#"<path class="g-fill warn""#).count(), fills);
         let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
         let readout = format!(
             r#"<text class="g-value" x="54" y="66">{}<tspan class="g-unit" dx="2.65">{}</tspan>"#,
@@ -1278,6 +1509,14 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
         assert!(
             html.contains(&readout),
             "the memory readout is not centred on the gauge axis"
+        );
+        let overlay = format!(
+            r#"<div class="g-read" aria-hidden="true"><b>{}<i>{}</i></b><span>used</span></div>"#,
+            value, unit
+        );
+        assert!(
+            html.contains(&overlay),
+            "the short-view memory readout is missing or differs"
         );
         assert!(
             html.contains(r#"<b data-w="100%">70%</b> used"#),
@@ -1306,7 +1545,8 @@ async fn reserved_widths_sit_on_the_memory_values() {
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
         for marker in [
             format!(
-                r#"<span class="stat-value" data-w="0000" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#
+                r#"<span class="stat-value" data-w="0000" data-range="{}" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#,
+                snapshot.mem.ram_used_range()
             ),
             format!(r#"<b data-w="100%">{used:.0}%</b> used"#),
             format!(r#"<b data-w="100%">{available:.0}%</b> available"#),
@@ -1355,8 +1595,8 @@ async fn cores_render_rows_with_a_meter_and_the_smoothed_number() {
         let cores = &html[html.find(r#"class="cores-body""#).expect("cores body")..];
         let cores = &cores[..cores.find("</section>").unwrap_or(cores.len())];
         for row in [
-            r#"<div class="core-row" data-tip="Core cpu0, unit percent&#10;source: /proc/stat cpu0 line, delta&#10;1 s average shown by the meter and number" style="--value:42.4"><span class="cl">C00</span><span class="meter"></span><span class="cv">42<i>%</i></span></div>"#,
-            r#"<div class="core-row" data-tip="Core cpu1, unit percent&#10;source: /proc/stat cpu1 line, delta&#10;1 s average shown by the meter and number" style="--value:57.6"><span class="cl">C01</span><span class="meter"></span><span class="cv">58<i>%</i></span></div>"#,
+            r#"<div class="core-row" data-tip="Core cpu0, unit percent&#10;source: /proc/stat cpu0 line, delta&#10;1 s average shown by the meter and number" style="--value:42.4"><span class="cl">C00</span><span class="meter"></span><span class="cv"><span data-w="100">42</span><i>%</i></span></div>"#,
+            r#"<div class="core-row" data-tip="Core cpu1, unit percent&#10;source: /proc/stat cpu1 line, delta&#10;1 s average shown by the meter and number" style="--value:57.6"><span class="cl">C01</span><span class="meter"></span><span class="cv"><span data-w="100">58</span><i>%</i></span></div>"#,
         ] {
             assert!(cores.contains(row), "lacks {row} in {cores}");
         }
@@ -1387,10 +1627,12 @@ async fn cores_name_every_row_with_two_digits() {
     }
 }
 
-/// ACC-VIEW-49-TOTAL-LABEL and ACC-VIEW-50-CPU-LOAD: the CPU gauge reads
-/// TOTAL, and beside it the load averages per core and the busy cores.
+/// ACC-VIEW-49-TOTAL-LABEL, ACC-VIEW-129-LOAD-LABELS, ACC-VIEW-130-LOAD-SCALE
+/// and ACC-VIEW-131-LOAD-WIDTH: the CPU gauge reads TOTAL, and beside it each
+/// load average as a whole percent of all cores with its window, the busy
+/// cores, and both load figures reserving normalised 100%.
 #[tokio::test]
-async fn cpu_gauge_says_total_and_shows_load_per_core_and_cores_busy() {
+async fn cpu_gauge_says_total_and_shows_the_load_triple_and_cores_busy() {
     let mut snapshot = fixture_snapshot();
     assert_eq!(snapshot.cpu.cores.len(), 64);
     snapshot.cpu.total_pct = Some(25.0);
@@ -1401,8 +1643,10 @@ async fn cpu_gauge_says_total_and_shows_load_per_core_and_cores_busy() {
     for html in page_and_event(&page, &events, "cpu") {
         for marker in [
             r#"<text class="g-label" x="54" y="78">total</text>"#,
-            "<span>load per core</span><b>0.50 0.25 0.15</b><small>1 &middot; 5 &middot; 15 min</small>",
-            "1.00 means one runnable or blocked task per core",
+            r#"<span>load</span><b><span class="load-cell"><span data-w="100%" data-num>50%</span>/1m</span> <span class="load-cell"><span data-w="100%" data-num>25%</span>/5m</span> <span class="load-cell"><span data-w="100%" data-num>15%</span>/15m</span></b>"#,
+            r#"load <b data-w="100%" data-num>50%</b>/1m <b data-w="100%" data-num>25%</b>/5m <b data-w="100%" data-num>15%</b>/15m"#,
+            "Load average, unit percent of all cores",
+            "1, 5 and 15 minute averages divided by 64 cores",
             // ACC-LAYOUT-74-RESERVED-WIDTH: the busy cores reserve the core
             // count in their format, so "of 64" keeps its place.
             r#"<span>cores busy</span><b><span data-w="64.0">16.0</span> <small>of 64</small></b>"#,
@@ -1418,12 +1662,38 @@ async fn cpu_gauge_says_total_and_shows_load_per_core_and_cores_busy() {
     }
 }
 
+/// ACC-VIEW-130-LOAD-SCALE and ACC-VIEW-131-LOAD-WIDTH: the aggregate scale
+/// reaches the gauge and the sparkline header, and every figure reserves the
+/// core count times 100.
+#[tokio::test]
+async fn aggregate_load_renders_in_the_gauge_and_the_header() {
+    let mut snapshot = fixture_snapshot();
+    assert_eq!(snapshot.cpu.cores.len(), 64);
+    snapshot.cpu.load_avg = Some([32.0, 16.0, 9.6]);
+    snapshot.cpu.load_scale = LoadScale::Aggregate;
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let events = fragments(&snapshot);
+    for html in page_and_event(&page, &events, "cpu") {
+        for marker in [
+            r#"<span>load</span><b><span class="load-cell"><span data-w="6400%" data-num>3200%</span>/1m</span> <span class="load-cell"><span data-w="6400%" data-num>1600%</span>/5m</span> <span class="load-cell"><span data-w="6400%" data-num>960%</span>/15m</span></b>"#,
+            r#"load <b data-w="6400%" data-num>3200%</b>/1m <b data-w="6400%" data-num>1600%</b>/5m <b data-w="6400%" data-num>960%</b>/15m"#,
+            "Load average, unit percent of one core",
+            "summed over all cores; 64 cores cap it at 6400%",
+        ] {
+            assert!(html.contains(marker), "lacks {marker}");
+        }
+    }
+}
+
 /// ACC-SCOPE-64-CONTAINER: the recorded container tree renders only the
 /// container's values; what has no container source reads unavailable, and
 /// the host values the tree also carries (loadavg 14.22, the 60 cpuN lines
 /// outside the cpuset, the cpuinfo frequency) appear nowhere. The memory bar
-/// is the owner's exception (DEF-VIEW-50-MEM-TERMS): the system's MemTotal
-/// and MemFree, with this container's used and cache and the other use.
+/// (DEF-VIEW-50-MEM-TERMS, DEF-VIEW-95-SCOPE-MIX) states each row's scope:
+/// used and cache are this container's docker working set and file cache;
+/// this recorded memory.max (8 GiB) binds, so the total is that limit, free
+/// is the room under it, and other is dropped.
 /// DEF-CPU-44: the load is the container's own, two R or D tasks over E = 2.
 #[tokio::test]
 async fn container_page_shows_only_container_values() {
@@ -1437,7 +1707,7 @@ async fn container_page_shows_only_container_values() {
     cpu::count_container_load(&tree, container.cgroup.as_deref().expect("cgroup"));
     let snapshot = recorded_snapshot_with("tests/fixtures/container/proc", 2, config);
     assert!(snapshot.container);
-    let (_sender, receiver) = watch::channel(Some(snapshot.clone()));
+    let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(snapshot.clone()))));
     let mut state = AppState::new(receiver, true);
     state.container = Some(container.tip().into());
     let page = String::from_utf8(get(&btop_web::app(state), "/").await.2).expect("utf-8 page");
@@ -1463,9 +1733,9 @@ async fn container_page_shows_only_container_values() {
     let events = fragments(&snapshot);
     for html in page_and_event(&page, &events, "cpu") {
         for marker in [
-            "<span>load per core</span><b>1.00 1.00 1.00</b>",
+            r#"<span>load</span><b><span class="load-cell"><span data-w="100%" data-num>100%</span>/1m</span> <span class="load-cell"><span data-w="100%" data-num>100%</span>/5m</span> <span class="load-cell"><span data-w="100%" data-num>100%</span>/15m</span></b>"#,
             "divided by 2 cores",
-            r#">load <b data-w="000">2</b> <b data-w="000">2</b> <b data-w="000">2</b></span>"#,
+            r#">load <b data-w="100%" data-num>100%</b>/1m <b data-w="100%" data-num>100%</b>/5m <b data-w="100%" data-num>100%</b>/15m</span>"#,
             r#">2 cores</span>"#,
             // DEF-CPU-41: the cpuset 0-3 gives four core rows, named C00 to C03.
             r#"4 &middot; 0&ndash;100%</span>"#,
@@ -1499,8 +1769,31 @@ async fn container_page_shows_only_container_values() {
         );
     }
     for html in page_and_event(&page, &events, "mem") {
-        assert!(html.contains("of 503 GiB"), "memory total is not MemTotal");
-        assert_mem_bar(html, &["used", "cache", "other", "free"]);
+        // DEF-VIEW-95-SCOPE-MIX: the recorded memory.max (8 GiB) binds, so
+        // the header total is the container's limit, not MemTotal.
+        // DEF-VIEW-97-MEM-UNITS: the tag also names whose limit it is.
+        assert!(
+            html.contains("of 8.00 GiB (container limit)"),
+            "memory total does not state it is the container's limit"
+        );
+        // DEF-VIEW-91-MEM-CONFUSE: every row states its scope and its kind:
+        // used and free are this container's, and cache says it is file
+        // cache, the answer to whether it is swap.
+        assert_mem_bar(
+            html,
+            &[
+                ("used", "container used"),
+                ("cache", "file cache"),
+                ("free", "container free"),
+            ],
+        );
+        assert!(
+            !html.contains(r#"data-seg="other""#),
+            "other is drawn under a binding limit"
+        );
+        // DEF-VIEW-96-MEM-WRONG: 4 GiB memory.current - 1 GiB inactive_file.
+        assert!(html.contains("3.00 GiB"), "used is not the working set");
+        assert!(html.contains("1.00 GiB"), "cache is not inactive_file");
         assert!(
             html.contains("IO unavailable"),
             "storage IO is not withheld"
@@ -1510,6 +1803,45 @@ async fn container_page_shows_only_container_values() {
     for html in proc_rows {
         assert!(!html.contains("13_start_mlflow"), "pid 900 is not a member");
         assert!(html.contains("ttyd"), "member pid 7 is missing");
+    }
+}
+
+/// DEF-VIEW-91-MEM-CONFUSE, DEF-VIEW-97-MEM-UNITS: an unlimited memory.max
+/// leaves the host's MemTotal as the total, so the header says GiB and whose
+/// total it is, and the rows name the container's used and file cache, the
+/// host's memory outside the container, and the host's free memory.
+#[tokio::test]
+async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/container/proc");
+    let mut config = Config::load(None).expect("config");
+    config.container = btop_web::collector::container::detect(&tree);
+    let mut snapshot = recorded_snapshot_with("tests/fixtures/container/proc", 1, config);
+    // The collector's unlimited-container shape: no binding limit, MemTotal
+    // as the total, and other for the host's memory outside this container.
+    snapshot.mem.ram_limit = None;
+    snapshot.mem.ram_total = Some(527_649_328 * 1024);
+    snapshot.mem.ram_other = Some(300 * 1024 * 1024 * 1024);
+    snapshot.mem.ram_other_percent = Some(60.0);
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    for html in page_and_event(&page, &fragments(&snapshot), "mem") {
+        assert!(
+            html.contains("of 503 GiB (host total)"),
+            "the header does not state the unit and whose total it is"
+        );
+        assert_mem_bar(
+            html,
+            &[
+                ("used", "container used"),
+                ("cache", "file cache"),
+                ("other", "outside (host)"),
+                ("free", "host free"),
+            ],
+        );
+        assert!(
+            html.contains("not swap; swap has its own row"),
+            "the cache row does not answer whether it is swap"
+        );
     }
 }
 
@@ -1535,16 +1867,18 @@ async fn tier_markers_sit_on_single_elements() {
             .collect()
     };
     // (event, field, priority, count in that event)
-    let fields: [(&str, &str, u8, usize); 18] = [
-        ("cpu", "cpu-stat-foot", 3, 1),
+    let fields: [(&str, &str, u8, usize); 20] = [
+        ("cpu", "cpu-stat-facts", 3, 1),
+        ("cpu", "cpu-stat-axis", 3, 1),
         ("cpu", "cpu-name", 3, 1),
         ("cpu", "cpu-gauge-cores", 3, 1),
         ("cpu", "cpu-gauge-facts", 3, 1),
-        ("cpu", "gauge-scale", 3, 1),
-        ("mem", "mem-stat-foot", 3, 1),
+        ("cpu", "gauge-scale", 3, 2),
+        ("mem", "mem-stat-facts", 3, 1),
+        ("mem", "mem-stat-axis", 3, 1),
         ("mem", "mem-gauge-total", 3, 1),
         ("mem", "mem-gauge-facts", 3, 1),
-        ("mem", "gauge-scale", 3, 1),
+        ("mem", "gauge-scale", 3, 2),
         ("net", "net-interface", 3, 1),
         ("net", "net-axis-note", 3, 1),
         ("net", "net-x-axis", 3, 1),
@@ -1562,7 +1896,13 @@ async fn tier_markers_sit_on_single_elements() {
             count,
             "{event}: {field}"
         );
-        let in_page = if field == "gauge-scale" { 2 } else { count };
+        // DEF-LAYOUT-90-LOAD-SHIFT: each gauge carries both shapes, so the
+        // scale group is marked once per shape: twice in the page per panel.
+        let in_page = if field == "gauge-scale" {
+            2 * count
+        } else {
+            count
+        };
         assert_eq!(
             page.matches(&marker(field, priority)).count(),
             in_page,
@@ -1667,7 +2007,7 @@ async fn top_bar_names_the_tiers_and_bands_1_3_share_a_wrapper() {
     let titles = &bar[chip..];
     for drop in [
         "Processes tile (count graph,",
-        "load per core",
+        "CPU facts (frequency, load, cores busy",
         "cores busy",
         "memory gauge",
         "GPU temperature and power",
@@ -1766,7 +2106,8 @@ async fn proc_tile_carries_the_count_graph_and_the_facts() {
     for tile in proc_tiles(&snapshot, &page) {
         for marker in [
             format!(
-                r#"<span class="stat-value" data-w="000">{}</span><span class="proc-facts">"#,
+                r#"<span class="stat-value" data-w="000" data-range="{}" id="proc-total">{}</span><span class="proc-facts">"#,
+                snapshot.proc.chart_max,
                 snapshot.proc.total.expect("total")
             ),
             ">running <b>1</b></span>".to_string(),
@@ -1793,10 +2134,10 @@ async fn proc_tile_carries_the_count_graph_and_the_facts() {
                 top.cpu_label()
             ),
             format!(
-                r#"80% cpu <b data-w="000">{}</b>"#,
+                r#"80% cpu <b class="foot-count" data-w="000">{}</b>"#,
                 snapshot.proc.cpu_80.expect("cpu_80")
             ),
-            r#"80% mem <b data-w="000">1</b>"#.to_string(),
+            r#"80% mem <b class="foot-count" data-w="000">1</b>"#.to_string(),
         ] {
             assert!(tile.contains(&marker), "lacks {marker} in {tile}");
         }
@@ -1813,8 +2154,8 @@ async fn proc_counts_reserve_the_ceiling_digits() {
         .expect("utf-8 page");
     for tile in proc_tiles(&snapshot, &page) {
         for marker in [
-            r#"<span class="stat-value" data-w="0000">"#,
-            r#"80% mem <b data-w="0000">1</b>"#,
+            r#"<span class="stat-value" data-w="0000" data-range="2000" id="proc-total">"#,
+            r#"80% mem <b class="foot-count" data-w="0000">1</b>"#,
         ] {
             assert!(tile.contains(marker), "lacks {marker} in {tile}");
         }
@@ -1868,7 +2209,7 @@ async fn unavailable_processes_render_no_zero() {
             tile.contains(r#"<span class="stat-na">unavailable</span>"#),
             "{tile}"
         );
-        for absent in ["<b>0</b>", "proc-facts", "data-chart", "stat-foot"] {
+        for absent in ["<b>0</b>", "proc-facts", "data-chart", "stat-facts"] {
             assert!(!tile.contains(absent), "{absent} in {tile}");
         }
     }
@@ -1961,23 +2302,89 @@ async fn read_only_chip_and_reason_appear_only_when_enabled() {
 }
 
 #[tokio::test]
-async fn healthz_is_process_only_and_readyz_waits_for_a_snapshot() {
-    let (status, _, body) = get(&app(None, true), "/healthz").await;
+async fn healthz_and_readyz_report_the_listener() {
+    // ACC-PERF-136-SLEEP: an idle sampler is parked, so readiness must not
+    // wait for a snapshot no viewer asked for.
+    for app in [app(None, true), app(Some(Snapshot::default()), true)] {
+        let (status, _, body) = get(&app, "/healthz").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"ok");
+
+        let (status, _, body) = get(&app, "/readyz").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, b"ready");
+    }
+}
+
+/// ACC-NET-144-ACCESS-KEY: an agent listener with one key. `None` leaves the
+/// state without a key, which must fail closed.
+fn agent_app(key: Option<&str>) -> Router {
+    let (_sender, receiver) = watch::channel(None);
+    let mut state = AppState::new(receiver, true);
+    state.access_key = key.map(Into::into);
+    btop_web::routes::agent_router(state)
+}
+
+/// ACC-NET-144-ACCESS-KEY: every request to an agent listener needs the key.
+/// A missing key, a wrong key of the right length and a key of the wrong
+/// length each answer 401 with an empty body, before any handler runs; the
+/// right key opens the stream, and a route the agent does not serve still
+/// refuses first. The response has no fragment body and no event-stream type.
+#[tokio::test]
+async fn an_agent_refuses_every_request_without_its_key() {
+    let app = agent_app(Some("the-right-key"));
+    for path in ["/events", "/healthz", "/readyz", "/agents", "/"] {
+        for key in [None, Some("the-wrong-key"), Some("short")] {
+            let (status, headers, body) = request_with_key(&app, path, key).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} with {key:?}");
+            assert!(
+                body.is_empty(),
+                "{path} with {key:?} carries {} body bytes",
+                body.len()
+            );
+            assert!(
+                !content_type(&headers).contains("text/event-stream"),
+                "{path} with {key:?}: {}",
+                content_type(&headers)
+            );
+        }
+    }
+
+    // The right key reaches the handlers; an unknown path is then an ordinary
+    // 404, and the stream opens.
+    let (status, _, body) = request_with_key(&app, "/healthz", Some("the-right-key")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, b"ok");
+    assert_eq!(
+        status_with_key(&app, "/readyz", Some("the-right-key")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status_with_key(&app, "/events", Some("the-right-key")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        request_with_key(&app, "/agents", Some("the-right-key"))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        request_with_key(&app, "/", Some("the-right-key")).await.0,
+        StatusCode::NOT_FOUND
+    );
 
-    let (status, _, body) = get(&app(None, true), "/readyz").await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body, b"starting");
-
-    let (status, _, body) = get(&app(Some(Snapshot::default()), true), "/readyz").await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, b"ready");
+    // A state without a key fails closed even when a request presents one.
+    let keyless = agent_app(None);
+    assert_eq!(
+        status_with_key(&keyless, "/healthz", Some("the-right-key")).await,
+        StatusCode::UNAUTHORIZED
+    );
 }
 
 #[tokio::test]
 async fn read_only_refuses_every_mutating_method_before_any_handler() {
-    let (_sender, receiver) = watch::channel(Some(Snapshot::default()));
+    let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(Snapshot::default()))));
     let app = btop_web::app(AppState::new(receiver.clone(), true));
     let page = get(&app, "/").await.2;
 
@@ -2109,37 +2516,52 @@ async fn assets_carry_a_content_hash_etag_and_revalidate() {
     assert_eq!(served.as_ref(), body.as_slice());
 }
 
-/// ACC-THEME-106-LABS-FONT: the GalaxaLabsTron display face is embedded and
-/// served as a font asset; the stylesheet carries its @font-face and switches
-/// only the Default trial and the cyberpunk pair from the system UI face.
+/// ACC-THEME-154-NARROW-FONT, ACC-THEME-155-FONT-TOGGLE,
+/// ACC-THEME-167-NARROW-ONLY, DEF-THEME-78-FONT-PARTIAL,
+/// DEF-THEME-86-FONT-SCOPE: the narrow Galaxa face is the only one embedded
+/// and served; the wide source keeps no face and its asset URL answers 404;
+/// the stylesheet keeps the system stack on `--font-ui` and `--font-display`
+/// at the base, the root `data-font` attribute points both tokens at the
+/// narrow face, no theme sets a face of its own, stat values and headings read
+/// the display token, the process list and the CONFIG popover keep the system
+/// stack, and the process Program and Command cells stay on the mono stack.
 #[tokio::test]
-async fn display_font_is_embedded_and_used_by_default_and_cyberpunk() {
+async fn narrow_face_is_the_only_galaxa_face_served_and_the_font_toggle_selects_it() {
     let app = app(Some(Snapshot::default()), true);
-    let (status, headers, body) = get(&app, "/assets/fonts/GalaxaLabsTron-VF.ttf").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        content_type(&headers).starts_with("font/"),
-        "{}",
-        content_type(&headers)
-    );
-    let embedded = std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts/GalaxaLabsTron-VF.ttf"),
-    )
-    .expect("font asset");
-    assert_eq!(body, embedded, "the route serves the embedded bytes");
+    // ACC-THEME-167-NARROW-ONLY: the wide face is no longer embedded, so its
+    // asset URL is a miss instead of a font.
+    let (status, _, _) = get(&app, "/assets/fonts/GalaxaLabsTron-VF.ttf").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 
     let css = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
         .expect("app.css");
-    for line in [
-        "@font-face {",
-        "font-family: \"GalaxaLabsTron\";",
-        "font-weight: 400 900;",
-        "font-display: swap;",
-        "src: url(\"fonts/GalaxaLabsTron-VF.ttf\") format(\"truetype\");",
-    ] {
-        assert!(css.contains(line), "app.css lacks {line}");
+    // The narrow family is the only @font-face; every font-family line that
+    // names a Galaxa face names the narrow one, and the wide file is not
+    // loaded.
+    assert_eq!(
+        css.matches("@font-face").count(),
+        1,
+        "app.css declares more than one face"
+    );
+    for line in css
+        .lines()
+        .filter(|line| line.contains("font-family") && line.contains("GalaxaLabsTron"))
+    {
+        assert!(
+            line.contains("\"GalaxaLabsTron Narrow\""),
+            "app.css names the wide family: {line}"
+        );
     }
-    // The display face reaches only the stat values and the panel headings.
+    assert!(
+        !css.contains("GalaxaLabsTron-VF.ttf"),
+        "app.css still loads the wide file"
+    );
+    assert!(
+        css.contains("font-family: \"GalaxaLabsTron Narrow\";")
+            && css
+                .contains("src: url(\"fonts/GalaxaLabsTronNarrow-VF.ttf\") format(\"truetype\");"),
+        "app.css does not declare the narrow face"
+    );
     let rule = |selector: &str| {
         let start = css
             .find(selector)
@@ -2147,26 +2569,226 @@ async fn display_font_is_embedded_and_used_by_default_and_cyberpunk() {
         let end = start + css[start..].find('}').expect("rule end");
         &css[start..end]
     };
-    for selector in [".stat-value {", ".ph h2 {"] {
+    // Body text reads the UI token; stat values and headings read the display
+    // token, so the face swap shows on both.
+    assert!(
+        rule("body {\n  overflow: hidden;").contains("font-family: var(--font-ui)"),
+        "the body does not use the UI face"
+    );
+    for selector in [".ph h2 {", ".stat-value {"] {
         assert!(
             rule(selector).contains("font-family: var(--font-display)"),
             "{selector} does not use the display face"
         );
     }
-    // One base token, then the Default and cyberpunk theme rules; no other
-    // pair sets the face, so every other theme keeps --ui.
     let flat: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Both tokens come from the system stacks at the base; the FONT control
+    // moves both to the narrow face, and no theme sets either token, so
+    // changing theme keeps the face the FONT control selected.
+    assert!(
+        flat.contains(":root { --ui: system-ui,")
+            && flat.contains("--font-ui: var(--ui);")
+            && flat.contains("--font-display: var(--ui);"),
+        "the base token block does not define both font tokens from the system stack"
+    );
     assert!(
         flat.contains(
-            "[data-theme=\"default\"], [data-theme=\"cyberpunk\"] { --font-display: \"GalaxaLabsTron\", var(--ui); }"
+            "[data-font=\"galaxatron\"] { --font-ui: var(--font-narrow); \
+             --font-display: var(--font-narrow); \
+             --track: calc(0.5px + 0.01em); letter-spacing: var(--track); }"
         ),
-        "the Default and cyberpunk theme blocks do not set the display face"
+        "the GalaxaTron option does not point both text tokens at the narrow face"
+    );
+    // The process list and the CONFIG popover are the only exceptions: each
+    // redeclares the UI token and its own family from the system stack, and
+    // ACC-THEME-169 returns the tracking to 0 for that system face.
+    assert!(
+        flat.contains(
+            "[data-font=\"galaxatron\"] #p-proc, [data-font=\"galaxatron\"] .config \
+             { --font-ui: var(--ui); --track: 0px; font-family: var(--ui); \
+             letter-spacing: var(--track); }"
+        ),
+        "the process list and the CONFIG popover do not keep the system stack"
+    );
+    assert_eq!(
+        flat.matches("--font-ui:").count(),
+        3,
+        "a rule other than the base, the FONT control and the exceptions sets the UI face"
     );
     assert_eq!(
         flat.matches("--font-display:").count(),
         2,
-        "an unlisted theme sets the display face"
+        "a rule other than the base and the FONT control sets the display face"
     );
+    assert!(
+        !flat.contains("[data-theme=\"cyberpunk\"] { --font"),
+        "the cyberpunk pair still carries a face of its own"
+    );
+    // ACC-LAYOUT-74-RESERVED-WIDTH: the width of a value's widest form is the
+    // same text in the element's own font, so the reserve follows whichever
+    // face the FONT control selected (the narrow face's 654.5 unit digits
+    // included) and a value change moves nothing under either choice.
+    let reserved = rule("[data-w]::before {");
+    assert!(
+        reserved.contains("content: attr(data-w)"),
+        "the reserved width is not the widest form's own text"
+    );
+    assert!(
+        !reserved.contains("font-family"),
+        "the reserved width names a face instead of inheriting the selected one"
+    );
+    // The process list's Program and Command cells are the single exception:
+    // they keep the mono stack, and the Pid cell follows the UI face.
+    for selector in [".ptable .mono {", ".ptable .tree {"] {
+        assert!(
+            rule(selector).contains("font-family: var(--mono)"),
+            "{selector} does not keep the mono stack"
+        );
+    }
+    let (_, _, page) = get(&app, "/").await;
+    let page = String::from_utf8(page).expect("utf-8 page");
+    assert!(
+        page.contains(r#"data-font="system""#),
+        "the root element does not carry the default font choice"
+    );
+    let snapshot = fixture_snapshot();
+    let first = snapshot.proc.entries.first().expect("a process row");
+    let [page, fragment] = proc_documents(&snapshot).await;
+    let pid = first.pid;
+    for html in [&page, &fragment] {
+        assert!(
+            html.contains(&format!(r#"<td class="num">{pid}</td><td class="mono">"#)),
+            "the Pid cell is not plain or the Program cell is not mono"
+        );
+        assert!(
+            !html.contains(r#"<td class="num mono">"#),
+            "a Pid cell keeps the mono stack"
+        );
+    }
+}
+
+/// ACC-THEME-154-NARROW-FONT, ACC-THEME-167-NARROW-ONLY: the narrow face is
+/// the only Galaxa face served; it ships byte for byte, app.css carries its
+/// @font-face and token, and the FONT control is the one rule that reads it.
+#[tokio::test]
+async fn narrow_font_is_served_with_its_own_font_face() {
+    let app = app(Some(Snapshot::default()), true);
+    let (status, headers, body) = get(&app, "/assets/fonts/GalaxaLabsTronNarrow-VF.ttf").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        content_type(&headers).starts_with("font/"),
+        "{}",
+        content_type(&headers)
+    );
+    let embedded = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts/GalaxaLabsTronNarrow-VF.ttf"),
+    )
+    .expect("narrow font asset");
+    assert_eq!(body, embedded, "the route serves the embedded bytes");
+
+    let css = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
+        .expect("app.css");
+    let face = css
+        .split("@font-face")
+        .find(|block| block.contains("GalaxaLabsTron Narrow"))
+        .expect("the narrow @font-face");
+    for line in [
+        "font-family: \"GalaxaLabsTron Narrow\";",
+        "font-weight: 400 900;",
+        "font-display: swap;",
+        "src: url(\"fonts/GalaxaLabsTronNarrow-VF.ttf\") format(\"truetype\");",
+    ] {
+        assert!(face.contains(line), "the narrow @font-face lacks {line}");
+    }
+    let flat: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("--font-narrow: \"GalaxaLabsTron Narrow\", var(--ui);"),
+        "app.css lacks the narrow font token"
+    );
+    assert_eq!(
+        flat.matches("--font-narrow:").count(),
+        1,
+        "the narrow token must be defined once"
+    );
+    assert_eq!(
+        flat.matches("var(--font-narrow)").count(),
+        2,
+        "a rule other than the FONT control reads the narrow face"
+    );
+    assert!(
+        flat.contains(
+            "[data-font=\"galaxatron\"] { --font-ui: var(--font-narrow); \
+             --font-display: var(--font-narrow); \
+             --track: calc(0.5px + 0.01em); letter-spacing: var(--track); }"
+        ),
+        "the FONT control does not select the narrow face"
+    );
+}
+
+/// ACC-THEME-155-FONT-TOGGLE: the CONFIG general page carries a FONT row of
+/// exactly two house chips, System first and on by default, and theme.js
+/// stores the choice under its own key and writes the root attribute.
+#[tokio::test]
+async fn font_control_offers_system_and_galaxatron() {
+    let (_, _, body) = get(&app(Some(Snapshot::default()), true), "/").await;
+    let page = String::from_utf8(body).expect("utf-8 page");
+    let start = page.find("data-group=\"font\"").expect("font row");
+    let row = &page[start..start + page[start..].find("</div>").expect("row end")];
+    assert!(row.contains(r#"role="radiogroup""#), "{row}");
+    let values: Vec<&str> = row
+        .match_indices("data-value=\"")
+        .map(|(at, needle)| {
+            let value = &row[at + needle.len()..];
+            &value[..value.find('"').expect("chip end")]
+        })
+        .collect();
+    assert_eq!(values, ["system", "galaxatron"], "{row}");
+    assert!(
+        row.contains(
+            r#"class="opt on" type="button" role="radio" aria-checked="true" data-value="system""#
+        ),
+        "System is not the default option: {row}"
+    );
+    assert!(
+        row.contains(
+            r#"class="opt" type="button" role="radio" aria-checked="false" data-value="galaxatron""#
+        ),
+        "GalaxaTron is not offered: {row}"
+    );
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/theme.js"))
+        .expect("theme.js");
+    for line in [
+        "var FONT_KEY = \"btop-web-font\";",
+        "root.setAttribute(\"data-font\", font);",
+        "write(FONT_KEY, font);",
+    ] {
+        assert!(js.contains(line), "theme.js lacks {line}");
+    }
+}
+
+/// ACC-THEME-155-FONT-TOGGLE: a browser that stored the removed pair's id
+/// falls back to Default without an error; the picker's first option is
+/// Default and theme.js rewrites the stored id before the first paint.
+#[tokio::test]
+async fn a_stored_galaxatron_theme_falls_back_to_default() {
+    let (_, _, body) = get(&app(Some(Snapshot::default()), true), "/").await;
+    let page = String::from_utf8(body).expect("utf-8 page");
+    let start = page.find("id=\"theme-picker\"").expect("theme picker");
+    let select = &page[start..start + page[start..].find("</select>").expect("closed picker")];
+    assert!(
+        select.contains(r#"<option value="default">Default</option>"#),
+        "the picker's first option is not Default: {select}"
+    );
+    assert!(!select.contains("default-galaxatron"), "{select}");
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/theme.js"))
+        .expect("theme.js");
+    for line in [
+        "if (theme === \"default-galaxatron\") {",
+        "theme = \"default\";",
+        "if (!known && picker.options.length > 0) {",
+    ] {
+        assert!(js.contains(line), "theme.js lacks the fallback: {line}");
+    }
 }
 
 #[tokio::test]
@@ -2224,7 +2846,7 @@ fn config_app(
     config: Config,
     file: Option<PathBuf>,
 ) -> (Router, watch::Sender<Config>) {
-    let (_sender, receiver) = watch::channel(Some(Snapshot::default()));
+    let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(Snapshot::default()))));
     let mut state = AppState::new(receiver, readonly);
     state.config.send_replace(config);
     state.config_file = Arc::new(tokio::sync::Mutex::new(file));
@@ -2236,13 +2858,14 @@ async fn page_of(app: &Router) -> String {
     String::from_utf8(get(app, "/").await.2).expect("utf-8 page")
 }
 
-/// A config file under the test target's temp dir; never a real btop.conf.
+/// A btop-web.conf under the test target's temp dir; never a real
+/// ~/.config and never a btop.conf.
 fn temp_conf(name: &str, text: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("config-pages")
         .join(name);
     std::fs::create_dir_all(&dir).expect("temp dir");
-    let path = dir.join("btop.conf");
+    let path = dir.join("btop-web.conf");
     std::fs::write(&path, text).expect("temp config");
     path
 }
@@ -2272,6 +2895,62 @@ async fn post_config(app: &Router, body: &str, origin: Option<&str>) -> (StatusC
         status,
         String::from_utf8(body.to_vec()).expect("utf-8 body"),
     )
+}
+
+/// ACC-NET-143-AGENT-MODES: a client applies no server option, so its config
+/// menu carries no server group and the POST boundary refuses the write the
+/// local agent's shared file would otherwise receive. The strip it does show
+/// is not a tier field, and its poll and chip links are relative so they
+/// resolve under a proxy's trailing-slash path.
+#[tokio::test]
+async fn client_mode_has_no_server_rows_and_refuses_config_posts() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("client-mode-config")
+        .join("client");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("client dir");
+    let key_file = dir.join("alpha.key");
+    std::fs::write(&key_file, "client-mode-access-key\n").expect("key file");
+    let connects = [Connect {
+        name: "alpha".to_string(),
+        addr: "127.0.0.1:1".to_string(),
+    }];
+    let keys = [ConnectKey {
+        name: "alpha".to_string(),
+        source: btop_web::secret::Source::Path(key_file),
+    }];
+    let client = btop_web::client::Client::start(&connects, &keys, &dir.join("known_agents"))
+        .expect("client");
+    let conf = temp_conf("client-mode", "update_ms = 250\n");
+    let (_sender, receiver) = watch::channel(None);
+    let mut state = AppState::new(receiver, false);
+    state.client = Some(Arc::new(client));
+    state.config_file = Arc::new(tokio::sync::Mutex::new(Some(conf.clone())));
+    let app = btop_web::app(state);
+
+    let page = page_of(&app).await;
+    assert!(!page.contains("id=\"agents\" data-p="), "{page}");
+    assert!(
+        page.contains("hx-get=\"agents?agent=alpha\""),
+        "the strip poll is not relative: {page}"
+    );
+    assert!(
+        page.contains("href=\"?agent=alpha\" aria-current=\"page\""),
+        "{page}"
+    );
+    assert!(
+        !page.contains("server · all viewers"),
+        "client menu offers server rows: {page}"
+    );
+
+    // The boundary refuses the write; the shared file is untouched.
+    let (status, body) = post_config(&app, "key=update_ms&value=500", Some(ORIGIN)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body.contains("client"), "{body}");
+    assert_eq!(
+        std::fs::read_to_string(&conf).expect("config"),
+        "update_ms = 250\n"
+    );
 }
 
 /// The opening tag and inner HTML of the element whose `role` is `role`.
@@ -2321,8 +3000,8 @@ async fn config_menu_is_a_tablist_of_seven_pages() {
 }
 
 /// ACC-VIEW-104-CONFIG-DIM: the page carries exactly one scrim element,
-/// app.css dims the page with it in both modes, and app.js shows it with the
-/// popover.
+/// app.css blackens the page behind it in both modes, and app.js shows it
+/// with the popover.
 #[tokio::test]
 async fn config_menu_dims_the_page_behind_it() {
     let page = page_of(&app(Some(Snapshot::default()), true)).await;
@@ -2362,8 +3041,8 @@ async fn config_menu_dims_the_page_behind_it() {
     }
     assert!(
         rule(":root[data-mode=\"light\"] .scrim {")
-            .contains("background: color-mix(in srgb, var(--surface) 35%, transparent);"),
-        "the light-mode scrim does not fade toward the surface token"
+            .contains("background: color-mix(in srgb, #000 25%, transparent);"),
+        "the light-mode scrim does not blacken the page"
     );
     let js = asset("app.js");
     for hook in [
@@ -2452,9 +3131,9 @@ async fn config_pages_hold_their_options() {
     );
 }
 
-/// ACC-VIEW-108-NUM-MOTION: the general page's number row offers the six
-/// effects as house-chip radios, each titled in plain words; none is on for a
-/// browser with no stored choice.
+/// ACC-VIEW-108-NUM-MOTION: the general page's number row offers the five
+/// effects as house-chip radios, each named plainly and titled with its
+/// mechanism; none is on for a browser with no stored choice.
 #[tokio::test]
 async fn config_offers_the_number_animation_effects() {
     let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
@@ -2479,16 +3158,20 @@ async fn config_offers_the_number_animation_effects() {
     );
     let options = [
         ("none", "none", "none - instant update", true),
-        ("spring", "spring", "spring up", false),
-        ("blur", "blur", "motion blur (echoes)", false),
-        ("odometer", "odometer", "odometer", false),
+        ("spring", "spring up", "count up with an overshoot", false),
+        (
+            "blur",
+            "motion blur",
+            "old values fade behind the current one",
+            false,
+        ),
+        ("odometer", "odometer", "each changed digit rolls", false),
         (
             "spring-blur",
             "spring blur",
-            "spring up with motion blur",
+            "count up with fading echoes",
             false,
         ),
-        ("segment", "segment flip", "segment flip", false),
     ];
     assert_eq!(inner.matches("<button").count(), options.len(), "{inner}");
     for (value, label, title, on) in options {
@@ -2505,19 +3188,181 @@ async fn config_offers_the_number_animation_effects() {
     assert_eq!(inner.matches("class=\"opt on\"").count(), 1, "{inner}");
 }
 
+/// ACC-VIEW-108-NUM-MOTION: a change of effect never interrupts a transition
+/// already in flight. That transition finishes under its own mechanism and the
+/// new choice starts with the next value; only the motion toggle, pause and a
+/// hidden tab stop one.
+#[test]
+fn a_number_mode_change_leaves_a_running_transition_to_finish() {
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
+        .expect("app.js");
+    assert!(
+        !js.contains(r#"if (numMode === "none") cancelNumberRuns();"#),
+        "a change of effect cancels a running transition"
+    );
+    assert!(
+        js.contains(r#"if (!motionPref) cancelNumberRuns();"#),
+        "the motion toggle does not stop a running transition"
+    );
+    assert!(
+        js.contains(r#"if (stale || paused) cancelNumberRuns();"#),
+        "pause does not stop a running transition"
+    );
+}
+
+/// ACC-VIEW-120-ANIM-COMPLETE, ACC-VIEW-121-FLUID and
+/// ACC-VIEW-126-RATE-THRESHOLD: the animated stat values carry their full
+/// display range; a change under one percent of it starts no effect; and only
+/// the spring effects retarget a running effect, while the odometer and the
+/// blur trail hold the newest reading until their own end.
+#[tokio::test]
+async fn number_effects_retarget_continuous_motion_by_display_range() {
+    let snapshot = fixture_snapshot();
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    assert!(
+        page.contains(r#"data-range="100" id="cpu-total""#),
+        "the CPU total does not name its 100 point display range"
+    );
+    let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
+    let memory = format!(
+        r#"<span class="stat-value" data-w="0000" data-range="{}" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#,
+        snapshot.mem.ram_used_range()
+    );
+    assert!(
+        page.contains(&memory),
+        "the memory value does not name its display range"
+    );
+    let processes = format!(
+        r#"data-range="{}" id="proc-total">{}</span>"#,
+        snapshot.proc.chart_max,
+        snapshot.proc.total.expect("process total")
+    );
+    assert!(
+        page.contains(&processes),
+        "the process total does not name its display range"
+    );
+
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
+        .expect("app.js");
+    for marker in [
+        "var NUM_RATE = 0.01;",
+        "function numSignificant(el, before, after)",
+        "if (!numSignificant(el, before, after)) return;",
+        "if (run && run.retarget && previous.text !== text)",
+        "numBegin(index, host, finish, retarget);",
+        "numBegin(index, host, stop, null);",
+    ] {
+        assert!(js.contains(marker), "app.js lacks {marker}");
+    }
+    assert_eq!(
+        js.matches("numBegin(index, host, stop, null);").count(),
+        2,
+        "the blur and the odometer are not both discrete"
+    );
+}
+
+/// DEF-VIEW-80-SEGMENT-FLIP: the segment effect is removed, so a browser that
+/// stored "segment" keeps numMode at its "none" default: a stored value
+/// applies only when NUM_MODES names it, and no effect layer is built.
+#[test]
+fn stored_segment_mode_falls_back_to_none() {
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
+        .expect("app.js");
+    assert!(
+        js.contains(r#"var NUM_MODES = ["none", "spring", "blur", "odometer", "spring-blur"];"#),
+        "NUM_MODES is not the five effects"
+    );
+    assert!(
+        js.contains(r#"if (NUM_MODES.indexOf(numStored) !== -1) numMode = numStored;"#),
+        "a stored mode is not checked against NUM_MODES"
+    );
+    assert!(
+        !js.contains("segment"),
+        "the segment effect is still in app.js"
+    );
+}
+
+/// DEF-VIEW-81-ODOMETER-SMALL and ACC-VIEW-131-LOAD-WIDTH: an effect starts
+/// only on the large stat values and on the load figures, which opt in with
+/// data-num; every other smaller host switches instantly, so no copy at 12 px
+/// builds a layer, and the two share one path at one duration.
+#[test]
+fn number_effects_are_gated_to_the_large_stat_values() {
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
+        .expect("app.js");
+    assert!(
+        js.contains(
+            r#"if (!el.classList.contains("stat-value") && !el.hasAttribute("data-num")) return;"#
+        ),
+        "playNumber has no stat-value or data-num gate"
+    );
+}
+
 /// ACC-VIEW-75-PANEL-MENU: one right-click menu of Off, S, M and L, after
 /// `</main>`, so no swapped fragment holds it.
 #[tokio::test]
 async fn panel_menu_offers_off_and_the_three_sizes_outside_the_fragments() {
     let page = page_of(&app(Some(fixture_snapshot()), true)).await;
     let menus = roles(&page, "menu");
-    assert_eq!(menus.len(), 1);
-    let sizes: Vec<_> = roles(menus[0].1, "menuitemradio")
+    let panel = menus
+        .iter()
+        .find(|(tag, _)| attribute(tag, "id") == Some("panel-menu"))
+        .expect("panel menu");
+    let sizes: Vec<_> = roles(panel.1, "menuitemradio")
         .iter()
         .map(|(tag, _)| attribute(tag, "data-size"))
         .collect();
     assert_eq!(sizes, [Some("off"), Some("s"), Some("m"), Some("l")]);
     assert!(page.find(r#"id="panel-menu""#) > page.find("</main>"));
+}
+
+/// ACC-VIEW-140-COLUMN-MENU: the process header's right-click menu lists
+/// every optional column with its state and renders Program, which carries
+/// the tree, disabled; the stylesheet hides a switched-off column with
+/// .col-off.
+#[tokio::test]
+async fn proc_column_menu_lists_every_optional_column_and_pins_program() {
+    let page = page_of(&app(Some(fixture_snapshot()), true)).await;
+    let at = page
+        .find(r#"<div class="panel-menu" id="proc-col-menu""#)
+        .expect("column menu");
+    let menu = &page[at..at + page[at..].find("</div>").expect("menu end") + "</div>".len()];
+    let items = roles(menu, "menuitemcheckbox");
+    let keys: Vec<_> = items
+        .iter()
+        .map(|(tag, _)| attribute(tag, "data-col"))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            Some("pid"),
+            Some("name"),
+            Some("command"),
+            Some("threads"),
+            Some("user"),
+            Some("mem"),
+            Some("cpu")
+        ]
+    );
+    let (program, _) = items[1];
+    assert!(
+        program.contains(" disabled") && program.contains(r#"aria-disabled="true""#),
+        "the Program entry is not disabled: {program}"
+    );
+    assert!(
+        page.find(r#"id="proc-col-menu""#) > page.find("</main>"),
+        "the column menu sits inside a swapped fragment"
+    );
+    let css: String =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
+            .expect("app.css")
+            .split_whitespace()
+            .collect();
+    assert!(
+        css.contains(".col-off{display:none;}"),
+        "app.css lacks the .col-off rule"
+    );
 }
 
 #[tokio::test]
@@ -2564,6 +3409,10 @@ async fn read_write_config_rows_are_forms() {
         "changes apply to every viewer and are saved to {}",
         path.display()
     )));
+    assert!(
+        page.contains("$XDG_CONFIG_HOME/btop-web/ when set, else ~/.config/btop-web/"),
+        "the note does not state where the path comes from"
+    );
     for option in SERVER_OPTIONS {
         let (tag, row) = elements_with(&page, "data-key")
             .into_iter()
@@ -2583,7 +3432,7 @@ async fn read_write_config_rows_are_forms() {
 
     let (app, _) = config_app(false, Config::defaults(), None);
     assert!(page_of(&app).await.contains(
-        "changes apply to every viewer until restart; no config file was loaded (-c PATH)"
+        "changes apply to every viewer until restart; no btop-web.conf path: set HOME or XDG_CONFIG_HOME"
     ));
 }
 
@@ -2644,10 +3493,32 @@ async fn config_post_refuses_invalid_values_and_other_keys() {
     }
 }
 
+/// ACC-CONF-147-OPTIONS-EDIT: read-only keeps every server row as text and
+/// refuses a write with a stated reason; the file and the live configuration
+/// stay as they were.
 #[tokio::test]
-async fn config_post_writes_one_line_of_the_file() {
-    let original = default_config_text();
-    let path = temp_conf("write", &original);
+async fn read_only_config_post_is_refused_with_a_reason() {
+    let path = temp_conf("readonly-refusal", "update_ms = 250\n");
+    let (app, live) = config_app(true, Config::defaults(), Some(path.clone()));
+    for option in SERVER_OPTIONS {
+        let body = format!("key={}&value=x", option.key);
+        let (status, answer) = post_config(&app, &body, Some(ORIGIN)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{}", option.key);
+        assert_eq!(answer, READ_ONLY_REFUSAL, "{}", option.key);
+    }
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("file"),
+        "update_ms = 250\n"
+    );
+    assert_eq!(*live.borrow(), Config::defaults());
+}
+
+/// ACC-CONF-147/148: a config POST rewrites only the changed key's line of
+/// btop-web.conf, keeps a key the page did not touch, appends a key the file
+/// lacks and creates a missing file with 0600.
+#[tokio::test]
+async fn config_post_writes_one_line_of_the_web_file() {
+    let path = temp_conf("write", "update_ms = 250\ncustom_unknown = keep\n");
     let (app, live) = config_app(false, Config::defaults(), Some(path.clone()));
     let (status, fragment) = post_config(&app, "key=update_ms&value=1000", Some(ORIGIN)).await;
     assert_eq!(status, StatusCode::OK);
@@ -2656,15 +3527,11 @@ async fn config_post_writes_one_line_of_the_file() {
         "saved to {}",
         std::fs::canonicalize(&path).expect("path").display()
     )));
-    let written = std::fs::read_to_string(&path).expect("file");
-    assert_eq!(written.lines().count(), original.lines().count());
-    for (now, was) in written.lines().zip(original.lines()) {
-        if was.starts_with("update_ms =") {
-            assert_eq!(now, "update_ms = 1000");
-        } else {
-            assert_eq!(now, was);
-        }
-    }
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("file"),
+        "update_ms = 1000\ncustom_unknown = keep\n",
+        "the untouched key and every other line stay"
+    );
     assert_eq!(live.borrow().update_ms, 1000);
 
     // A key the file lacks is appended.
@@ -2677,6 +3544,30 @@ async fn config_post_writes_one_line_of_the_file() {
         "update_ms = 250\ncustom_cpu_name = \"Lab CPU\"\n"
     );
     assert_eq!(live.borrow().custom_cpu_name, "Lab CPU");
+
+    // A web file that does not exist yet is created with 0600.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("config-pages/new-file");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("btop-web.conf");
+    let (app, live) = config_app(false, Config::defaults(), Some(path.clone()));
+    let (status, _) = post_config(&app, "key=show_swap&value=False", Some(ORIGIN)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("file"),
+        "show_swap = False\n"
+    );
+    assert_eq!(
+        std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600,
+        "a created btop-web.conf is private"
+    );
+    assert!(!live.borrow().show_swap);
 
     // A symlinked path keeps its link; the file it names changes.
     let target = temp_conf("symlink", "show_swap = True\n");
@@ -2698,13 +3589,147 @@ async fn config_post_writes_one_line_of_the_file() {
     );
 }
 
+/// `value` as an `application/x-www-form-urlencoded` form value.
+fn form_encode(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            b' ' => encoded.push('+'),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+/// The valid value this test writes through `option`'s own control: the
+/// opposite bool, the next int, a different chip or select choice, or a
+/// string that passes that key's parser.
+fn control_value(option: &btop_web::config::ServerOption, current: &str) -> String {
+    match option.control {
+        Control::Bool => (if current == "True" { "False" } else { "True" }).to_string(),
+        Control::Int { min, max } => {
+            let current: i64 = current.parse().expect("an int value");
+            let next = if current < max {
+                current + 1
+            } else {
+                current - 1
+            };
+            assert!((min..=max).contains(&next), "{}: {next}", option.key);
+            next.to_string()
+        }
+        Control::Chips(choices) | Control::Choice(choices) => {
+            let choices: Vec<&str> = choices.iter().map(|(value, _)| *value).collect();
+            choices
+                .into_iter()
+                .find(|value| *value != current)
+                .expect("a second choice")
+                .to_string()
+        }
+        Control::Text if option.key == "cpu_core_map" => "4:0 5:1".to_string(),
+        Control::Text => "web edit".to_string(),
+    }
+}
+
+/// ACC-CONF-147-OPTIONS-EDIT and ACC-CONF-148-OWN-FILE: every option the
+/// server page lists accepts a value through its own control, gets exactly
+/// its line in btop-web.conf, reaches the running config, and a restart with
+/// btop.conf as the baseline reads every value back; btop.conf is untouched.
+#[tokio::test]
+async fn every_server_option_writes_its_line_and_overrides_the_baseline_at_restart() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("config-pages/all-keys");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    // btop.conf holds only the baseline interval; every other key the web
+    // file writes is absent from it.
+    let base = dir.join("btop.conf");
+    std::fs::write(&base, "update_ms = 250\n").expect("baseline");
+    let base_before = std::fs::read(&base).expect("baseline bytes");
+    let web = dir.join("btop-web.conf");
+    let mut config = Config::defaults();
+    let (app, live) = config_app(false, config.clone(), Some(web.clone()));
+    for option in SERVER_OPTIONS {
+        let current = config.get(option.key).expect("a value");
+        let value = control_value(&option, &current);
+        let line = config.set(option.key, &value).expect(option.key);
+        let body = format!("key={}&value={}", option.key, form_encode(&value));
+        let (status, fragment) = post_config(&app, &body, Some(ORIGIN)).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{} = {value}: {fragment}",
+            option.key
+        );
+        assert!(fragment.contains("saved to"), "{}: {fragment}", option.key);
+        assert_eq!(
+            *live.borrow(),
+            config,
+            "{} did not reach the running config",
+            option.key
+        );
+        let written = std::fs::read_to_string(&web).expect("web file");
+        assert!(
+            written.contains(&format!("{line}\n")),
+            "{} lacks `{line}`: {written}",
+            option.key
+        );
+    }
+    assert_eq!(
+        std::fs::read(&base).expect("baseline"),
+        base_before,
+        "btop.conf changed"
+    );
+    // A restart applies the web file over the btop.conf baseline.
+    let restarted = Config::load_with_web(Some(&base), Some(&web)).expect("restart");
+    for option in SERVER_OPTIONS {
+        assert_eq!(
+            config.get(option.key),
+            restarted.get(option.key),
+            "{} did not survive a restart",
+            option.key
+        );
+    }
+    assert_ne!(
+        restarted.update_ms, 250,
+        "the web file did not override the baseline"
+    );
+}
+
+/// ACC-CONF-147-OPTIONS-EDIT: a write that cannot reach the file leaves the
+/// running config at its old value and says so in the row.
+#[tokio::test]
+async fn a_failed_config_write_keeps_the_running_config_and_says_so() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("config-pages/failed-write");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let blocker = dir.join("blocked");
+    std::fs::write(&blocker, "a file, not a directory").expect("blocker");
+    let path = blocker.join("btop-web.conf");
+    let mut config = Config::defaults();
+    config.set("update_ms", "500").expect("valid");
+    let (app, live) = config_app(false, config.clone(), Some(path));
+    let (status, fragment) = post_config(&app, "key=update_ms&value=1000", Some(ORIGIN)).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{fragment}");
+    assert!(fragment.contains("refused: could not write"), "{fragment}");
+    assert!(fragment.contains("nothing changed"), "{fragment}");
+    assert!(
+        fragment.contains(r#"value="500""#),
+        "the row does not show the running value: {fragment}"
+    );
+    assert_eq!(*live.borrow(), config);
+    let page = page_of(&app).await;
+    assert!(page.contains(r#"id="cfg-update_ms" value="500""#), "{page}");
+}
+
 #[tokio::test]
 async fn config_post_without_a_file_applies_until_restart() {
     let (app, live) = config_app(false, Config::defaults(), None);
     let (status, fragment) = post_config(&app, "key=update_ms&value=1000", Some(ORIGIN)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        fragment.contains("applied until restart; no config file loaded"),
+        fragment.contains("applied until restart; no btop-web.conf path"),
         "{fragment}"
     );
     assert_eq!(live.borrow().update_ms, 1000);
@@ -2758,4 +3783,335 @@ async fn network_scale_rows_persist_through_the_config_path() {
         assert!(page.contains(marker), "the reloaded page lacks {marker}");
     }
     assert!(page.contains("network scale · all viewers"));
+}
+
+/// ACC-PERF-149-SPLIT-CADENCE: the CONFIG proc page carries the process
+/// refresh row as a house-chip group of 250, 500, 1000, 2000 and 5000 ms,
+/// default 1000. A chosen value reaches the live config, is written to the
+/// file, and a read-only server shows the value and refuses the write.
+#[tokio::test]
+async fn proc_refresh_row_is_a_house_chip_group_that_persists() {
+    let path = temp_conf("proc-refresh", &default_config_text());
+    let (app, live) = config_app(false, Config::defaults(), Some(path.clone()));
+    let page = page_of(&app).await;
+    let (tag, row) = elements_with(&page, "data-key")
+        .into_iter()
+        .find(|(tag, _)| attribute(tag, "data-key") == Some("proc_refresh_ms"))
+        .expect("the process refresh row");
+    assert!(tag.starts_with(r#"<form class="cfg-key""#), "{tag}");
+    for value in ["250", "500", "1000", "2000", "5000"] {
+        assert!(
+            row.contains(&format!(r#"type="submit" name="value" value="{value}""#)),
+            "the {value} chip is missing: {row}"
+        );
+    }
+    assert!(
+        row.contains(r#"value="1000" aria-pressed="true""#),
+        "1000 is not the default chip: {row}"
+    );
+    assert!(
+        !row.contains("<select") && !row.contains(r#"type="number""#),
+        "the refresh row is not a chip group: {row}"
+    );
+
+    let (status, fragment) =
+        post_config(&app, "key=proc_refresh_ms&value=2000", Some(ORIGIN)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(live.borrow().proc_refresh_ms, 2000);
+    assert!(
+        fragment.contains(r#"value="2000" aria-pressed="true""#),
+        "{fragment}"
+    );
+    assert!(
+        std::fs::read_to_string(&path)
+            .expect("file")
+            .contains("proc_refresh_ms = 2000\n"),
+        "the chosen period was not written"
+    );
+    assert!(
+        page_of(&app)
+            .await
+            .contains(r#"value="2000" aria-pressed="true""#),
+        "the reloaded page lacks the saved period"
+    );
+
+    // A read-only server shows the value and offers no control to change it.
+    let (app, _) = config_app(true, live.borrow().clone(), None);
+    let page = page_of(&app).await;
+    let (tag, row) = elements_with(&page, "data-key")
+        .into_iter()
+        .find(|(tag, _)| attribute(tag, "data-key") == Some("proc_refresh_ms"))
+        .expect("the process refresh row");
+    assert!(!tag.contains("<form") && !row.contains("<button"), "{row}");
+    assert!(
+        row.contains(r#"<span class="cfg-val">2000</span>"#),
+        "{row}"
+    );
+    let (status, _) = post_config(&app, "key=proc_refresh_ms&value=250", Some(ORIGIN)).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a read-only server wrote the refresh period"
+    );
+}
+
+/// ACC-PERF-142-WAKE-FAST: a sleeping server answers the page with a first
+/// frame under 50 ms that runs no slow collector: the fast values are current
+/// and the held walk and ring ride along, while the GPU values follow in a
+/// later event. The tree is recorded under `tests/fixtures`, never the host:
+/// `/proc` and the recorded AMD card's `/sys` copied side by side, which is
+/// how [`btop_web::collector::sys_root`] pairs them.
+#[tokio::test]
+async fn waking_from_sleep_sends_the_first_frame_fast() {
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR")).join("wake-fast");
+    let _ = std::fs::remove_dir_all(&base);
+    copy_tree(&fixture("proc"), &base.join("proc"));
+    copy_tree(&fixture("gpu/sys"), &base.join("sys"));
+    let mut config = Config::defaults();
+    config.proc_root = base.join("proc");
+    config.update_ms = 250;
+    let (updates, receiver) = watch::channel(config);
+    let sampler = btop_web::collector::spawn(receiver);
+    let mut state = AppState::new(sampler.snapshots.clone(), true);
+    state.wake = Arc::clone(&sampler.wake);
+    state.config = updates;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        axum::serve(listener, btop_web::app(state))
+            .await
+            .expect("serve");
+    });
+
+    // Warm up: the page's first tick runs the slow pass, then the sampler
+    // parks, holding no timer.
+    let (_, warm) = timed_page(address).await;
+    assert!(warm.contains("GPU metrics unavailable"), "{warm}");
+    let warm_held = sampler.snapshots.borrow().clone().expect("the warm frame");
+    let warm_name = warm_held
+        .snapshot
+        .proc
+        .entries
+        .iter()
+        .find(|entry| entry.pid == 222)
+        .and_then(|entry| entry.name.clone())
+        .expect("pid 222's name");
+    let mut frames = sampler.snapshots.clone();
+    frames.borrow_and_update();
+    tokio::time::timeout(std::time::Duration::from_millis(600), frames.changed())
+        .await
+        .expect_err("the sampler stayed awake while nothing was connected");
+
+    // A process and 100 user plus 100 idle CPU ticks appear while the server
+    // sleeps. The first post-wake frame reports the new CPU value but reuses
+    // the process walk it already held, so it does not list the new pid: no
+    // slow collector ran. The next slow pass picks both up.
+    bump_cpu_stat(&base.join("proc/stat"));
+    copy_tree(&base.join("proc/222"), &base.join("proc/999"));
+
+    let (first_frame, page) = timed_page(address).await;
+    println!("first frame after a sleep: {first_frame:?}");
+    assert!(
+        first_frame < std::time::Duration::from_millis(50),
+        "the first frame after a sleep took {first_frame:?}"
+    );
+    assert!(
+        page.contains(r#"data-slow-ms="1000" data-slow-seq="1""#),
+        "the first snapshot ran the slow pass"
+    );
+    assert!(
+        page.contains(r#"id="cpu-total">50</span>"#),
+        "the first frame lacks the CPU value: {page}"
+    );
+    let mem_used = r#"id="mem-used">"#;
+    let at = page.find(mem_used).expect("the first frame lacks mem-used") + mem_used.len();
+    assert!(
+        page[at..].starts_with(|value: char| value.is_ascii_digit()),
+        "the first frame's memory value is unavailable"
+    );
+    // The held walk rides in the first frame, so the pid that appeared while
+    // the server slept is not invented by a slow pass on the wake tick.
+    assert!(
+        page.contains(r#"<td class="num">222</td>"#),
+        "the first frame lost the held process walk"
+    );
+    assert!(
+        !page.contains(r#"<td class="num">999</td>"#),
+        "the first frame rebuilt the process walk"
+    );
+    // The sweep has not landed: the GPU panel shows its unavailable state,
+    // never a zero.
+    assert!(
+        page.contains(r#"<p class="unavailable">GPU metrics unavailable</p>"#),
+        "the first frame's GPU panel is not unavailable"
+    );
+    assert!(
+        !page.contains("AMD GPU") && !page.contains(r#"data-gpu="0""#),
+        "the first frame invented a GPU value"
+    );
+
+    // The GPU values follow in a later event of the same stream: the held
+    // frame's gpu event carries the unavailable state, a later one the
+    // recorded card, and the slow pass that lands with it lists the new pid.
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect");
+    stream
+        .write_all(format!("GET /events HTTP/1.1\r\nHost: {address}\r\n\r\n").as_bytes())
+        .await
+        .expect("request");
+    let streamed = read_until(&mut stream, "AMD GPU", std::time::Duration::from_secs(5)).await;
+    let unavailable = streamed
+        .find("GPU metrics unavailable")
+        .unwrap_or_else(|| panic!("no first gpu event in {}", tail(&streamed)));
+    let values = streamed
+        .find("AMD GPU")
+        .unwrap_or_else(|| panic!("no gpu event with values in {}", tail(&streamed)));
+    assert!(
+        unavailable < values,
+        "the GPU values arrived before the unavailable state"
+    );
+    assert!(
+        streamed.contains("37%"),
+        "the gpu event lacks the recorded utilisation: {}",
+        tail(&streamed)
+    );
+    assert!(
+        streamed.contains(r#"<td class="num">999</td>"#),
+        "the slow pass after the wake did not list the new pid: {}",
+        tail(&streamed)
+    );
+    // The slow pass after the sleep read pid 222's identity from the same
+    // cache entry, not a new string: the LRU survives the sleep.
+    let after = sampler.snapshots.borrow().clone().expect("the slow frame");
+    let after_name = after
+        .snapshot
+        .proc
+        .entries
+        .iter()
+        .find(|entry| entry.pid == 222)
+        .and_then(|entry| entry.name.clone())
+        .expect("pid 222's name");
+    assert!(
+        Arc::ptr_eq(&warm_name, &after_name),
+        "the identity cache did not survive the sleep"
+    );
+
+    server.abort();
+    sampler.task.abort();
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// A recorded fixture tree by its path under `tests/fixtures`.
+fn fixture(relative: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(relative)
+}
+
+/// Copy a recorded tree into a private directory, so a test that changes its
+/// files never touches `tests/fixtures`.
+fn copy_tree(source: &Path, target: &Path) {
+    std::fs::create_dir_all(target).expect("tree");
+    for entry in std::fs::read_dir(source).expect("fixture tree") {
+        let entry = entry.expect("entry");
+        let destination = target.join(entry.file_name());
+        let path = entry.path();
+        if entry.file_type().expect("entry type").is_symlink() {
+            // The recorded sys tree keeps driver links whose targets are not
+            // recorded; the collector reads the link itself.
+            std::os::unix::fs::symlink(std::fs::read_link(&path).expect("link"), &destination)
+                .expect("link");
+        } else if path.is_dir() {
+            copy_tree(&path, &destination);
+        } else {
+            std::fs::copy(&path, &destination).expect("fixture file");
+        }
+    }
+}
+
+/// The page over a real socket, timed from the request to the last byte: the
+/// frame a viewer receives.
+async fn timed_page(address: std::net::SocketAddr) -> (std::time::Duration, String) {
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect");
+    let at = std::time::Instant::now();
+    stream
+        .write_all(
+            format!("GET / HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n").as_bytes(),
+        )
+        .await
+        .expect("request");
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.expect("page");
+    (
+        at.elapsed(),
+        String::from_utf8(response).expect("utf-8 page"),
+    )
+}
+
+/// The response text read until `needle` appears or `timeout` expires.
+async fn read_until(
+    stream: &mut tokio::net::TcpStream,
+    needle: &str,
+    timeout: std::time::Duration,
+) -> String {
+    let mut text = String::new();
+    let mut buffer = [0u8; 8192];
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await {
+            Ok(Ok(0)) | Ok(Err(_)) | Err(_) => return text,
+            Ok(Ok(read)) => {
+                text.push_str(&String::from_utf8_lossy(&buffer[..read]));
+                if text.contains(needle) {
+                    return text;
+                }
+            }
+        }
+    }
+}
+
+/// The last of `text`, for an assertion message that stays readable.
+fn tail(text: &str) -> &str {
+    let mut start = text.len().saturating_sub(2000);
+    while start < text.len() && !text.is_char_boundary(start) {
+        start += 1;
+    }
+    &text[start..]
+}
+
+/// Add 100 user and 100 idle ticks to the recorded `cpu` line, so the next
+/// sample reads 50 percent without the host's counters.
+fn bump_cpu_stat(path: &Path) {
+    // The recorded files are read-only; the private copy is the test's own.
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(path).expect("stat").permissions().mode();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode | 0o200))
+        .expect("stat permissions");
+    let text = std::fs::read_to_string(path).expect("stat");
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        if fields.next() == Some("cpu") {
+            let mut times: Vec<u64> = fields.map(|value| value.parse().expect("tick")).collect();
+            times[0] += 100;
+            times[3] += 100;
+            out.push_str(&format!(
+                "cpu {}",
+                times
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    std::fs::write(path, out).expect("stat");
 }

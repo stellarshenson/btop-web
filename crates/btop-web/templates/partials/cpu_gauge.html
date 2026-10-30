@@ -1,7 +1,16 @@
 <header class="ph"><h2 id="cpu-gauge-title">CPU</h2>{% if let Some(name) = snapshot.cpu.name %}<div class="cpu-name" data-p="3" data-field="cpu-name" title="{{ name }}">{{ name }}</div>{% endif %}{% if let Some(cores) = snapshot.cpu.cores_label() %}<span class="head-right meta" data-p="3" data-field="cpu-gauge-cores" data-tip="Core count, unit cores&#10;source: online cpus in /proc/stat&#10;in a container: cpuset.cpus.effective">{{ cores }} cores</span>{% endif %}</header>
 <div class="gauge-body">
   <div class="gauge" data-gauge="cpu" data-tip="CPU total, unit percent&#10;source: /proc/stat cpu line, sample delta&#10;arc and colour: 1 s EMA of the total&#10;ticks mark 0, 25, 50, 75 and 100" role="img"{% if let Some(pct) = snapshot.cpu.total_pct %} aria-label="CPU total {{ pct|fmt("{:.0}") }} percent"{% else %} aria-label="CPU unavailable" data-state="unavailable"{% endif %}>
-    <svg viewBox="0 0 {{ crate::chart::GAUGE_SIZE.width }} {{ crate::chart::GAUGE_SIZE.height }}" aria-hidden="true">
+    <svg class="g-circle" viewBox="0 0 {{ crate::chart::GAUGE_CIRCLE_SIZE.width }} {{ crate::chart::GAUGE_CIRCLE_SIZE.height }}" aria-hidden="true">
+      <path class="g-track" d="{{ crate::chart::gauge_arc_circle(Some(100.0)) }}"></path>
+      {% if let Some(arc) = snapshot.cpu.gauge_pct %}<path class="g-fill {{ crate::collector::band(**arc) }}" d="{{ crate::chart::gauge_arc_circle(*snapshot.cpu.gauge_pct) }}"></path>{% endif %}
+      <path class="g-tick" d="{{ crate::chart::gauge_ticks_circle(false) }}"></path>
+      <path class="g-tick major" d="{{ crate::chart::gauge_ticks_circle(true) }}"></path>
+      <g data-p="3" data-field="gauge-scale">{% for (x, y, text) in crate::chart::gauge_labels_circle() %}<text class="g-scale" x="{{ x|fmt("{:.2}") }}" y="{{ y|fmt("{:.2}") }}">{{ text }}</text>{% endfor %}</g>
+      {% if let Some(pct) = snapshot.cpu.total_pct %}<text class="g-value" x="54" y="66">{{ pct|fmt("{:.0}") }}<tspan class="g-unit" dx="2.65">%</tspan></text>
+      <text class="g-label" x="54" y="78">total</text>{% else %}<text class="g-label" x="54" y="70">unavailable</text>{% endif %}
+    </svg>
+    <svg class="g-squircle" viewBox="0 0 {{ crate::chart::GAUGE_SIZE.width }} {{ crate::chart::GAUGE_SIZE.height }}" aria-hidden="true">
       <path class="g-track" d="{{ crate::chart::gauge_arc(Some(100.0)) }}"></path>
       {% if let Some(arc) = snapshot.cpu.gauge_pct %}<path class="g-fill {{ crate::collector::band(**arc) }}" d="{{ crate::chart::gauge_arc(*snapshot.cpu.gauge_pct) }}"></path>{% endif %}
       <path class="g-tick" d="{{ crate::chart::gauge_ticks(false) }}"></path>
@@ -10,10 +19,15 @@
       {% if let Some(pct) = snapshot.cpu.total_pct %}<text class="g-value" x="54" y="66">{{ pct|fmt("{:.0}") }}<tspan class="g-unit" dx="2.65">%</tspan></text>
       <text class="g-label" x="54" y="78">total</text>{% else %}<text class="g-label" x="54" y="70">unavailable</text>{% endif %}
     </svg>
+    <svg class="g-wide" viewBox="{{ crate::chart::GAUGE_WIDE_VIEWBOX.0 }} {{ crate::chart::GAUGE_WIDE_VIEWBOX.1 }} {{ crate::chart::GAUGE_WIDE_VIEWBOX.2 }} {{ crate::chart::GAUGE_WIDE_VIEWBOX.3 }}" preserveAspectRatio="none" aria-hidden="true">
+      <path class="g-track" d="{{ crate::chart::gauge_arc(Some(100.0)) }}"></path>
+      {% if let Some(arc) = snapshot.cpu.gauge_pct %}<path class="g-fill {{ crate::collector::band(**arc) }}" d="{{ crate::chart::gauge_arc(*snapshot.cpu.gauge_pct) }}"></path>{% endif %}
+    </svg>
+    {% if let Some(pct) = snapshot.cpu.total_pct %}<div class="g-read" aria-hidden="true"><b>{{ pct|fmt("{:.0}") }}<i>%</i></b><span>total</span></div>{% else %}<div class="g-read" aria-hidden="true"><span>unavailable</span></div>{% endif %}
   </div>
   <div class="gauge-side facts" data-p="3" data-field="cpu-gauge-facts">
     {% if snapshot.cpu.cpu_hz.is_some() || snapshot.cpu.frequency_mhz.is_some() %}<div class="fact" data-tip="CPU frequency, unit MHz or GHz&#10;source: cpufreq policy0 scaling_cur_freq&#10;falls back to the first cpuinfo cpu MHz line"><span>frequency</span><b>{{ snapshot.cpu.frequency_label() }}</b></div>{% endif %}
-    {% if let Some(load) = snapshot.cpu.load_per_core_label() %}<div class="fact" data-tip="Load per core, unit tasks per core&#10;source: /proc/loadavg divided by {{ snapshot.cpu.cores_label().unwrap_or_default() }} cores&#10;1.00 means one runnable or blocked task per core"><span>load per core</span><b>{{ load }}</b><small>1 &middot; 5 &middot; 15 min</small></div>{% else if snapshot.container %}<div class="fact" data-tip="Load per core, unit tasks per core&#10;source: /proc/loadavg, not this container's&#10;unavailable: no cgroup load is readable"><span>load per core</span><span>unavailable</span></div>{% endif %}
+    {% if let Some(load) = snapshot.cpu.load_readout() %}<div class="fact load" data-tip="{{ load.tip }}"><span>load</span><b><span class="load-cell"><span data-w="{{ load.reserve }}" data-num>{{ load.one.figure }}</span>/{{ load.one.window }}</span> <span class="load-cell"><span data-w="{{ load.reserve }}" data-num>{{ load.five.figure }}</span>/{{ load.five.window }}</span> <span class="load-cell"><span data-w="{{ load.reserve }}" data-num>{{ load.fifteen.figure }}</span>/{{ load.fifteen.window }}</span></b></div>{% else if snapshot.container %}<div class="fact" data-tip="Load average, unit percent&#10;source: /proc/loadavg, not this container's&#10;unavailable: no cgroup load is readable"><span>load</span><span>unavailable</span></div>{% endif %}
     {% if let Some(busy) = snapshot.cpu.cores_busy() %}{% if let Some(cores) = snapshot.cpu.cores_label() %}<div class="fact" data-tip="Cores busy, unit cores&#10;source: CPU total × core count / 100&#10;btop's cores busy value, one decimal"><span>cores busy</span><b><span data-w="{{ snapshot.cpu.core_count().unwrap_or_default()|fmt("{:.1}") }}">{{ busy|fmt("{:.1}") }}</span> <small>of {{ cores }}</small></b></div>{% endif %}{% endif %}
     {% if snapshot.cpu.temperature_c.is_some() %}<div class="fact" data-tip="CPU temperature, unit degrees Celsius&#10;source: hwmon and thermal sysfs, m°C / 1000&#10;whole degrees, btop's sensor choice"><span>temperature</span><b>{{ snapshot.cpu.temperature_label() }}</b></div>{% endif %}
   </div>

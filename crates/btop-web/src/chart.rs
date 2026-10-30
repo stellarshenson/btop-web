@@ -28,8 +28,10 @@
 //! A sparse sampler therefore yields a choppier graph on purpose; no code
 //! path may stretch tau to fake smoothness.
 //!
-//! [`History::with_window`] spans a shorter window, [`PROC_WINDOW_MS`], for
-//! the process row graphs (ACC-VIEW-52-PROC-GRAPH).
+//! [`History::with_window`] spans a fixed window, [`PROC_WINDOW_MS`], for the
+//! process row graphs (ACC-VIEW-52-PROC-GRAPH); every panel history spans the
+//! configured [`WINDOW_MS`] default, set by [`History::set_window`]
+//! (ACC-VIEW-110-TIME-AXIS).
 //!
 //! ACC-GRAPH-67-SMOOTH-SCALE: an auto-scaled chart moves to a new ceiling
 //! over several frames through [`Scale`]; the server draws at the larger of
@@ -54,18 +56,26 @@ use spline1d::Spline;
 /// interval.
 pub const SMOOTHING_TAU_MS: f64 = 1000.0;
 
-/// The time every graph spans, matching the `240 s` axis of the 05 design.
-pub const WINDOW_MS: u64 = 240_000;
+/// The default time every graph spans: 3 minutes (ACC-VIEW-110-TIME-AXIS).
+pub const WINDOW_MS: u64 = 180_000;
 
 /// The time a process row graph spans: btop's 10 samples at its 2000 ms
 /// default (ACC-VIEW-52-PROC-GRAPH).
 pub const PROC_WINDOW_MS: u64 = 20_000;
 
-/// The history depth for one sampling interval: one [`WINDOW_MS`] window,
-/// never fewer than btop's 120 samples and never more than 2400.
-/// 250 ms gives 960 samples, 2000 ms gives 120.
-pub fn capacity(update_ms: u64) -> usize {
-    (WINDOW_MS / update_ms.max(1)).clamp(120, 2400) as usize
+/// The history depth for a `window_ms` window at one sampling interval: one
+/// slot per sample, at least two. 180 s gives 720 slots at 250 ms and 90 at
+/// 2000 ms; a 10 minute window at 100 ms gives 6000.
+pub fn capacity(window_ms: u64, update_ms: u64) -> usize {
+    (window_ms / update_ms.max(1)).max(2) as usize
+}
+
+/// The time the charts cover at an interval: `capacity` slots of `update_ms`,
+/// which is the window itself whenever the interval divides it
+/// (ACC-VIEW-110-TIME-AXIS). The axis labels read this, never the nominal
+/// window, so a coarse interval never draws a longer span than it claims.
+pub fn window(window_ms: u64, update_ms: u64) -> u64 {
+    capacity(window_ms, update_ms) as u64 * update_ms
 }
 
 /// One step of the 1 s exponential moving average: the first value seeds it,
@@ -371,6 +381,14 @@ impl History {
         }
     }
 
+    /// Report that this history spans `window_ms` from the next push
+    /// (ACC-VIEW-110-TIME-AXIS). A wider window keeps the samples held, so the
+    /// chart starts at their oldest and fills from the left; a narrower one
+    /// drops the oldest samples on the next push.
+    pub fn set_window(&mut self, window_ms: u64) {
+        self.window_ms = Some(window_ms);
+    }
+
     /// Record one tick taken `update_ms` after the previous one. `None` is a
     /// value the collector could not read and is skipped, never drawn as zero.
     /// The first sample seeds the average; after that each sample moves it by
@@ -381,10 +399,7 @@ impl History {
         };
         let smoothed = smooth(self.ema, value, update_ms);
         self.ema = Some(smoothed);
-        self.capacity = self.window_ms.map_or_else(
-            || capacity(update_ms),
-            |window| (window / update_ms.max(1)).max(2) as usize,
-        );
+        self.capacity = capacity(self.window_ms.unwrap_or(WINDOW_MS), update_ms);
         while self.samples.len() >= self.capacity {
             self.samples.pop_front();
         }
@@ -545,47 +560,153 @@ impl Scale {
     }
 }
 
-/// The radial gauge's viewBox (`0 0 108 114`), centre, arc radius and stroke.
-/// The arc band runs from radius 36 to 44; ticks start at 46, outside it, and
-/// the readout stays within [`GAUGE_READOUT_RADIUS`] of the centre.
+/// The squircle gauge's viewBox (`0 0 112 122`), centre, radius and stroke.
+/// The band's centreline is a superellipse with semi-axes [`GAUGE_RADIUS`];
+/// the stroke runs 4 units either side of it, the ticks start 6 units out,
+/// and the readout stays within [`GAUGE_READOUT_RADIUS`] of the centre. The
+/// canvas is wider and taller than the old circle's 108x114 to hold the scale
+/// labels outside the squircle's corners (ACC-VIEW-132-GAUGE-SQUIRCLE).
 pub const GAUGE_SIZE: Size = Size {
-    width: 108.0,
+    width: 112.0,
+    height: 122.0,
+};
+
+/// The circle gauge's viewBox (`0 0 112 114`), the same box the script drew
+/// before DEF-LAYOUT-90-LOAD-SHIFT: the server now renders both shapes and
+/// app.css shows the one the gauge body's height holds.
+pub const GAUGE_CIRCLE_SIZE: Size = Size {
+    width: 112.0,
     height: 114.0,
 };
+/// The wide gauge's viewBox (DEF-LAYOUT-94-SHORT-VIEW), `(x, y, width,
+/// height)` in [`GAUGE_SIZE`] units: the squircle band's geometry bounding
+/// box (14..94 by 26..99.64) grown by one unit on each side and by about 6.3
+/// units above and below, so an 8 px device-width stroke clears the gauge
+/// body's content edge by about 3 px when the box is stretched to the body.
+/// The short-view stylesheet stretches this box to the body, so the band
+/// takes the body's aspect.
+pub const GAUGE_WIDE_VIEWBOX: (f64, f64, f64, f64) = (13.0, 19.7, 82.0, 86.3);
 pub const GAUGE_CX: f64 = 54.0;
 pub const GAUGE_CY: f64 = 66.0;
 pub const GAUGE_RADIUS: f64 = 40.0;
 pub const GAUGE_STROKE: f64 = 8.0;
-/// The readout's bound: the arc's inner radius 36 minus a 2-unit margin.
+/// The readout's bound: the band's inner edge on the axes (36) minus a 2-unit
+/// margin. The squircle's corners stand further out, never closer.
 pub const GAUGE_READOUT_RADIUS: f64 = 34.0;
-const TICK_INNER: f64 = 46.0;
-const TICK_MINOR_OUTER: f64 = 50.0;
-const TICK_MAJOR_OUTER: f64 = 53.0;
-const TICK_LABEL_RADIUS: f64 = 62.0;
+/// The superellipse's exponent: 4 is the classic squircle, a rectangle with
+/// very round corners; 2 would be a circle.
+const SQUIRCLE_EXPONENT: f64 = 4.0;
+/// The circle's exponent, drawn by the circle the gauge fragment carries
+/// (DEF-LAYOUT-90-LOAD-SHIFT).
+const CIRCLE_EXPONENT: f64 = 2.0;
+/// Tick and label distances from the centreline, along the shape's normal.
+/// They are the old circle's radii 46, 50 and 53 and a label offset eight
+/// units beyond the longest tick, so the stack keeps its spacing relative to
+/// the band.
+const TICK_INNER: f64 = 6.0;
+const TICK_MINOR_OUTER: f64 = 10.0;
+const TICK_MAJOR_OUTER: f64 = 13.0;
+const TICK_LABEL_OFFSET: f64 = 21.0;
+/// The gauge scale's per-character box: 0.78 em, 6.24 units at the 8 px
+/// design size. It bounds the drawn advance, not the font's advance plus
+/// tracking: Chromium lays the 8 px labels out per rendered pixel, so the
+/// narrow face draws 0.758 em per character at 1280x720, 0.737 at 1440x900
+/// and 0.703 at 1024x768, against the 0.7275 em advance, and the system face
+/// draws 0.637 em. 0.78 em holds the widest with 0.02 em to spare while the
+/// `100` box still ends inside the viewBox. assets/app.js carries the same
+/// box as `GAUGE_SCALE_BOX.per_char` = 6.24.
+pub const GAUGE_SCALE_CHAR_EM: f64 = 0.78;
 
-/// A point at percentage `pct` on radius `rho`: 0 at the lower left, 50 at the
-/// top, 100 at the lower right, over 270 degrees.
-fn gauge_point(pct: f64, rho: f64) -> (f64, f64) {
+/// The arc samples every two percent of the sweep: a chord strays under a
+/// quarter of a rendered pixel from the squircle, and the payload stays half
+/// the size of a one-percent sample. Its two end segments run along the exact
+/// tangent, so the butt caps are square to the shape's normal.
+const GAUGE_STEP: f64 = 2.0;
+const GAUGE_CAP: f64 = 0.4;
+
+/// A point on the superellipse of `exponent`, `out` units outward along the
+/// shape's normal: 0 at the lower left, 50 at the top, 100 at the lower right,
+/// over 270 degrees. Sampling by direction keeps the ticks evenly spaced, as
+/// they were on the circle.
+fn gauge_point_on(pct: f64, out: f64, exponent: f64) -> (f64, f64) {
     let theta = (-135.0 + 2.7 * pct.clamp(0.0, 100.0)) * PI / 180.0;
-    (GAUGE_CX + rho * theta.sin(), GAUGE_CY - rho * theta.cos())
+    let (sin, cos) = theta.sin_cos();
+    let rho =
+        GAUGE_RADIUS * (sin.abs().powf(exponent) + cos.abs().powf(exponent)).powf(-1.0 / exponent);
+    let (x, y) = (rho * sin, -rho * cos);
+    // Outward normal of |x|^n + |y|^n = R^n: (x|x|^(n-2), y|y|^(n-2)), normalised.
+    let (nx, ny) = (
+        x * x.abs().powf(exponent - 2.0),
+        y * y.abs().powf(exponent - 2.0),
+    );
+    let norm = nx.hypot(ny);
+    (
+        GAUGE_CX + x + out * nx / norm,
+        GAUGE_CY + y + out * ny / norm,
+    )
 }
 
-/// The gauge arc from 0 to `pct`. `None`, a non-finite value and zero or less
-/// draw nothing; the full track is `gauge_arc(Some(100.0))`.
-pub fn gauge_arc(pct: Option<f64>) -> String {
+/// A point on the squircle, the server's default shape; the tests read it.
+#[cfg(test)]
+fn gauge_point(pct: f64, out: f64) -> (f64, f64) {
+    gauge_point_on(pct, out, SQUIRCLE_EXPONENT)
+}
+
+/// The unit tangent at percentage `pct`, pointing along the sweep.
+fn gauge_tangent_on(pct: f64, exponent: f64) -> (f64, f64) {
+    let step = 1e-4;
+    let (x0, y0) = gauge_point_on((pct - step).max(0.0), 0.0, exponent);
+    let (x1, y1) = gauge_point_on((pct + step).min(100.0), 0.0, exponent);
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let length = dx.hypot(dy);
+    (dx / length, dy / length)
+}
+
+#[cfg(test)]
+fn gauge_tangent(pct: f64) -> (f64, f64) {
+    gauge_tangent_on(pct, SQUIRCLE_EXPONENT)
+}
+
+/// The arc from 0 to `pct` along the superellipse of `exponent`. `None`, a
+/// non-finite value and zero or less draw nothing; the full track is the arc
+/// of 100.
+fn gauge_arc_on(pct: Option<f64>, exponent: f64) -> String {
     let Some(pct) = pct.filter(|pct| pct.is_finite() && *pct > 0.0) else {
         return String::new();
     };
     let pct = pct.min(100.0);
-    let (x0, y0) = gauge_point(0.0, GAUGE_RADIUS);
-    let (x1, y1) = gauge_point(pct, GAUGE_RADIUS);
-    let large = u8::from(2.7 * pct > 180.0);
-    format!("M{x0:.2} {y0:.2}A{GAUGE_RADIUS} {GAUGE_RADIUS} 0 {large} 1 {x1:.2} {y1:.2}")
+    let (x0, y0) = gauge_point_on(0.0, 0.0, exponent);
+    let (x1, y1) = gauge_point_on(pct, 0.0, exponent);
+    let cap = GAUGE_CAP.min((x1 - x0).hypot(y1 - y0) / 2.0);
+    let mut path = format!("M{x0:.3} {y0:.3}");
+    let (tx, ty) = gauge_tangent_on(0.0, exponent);
+    let _ = write!(path, "L{:.3} {:.3}", x0 + cap * tx, y0 + cap * ty);
+    let mut at = GAUGE_STEP;
+    while at < pct {
+        let (x, y) = gauge_point_on(at, 0.0, exponent);
+        let _ = write!(path, "L{x:.2} {y:.2}");
+        at += GAUGE_STEP;
+    }
+    let (tx, ty) = gauge_tangent_on(pct, exponent);
+    let _ = write!(path, "L{:.3} {:.3}", x1 - cap * tx, y1 - cap * ty);
+    let _ = write!(path, "L{x1:.3} {y1:.3}");
+    path
+}
+
+/// The gauge arc from 0 to `pct` along the squircle. `None`, a non-finite
+/// value and zero or less draw nothing; the full track is `gauge_arc(Some(100.0))`.
+pub fn gauge_arc(pct: Option<f64>) -> String {
+    gauge_arc_on(pct, SQUIRCLE_EXPONENT)
+}
+
+/// The same arc along the circle, the preferred shape.
+pub fn gauge_arc_circle(pct: Option<f64>) -> String {
+    gauge_arc_on(pct, CIRCLE_EXPONENT)
 }
 
 /// Tick marks every 10 percent: the eight minor ticks, or with `major` the
-/// three longer ones at 0, 50 and 100.
-pub fn gauge_ticks(major: bool) -> String {
+/// three longer ones at 0, 50 and 100. Each runs along the shape's normal.
+fn gauge_ticks_on(major: bool, exponent: f64) -> String {
     let mut path = String::new();
     for step in 0..=10 {
         let is_major = step == 0 || step == 5 || step == 10;
@@ -598,19 +719,39 @@ pub fn gauge_ticks(major: bool) -> String {
         } else {
             TICK_MINOR_OUTER
         };
-        let (x0, y0) = gauge_point(pct, TICK_INNER);
-        let (x1, y1) = gauge_point(pct, outer);
+        let (x0, y0) = gauge_point_on(pct, TICK_INNER, exponent);
+        let (x1, y1) = gauge_point_on(pct, outer, exponent);
         let _ = write!(path, "M{x0:.2} {y0:.2}L{x1:.2} {y1:.2}");
     }
     path
 }
 
+/// The squircle's tick marks.
+pub fn gauge_ticks(major: bool) -> String {
+    gauge_ticks_on(major, SQUIRCLE_EXPONENT)
+}
+
+/// The circle's tick marks.
+pub fn gauge_ticks_circle(major: bool) -> String {
+    gauge_ticks_on(major, CIRCLE_EXPONENT)
+}
+
 /// The scale labels `0`, `50` and `100`, centred outside the major ticks.
-pub fn gauge_labels() -> [(f64, f64, &'static str); 3] {
+fn gauge_labels_on(exponent: f64) -> [(f64, f64, &'static str); 3] {
     [(0.0, "0"), (50.0, "50"), (100.0, "100")].map(|(pct, text)| {
-        let (x, y) = gauge_point(pct, TICK_LABEL_RADIUS);
+        let (x, y) = gauge_point_on(pct, TICK_LABEL_OFFSET, exponent);
         (x, y, text)
     })
+}
+
+/// The squircle's scale labels.
+pub fn gauge_labels() -> [(f64, f64, &'static str); 3] {
+    gauge_labels_on(SQUIRCLE_EXPONENT)
+}
+
+/// The circle's scale labels.
+pub fn gauge_labels_circle() -> [(f64, f64, &'static str); 3] {
+    gauge_labels_on(CIRCLE_EXPONENT)
 }
 
 #[cfg(test)]
@@ -733,7 +874,9 @@ mod tests {
 
     #[test]
     fn a_full_history_builds_the_curve_and_its_area() {
-        let slots = capacity(2000);
+        let slots = capacity(WINDOW_MS, 2000);
+        let step = CPU_HISTORY.width / (slots - 1) as f64;
+        let steps = step.floor() as usize;
         let samples: Vec<f64> = (0..slots).map(|index| (index % 37) as f64 * 2.5).collect();
         let chart = ChartPath::new(
             &samples,
@@ -746,11 +889,19 @@ mod tests {
         );
         // The window is full: the line starts one knot after the oldest
         // sample (DEF-GRAPH-39-NET-JUMP).
-        assert!(chart.line.starts_with("M3.92 "), "{}", &chart.line[..12]);
-        // A slot is 467 / 119 = 3.92 units wide: the knot and two PCHIP
+        assert!(
+            chart.line.starts_with(&format!("M{step:.2} ")),
+            "{}",
+            &chart.line[..12]
+        );
+        // A slot is 467 / 89 = 5.25 units wide: the knot and four PCHIP
         // vertices per interval, then the one-slot tail.
-        assert_eq!(chart.line.matches('L').count(), (slots - 2) * 3 + 1);
-        assert!(chart.area.ends_with("L3.92 28.00Z"), "{}", chart.area);
+        assert_eq!(chart.line.matches('L').count(), (slots - 2) * steps + 1);
+        assert!(
+            chart.area.ends_with(&format!("L{step:.2} 28.00Z")),
+            "{}",
+            chart.area
+        );
         assert!(chart.area.ends_with('Z'));
         assert!(!chart.line.contains("NaN"));
     }
@@ -758,15 +909,39 @@ mod tests {
     #[test]
     fn history_keeps_the_newest_capacity_samples() {
         let mut history = History::new();
-        for value in 0..capacity(250) + 5 {
+        for value in 0..capacity(WINDOW_MS, 250) + 5 {
             history.push(Some(value as f64), 250);
         }
-        assert_eq!(history.len(), 960);
+        assert_eq!(history.len(), 720);
         history.push(None, 250);
-        assert_eq!(history.len(), 960);
+        assert_eq!(history.len(), 720);
         // A longer interval shrinks the window to its own capacity.
         history.push(Some(1.0), 2000);
-        assert_eq!(history.len(), 120);
+        assert_eq!(history.len(), 90);
+    }
+
+    /// ACC-VIEW-110-TIME-AXIS: a wider window keeps the samples held, so the
+    /// line starts at the oldest and fills from the left; a narrower one drops
+    /// the oldest samples on the next push.
+    #[test]
+    fn a_window_change_resizes_the_ring_without_moving_a_sample() {
+        let mut history = History::new();
+        for value in 0..300 {
+            history.push(Some(value as f64), 250);
+        }
+        assert_eq!(history.len(), 300);
+        history.set_window(60_000);
+        history.push(Some(300.0), 250);
+        assert_eq!(history.len(), 240, "the 1 minute window keeps 240 slots");
+        history.set_window(600_000);
+        history.push(Some(301.0), 250);
+        assert_eq!(history.len(), 241, "the held samples are kept");
+        let drawn = points(&history.chart(CPU_HISTORY, 0.0, 400.0).line);
+        assert!(
+            drawn[0].0 > CPU_HISTORY.width / 2.0,
+            "a partial window starts at its oldest sample, mid-plot: {:?}",
+            drawn[0]
+        );
     }
 
     #[test]
@@ -794,7 +969,7 @@ mod tests {
     #[test]
     fn a_spike_keeps_its_plotted_height_in_every_frame() {
         let mut history = History::new();
-        for _ in 0..capacity(250) {
+        for _ in 0..capacity(WINDOW_MS, 250) {
             history.push(Some(10.0), 250);
         }
         let mut heights = Vec::new();
@@ -817,7 +992,7 @@ mod tests {
     fn completed_knots_keep_their_value_and_move_left_one_step_per_tick() {
         let value = |tick: u64| ((tick * 7919) % 101) as f64;
         for size in [CPU_HISTORY, NET_PLOT, GPU_PLOT] {
-            let slots = capacity(250);
+            let slots = capacity(WINDOW_MS, 250);
             let step = size.width / (slots - 1) as f64;
             let bucket = (1.0 / step).ceil() as u64;
             let mut history = History::new();
@@ -877,7 +1052,7 @@ mod tests {
         let value = |tick: u64| ((tick * 7919) % 101) as f64;
         for update_ms in [250, 2000] {
             for size in [CPU_HISTORY, NET_PLOT, GPU_PLOT] {
-                let slots = capacity(update_ms);
+                let slots = capacity(WINDOW_MS, update_ms);
                 let step = size.width / (slots - 1) as f64;
                 let bucket = (1.0 / step).ceil();
                 let mut history = History::new();
@@ -1028,11 +1203,16 @@ mod tests {
     }
 
     #[test]
-    fn capacity_keeps_a_240_s_window() {
-        assert_eq!(capacity(250), 960);
-        assert_eq!(capacity(2000), 120);
-        assert_eq!(capacity(100), 2400);
-        assert_eq!(capacity(5000), 120);
+    fn capacity_keeps_the_default_window() {
+        assert_eq!(capacity(WINDOW_MS, 250), 720);
+        assert_eq!(capacity(WINDOW_MS, 2000), 90);
+        assert_eq!(capacity(WINDOW_MS, 100), 1800);
+        assert_eq!(capacity(WINDOW_MS, 5000), 36);
+        // The window option sizes the ring: 1, 2, 3, 5 and 10 minutes.
+        assert_eq!(capacity(60_000, 250), 240);
+        assert_eq!(capacity(600_000, 250), 2400);
+        assert_eq!(window(600_000, 250), 600_000);
+        assert_eq!(window(180_000, 250), 180_000);
     }
 
     #[test]
@@ -1132,7 +1312,7 @@ mod tests {
         let newest = drawn[drawn.len() - 2];
         let tail = drawn[drawn.len() - 1];
         assert_eq!(tail.1, newest.1, "the tail holds the newest knot's value");
-        let slot = CPU_HISTORY.width / capacity(250) as f64;
+        let slot = CPU_HISTORY.width / capacity(WINDOW_MS, 250) as f64;
         assert!((newest.0 - CPU_HISTORY.width).abs() < 0.01, "{newest:?}");
         assert!(
             (tail.0 - (CPU_HISTORY.width + slot)).abs() < 0.01,
@@ -1150,12 +1330,12 @@ mod tests {
             "{}",
             chart.area
         );
-        // A 2000 ms interval keeps 120 samples: one slot is 467 / 120 units.
+        // A 2000 ms interval keeps 90 samples: one slot is 467 / 90 units.
         history.push(Some(80.0), 2000);
-        assert_eq!(history.capacity, 120);
+        assert_eq!(history.capacity, 90);
         let wide = history.chart(CPU_HISTORY, 0.0, 100.0);
         let drawn = points(&wide.line);
-        assert!((drawn.last().expect("a tail").0 - 467.0 - 467.0 / 120.0).abs() < 0.01);
+        assert!((drawn.last().expect("a tail").0 - 467.0 - 467.0 / 90.0).abs() < 0.01);
         // A process row graph draws `line` and reaches only the right edge.
         let mut row = History::with_window(PROC_WINDOW_MS);
         row.push(Some(30.0), 250);
@@ -1171,56 +1351,95 @@ mod tests {
         (actual.0 - expected.0).abs() < 0.01 && (actual.1 - expected.1).abs() < 0.01
     }
 
-    /// The arc's end point and the SVG large-arc flag.
-    fn arc_end(path: &str) -> ((f64, f64), u8) {
-        let (_, arc) = path.split_once('A').expect("arc command");
-        let fields: Vec<&str> = arc.split(' ').collect();
-        let large = fields[3].parse().expect("large-arc flag");
-        let end = (
-            fields[5].parse().expect("end x"),
-            fields[6].parse().expect("end y"),
-        );
-        (end, large)
-    }
-
+    /// ACC-VIEW-132-GAUGE-SQUIRCLE: the arc is a 270-degree segment of a
+    /// superellipse, 0 at the lower left, 50 at the top, 100 at the lower
+    /// right; the radius at 45 degrees beats the axes' by at least 8 percent.
     #[test]
-    fn gauge_arc_spans_270_degrees() {
-        let (end, large) = arc_end(&gauge_arc(Some(50.0)));
-        assert!(close(end, (54.0, 26.0)), "{end:?}");
-        assert_eq!(large, 0);
-        let (end, large) = arc_end(&gauge_arc(Some(100.0)));
-        assert!(close(end, (82.28, 94.28)), "{end:?}");
-        assert_eq!(large, 1);
-        assert!(gauge_arc(Some(100.0)).starts_with("M25.72 94.28"));
+    fn gauge_arc_follows_the_squircle_over_270_degrees() {
+        let drawn = points(&gauge_arc(Some(100.0)));
+        assert!(close(drawn[0], gauge_point(0.0, 0.0)), "{:?}", drawn[0]);
+        assert!(close(
+            *drawn.last().expect("an end"),
+            gauge_point(100.0, 0.0)
+        ));
+        let half = points(&gauge_arc(Some(50.0)));
+        assert!(close(*half.last().expect("an end"), gauge_point(50.0, 0.0)));
+        assert!(close(gauge_point(50.0, 0.0), (54.0, 26.0)));
+        // Every vertex lies on the implicit superellipse.
+        for (x, y) in &drawn {
+            let (u, v) = ((x - GAUGE_CX) / GAUGE_RADIUS, (y - GAUGE_CY) / GAUGE_RADIUS);
+            let f = u.abs().powf(SQUIRCLE_EXPONENT) + v.abs().powf(SQUIRCLE_EXPONENT);
+            assert!((f - 1.0).abs() < 1e-3, "{f} at ({x}, {y})");
+        }
+        let (x, y) = gauge_point((45.0 + 135.0) / 2.7, 0.0);
+        let diagonal = (x - GAUGE_CX).hypot(y - GAUGE_CY) / GAUGE_RADIUS;
+        assert!(diagonal >= 1.08, "45 degrees: {diagonal}");
         for none in [Some(0.0), None, Some(f64::NAN), Some(-5.0)] {
             assert_eq!(gauge_arc(none), "", "{none:?}");
         }
         assert_eq!(gauge_arc(Some(150.0)), gauge_arc(Some(100.0)));
     }
 
+    /// ACC-VIEW-132: both end segments run within half a degree of the shape's
+    /// tangent, so the butt caps stay square to the normal at 0 and 100
+    /// percent and the value reads as a clean cut.
+    #[test]
+    fn gauge_arc_ends_square_to_the_normal() {
+        for pct in [100.0, 50.0, 12.3, 0.5] {
+            let drawn = points(&gauge_arc(Some(pct)));
+            assert!(close(drawn[0], gauge_point(0.0, 0.0)), "{pct}");
+            assert!(close(*drawn.last().expect("an end"), gauge_point(pct, 0.0)));
+            for (pair, at) in [
+                ((drawn[0], drawn[1]), 0.0),
+                ((drawn[drawn.len() - 2], drawn[drawn.len() - 1]), pct),
+            ] {
+                let (sx, sy) = (pair.1.0 - pair.0.0, pair.1.1 - pair.0.1);
+                let (tx, ty) = gauge_tangent(at);
+                let cos = (sx * tx + sy * ty) / (sx.hypot(sy) * tx.hypot(ty));
+                let angle = cos.clamp(-1.0, 1.0).acos().to_degrees();
+                assert!(angle < 0.5, "{pct} at {at}: {angle} degrees");
+            }
+        }
+    }
+
     #[test]
     fn gauge_ticks_are_eleven_with_three_major_outside_the_arc() {
+        // The stack's geometry: ticks start 2 units outside the band's edge,
+        // the readout clears the band's inner edge, and the labels clear the
+        // longest ticks.
+        const {
+            assert!(TICK_INNER > GAUGE_STROKE / 2.0);
+            assert!(GAUGE_READOUT_RADIUS < GAUGE_RADIUS - GAUGE_STROKE / 2.0);
+            assert!(TICK_LABEL_OFFSET - 4.0 > TICK_MAJOR_OUTER);
+        }
         let minor = gauge_ticks(false);
         let major = gauge_ticks(true);
         assert_eq!(minor.matches('M').count(), 8);
         assert_eq!(major.matches('M').count(), 3);
-        let outer_edge = GAUGE_RADIUS + GAUGE_STROKE / 2.0;
-        let inner_edge = GAUGE_RADIUS - GAUGE_STROKE / 2.0;
-        let radius = |(x, y): (f64, f64)| ((x - GAUGE_CX).powi(2) + (y - GAUGE_CY).powi(2)).sqrt();
         let mut ends = Vec::new();
-        for path in [&minor, &major] {
+        for (path, outer, steps) in [
+            (
+                &minor,
+                TICK_MINOR_OUTER,
+                &[10.0, 20.0, 30.0, 40.0, 60.0, 70.0, 80.0, 90.0][..],
+            ),
+            (&major, TICK_MAJOR_OUTER, &[0.0, 50.0, 100.0][..]),
+        ] {
             let drawn = points(path);
-            for pair in drawn.chunks(2) {
-                assert!(radius(pair[0]) >= 46.0 - 0.01 && radius(pair[0]) > outer_edge);
+            assert_eq!(drawn.len(), steps.len() * 2);
+            for (index, pair) in drawn.chunks(2).enumerate() {
+                let pct = steps[index];
+                assert!(close(pair[0], gauge_point(pct, TICK_INNER)), "{pct}");
+                assert!(close(pair[1], gauge_point(pct, outer)), "{pct}");
                 ends.push(pair[1]);
             }
         }
-        assert!(GAUGE_READOUT_RADIUS < inner_edge);
-        // A label box is 0.6 em per character by 1 em at font-size 8, centred
-        // on its point; it clears every tick end and stays in the viewBox.
+        // A label box is GAUGE_SCALE_CHAR_EM em per character by 9.4 units at
+        // the gauge scale's font-size, centred on its point; it clears every
+        // tick end and stays in the viewBox.
         for (x, y, text) in gauge_labels() {
-            let half_width = 0.6 * 8.0 * text.len() as f64 / 2.0;
-            let (left, right, top, bottom) = (x - half_width, x + half_width, y - 4.0, y + 4.0);
+            let half_width = GAUGE_SCALE_CHAR_EM * 8.0 * text.len() as f64 / 2.0;
+            let (left, right, top, bottom) = (x - half_width, x + half_width, y - 4.7, y + 4.7);
             assert!(
                 left >= 0.0 && right <= GAUGE_SIZE.width,
                 "{text}: {left}..{right}"
@@ -1233,10 +1452,73 @@ mod tests {
                 let dx = (left - tx).max(tx - right).max(0.0);
                 let dy = (top - ty).max(ty - bottom).max(0.0);
                 assert!(
-                    dx.hypot(dy) >= 2.0,
+                    dx.hypot(dy) >= 0.5,
                     "{text} touches the tick at ({tx}, {ty})"
                 );
             }
         }
+    }
+
+    /// DEF-LAYOUT-94-SHORT-VIEW: the wide gauge's viewBox is the squircle
+    /// band's geometry box plus a stroke margin, so the stretched band fills
+    /// the gauge body and its 8 px stroke clears the content edge. Every
+    /// point of the full arc stays inside it, and the ring's centre sits at
+    /// half the width and 53.65 percent of the height, where the short-view
+    /// stylesheet centres the HTML readout.
+    #[test]
+    fn wide_gauge_viewbox_is_the_band_geometry() {
+        let (x, y, width, height) = GAUGE_WIDE_VIEWBOX;
+        for (px, py) in points(&gauge_arc(Some(100.0))) {
+            assert!(
+                px >= x && px <= x + width && py >= y && py <= y + height,
+                "({px}, {py}) outside {GAUGE_WIDE_VIEWBOX:?}"
+            );
+        }
+        let across = (GAUGE_CX - x) / width;
+        let down = (GAUGE_CY - y) / height;
+        assert!((across - 0.5).abs() < 0.001, "across {across}");
+        assert!((down - 0.5365).abs() < 0.001, "down {down}");
+    }
+
+    /// DEF-LAYOUT-90-LOAD-SHIFT: the circle is the same 270-degree band with
+    /// exponent 2. Its 0 and 100 ends sit level at (25.716, 94.284) and
+    /// (82.284, 94.284), its body vertices trace radius 40 about (54, 66), and
+    /// its scale labels fit the 112x114 viewBox the stylesheet shows.
+    #[test]
+    fn circle_gauge_is_the_circle_inside_its_own_box() {
+        let drawn = points(&gauge_arc_circle(Some(100.0)));
+        assert!(close(drawn[0], (25.716, 94.284)), "{:?}", drawn[0]);
+        assert!(close(*drawn.last().expect("an end"), (82.284, 94.284)));
+        assert!(close(
+            gauge_point_on(50.0, 0.0, CIRCLE_EXPONENT),
+            (54.0, 26.0)
+        ));
+        for (x, y) in &drawn[2..drawn.len() - 2] {
+            let radius = (x - GAUGE_CX).hypot(y - GAUGE_CY);
+            assert!(
+                (radius - GAUGE_RADIUS).abs() < 0.01,
+                "{radius} at ({x}, {y})"
+            );
+        }
+        // The 100 percent fill ends on the track's end, and the two shapes
+        // never draw the same path.
+        assert_eq!(gauge_arc_circle(Some(100.0)), gauge_arc_circle(Some(150.0)));
+        assert_ne!(gauge_arc_circle(Some(50.0)), gauge_arc(Some(50.0)));
+        assert_eq!(gauge_arc_circle(None), "");
+        // The label box, GAUGE_SCALE_CHAR_EM em per character by 9.4 units at
+        // the gauge scale's font-size.
+        for (x, y, text) in gauge_labels_circle() {
+            let half_width = GAUGE_SCALE_CHAR_EM * 8.0 * text.len() as f64 / 2.0;
+            assert!(
+                x - half_width >= 0.0 && x + half_width <= GAUGE_CIRCLE_SIZE.width,
+                "{text}: {x}"
+            );
+            assert!(
+                y - 4.7 >= 0.0 && y + 4.7 <= GAUGE_CIRCLE_SIZE.height,
+                "{text}: {y}"
+            );
+        }
+        assert_eq!(gauge_ticks_circle(false).matches('M').count(), 8);
+        assert_eq!(gauge_ticks_circle(true).matches('M').count(), 3);
     }
 }

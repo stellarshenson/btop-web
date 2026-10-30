@@ -1,8 +1,26 @@
 //! Snapshot types, the sampling scheduler and the per-metric collectors.
 //!
-//! One sampler runs at `update_ms` and publishes a [`Snapshot`] through a
+//! One sampler runs at `update_ms` and publishes a [`Frame`] through a
 //! `tokio::watch` channel; every SSE client shares that value, so viewers do
-//! not multiply `/proc` reads.
+//! not multiply `/proc` reads or template renders.
+//!
+//! ACC-PERF-149-SPLIT-CADENCE: one sampler, two rates. Every tick runs the
+//! fast collectors (CPU, memory, network, load) and emits their values; a slow
+//! pass on the [`Config::proc_refresh_ms`] boundary rebuilds the process walk,
+//! the process counts and the chart paths, and every frame until the next slow
+//! pass reuses those results unchanged. The fast collectors run as before, so
+//! the slow pass changes when a value is recomputed, not how. A viewer that
+//! connects between slow passes gets the held slow result in its first frame
+//! (ACC-PERF-137-WAKE-BURST).
+//!
+//! ACC-PERF-136-SLEEP: with no SSE stream open the sampler parks on [`Wake`],
+//! holding no timer and reading no source, until `/` or `/events` wakes it for
+//! an immediate tick. ACC-PERF-137-WAKE-BURST: a subscriber receives the held
+//! snapshot at once, and after a sleep it waits at most one interval for the
+//! post-wake sample so the first frame carries current values.
+//! ACC-PERF-142-WAKE-FAST: the first sample after a sleep runs the fast
+//! collectors only and reuses the held walk and charts, so waking repeats no
+//! known work; its GPU sweep starts with the wake and lands in a later frame.
 //!
 //! Each collector mirrors the named btop function in
 //! `src/linux/btop_collect.cpp`: the same raw file, formula, units and delta
@@ -24,22 +42,25 @@
 
 pub mod container;
 pub mod cpu;
+pub mod frame;
 pub mod gpu;
 pub mod mem;
 pub mod net;
 pub mod proc;
 
+pub use frame::Frame;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 
 use crate::chart::{ChartPath, ScaleFrame};
-use crate::config::Config;
+use crate::config::{Config, LoadScale};
 
 /// Everything the dashboard renders for one sample.
 ///
@@ -57,30 +78,41 @@ pub struct Snapshot {
     /// The sampling interval this snapshot was taken at; 0 before the first
     /// sample.
     pub update_ms: u64,
+    /// The time the charts cover at this sample's interval and configured
+    /// window (ACC-VIEW-110-TIME-AXIS); 0 before the first sample.
+    pub window_ms: u64,
+    /// The slow pass's interval, the larger of `proc_refresh_ms` and
+    /// `update_ms`; 0 before the first sample (ACC-PERF-149-SPLIT-CADENCE).
+    pub slow_ms: u64,
+    /// The number of completed slow passes; 0 before the first sample. A
+    /// stream sends the process fragment when this changes, so the table and
+    /// the lines move at the slow rate while the values keep the fast one.
+    pub slow_seq: u64,
     /// btop-web runs in a container: the panels without a container source
     /// render as withheld (ACC-SCOPE-64-CONTAINER).
     pub container: bool,
 }
 
 impl Snapshot {
-    /// The time the charts span: the 240 s window, or `capacity` samples of a
-    /// longer interval. The page reads it with the interval to scroll a plot
-    /// between readouts (ACC-GRAPH-98-ANIM-CLOCK).
-    pub fn window_ms(&self) -> u64 {
-        crate::chart::capacity(self.update_ms) as u64 * self.update_ms
-    }
-
-    /// The shared time axis under the network plots: the window, then each
-    /// quarter of it, in seconds, oldest first. Empty before the first sample.
+    /// The shared time axis under the charts: the window, then each quarter of
+    /// it, in seconds, oldest first. Empty before the first sample.
     pub fn axis_labels(&self) -> Vec<String> {
-        if self.update_ms == 0 {
+        if self.window_ms == 0 {
             return Vec::new();
         }
-        let window_ms = self.window_ms();
+        let window_ms = self.window_ms;
         (1..=4)
             .rev()
             .map(|quarter| format!("{} s", window_ms * quarter / 4 / 1000))
             .collect()
+    }
+
+    /// The labels under a sparkline's interior vertical grid ticks, oldest
+    /// first (ACC-VIEW-128-TICK-LABELS): [`Self::axis_labels`] without its
+    /// left-edge label, because the plot boxes draw no tick at their left
+    /// edge. The page adds `now` at the right edge.
+    pub fn tick_labels(&self) -> Vec<String> {
+        self.axis_labels().into_iter().skip(1).collect()
     }
 }
 
@@ -93,6 +125,9 @@ pub struct CpuSnapshot {
     pub cores: Vec<CoreUsage>,
     pub frequency_mhz: Option<u64>,
     pub load_avg: Option<[f64; 3]>,
+    /// The reporting scale the page shows (ACC-VIEW-130-LOAD-SCALE), set
+    /// from the configuration on every sample.
+    pub load_scale: LoadScale,
     pub temperature_c: Option<f64>,
     pub battery_pct: Option<f64>,
     /// btop `Cpu::cpuName`, the short model name from `/proc/cpuinfo`.
@@ -168,6 +203,61 @@ impl CpuSnapshot {
         })
     }
 
+    /// The three load averages in the active reporting scale
+    /// (ACC-VIEW-130-LOAD-SCALE), as whole percent: of the whole machine
+    /// when normalised, of one core summed over the cores when aggregated.
+    pub fn load_percent(&self) -> Option<[f64; 3]> {
+        let load = self.load_avg?;
+        match self.load_scale {
+            LoadScale::Normalised => {
+                let cores = self.core_count()?;
+                (cores > 0.0).then(|| load.map(|value| value / cores * 100.0))
+            }
+            LoadScale::Aggregate => Some(load.map(|value| value * 100.0)),
+        }
+    }
+
+    /// The load line both places render (ACC-VIEW-129-LOAD-LABELS): each
+    /// average in the active scale with its kernel window, the widest figure
+    /// the line reserves (ACC-VIEW-131-LOAD-WIDTH), and the tooltip. `None`
+    /// when the load, or the core count the scale needs, is unreadable.
+    pub fn load_readout(&self) -> Option<LoadReadout> {
+        let percent = self.load_percent()?;
+        let reserve = match self.load_scale {
+            LoadScale::Normalised => String::from("100%"),
+            LoadScale::Aggregate => {
+                let cores = self.core_count()?;
+                (cores > 0.0).then(|| format!("{}%", (cores * 100.0).round() as u64))?
+            }
+        };
+        let cell = |index: usize, window: &'static str| LoadCell {
+            figure: format!("{:.0}%", percent[index]),
+            window,
+        };
+        let cores = self.cores_label().unwrap_or_default();
+        let tip = match self.load_scale {
+            LoadScale::Normalised => format!(
+                "Load average, unit percent of all cores\n\
+                 tasks runnable or blocked in I/O wait\n\
+                 1, 5 and 15 minute averages divided by {cores} cores\n\
+                 source: /proc/loadavg; container: its own tasks"
+            ),
+            LoadScale::Aggregate => format!(
+                "Load average, unit percent of one core\n\
+                 summed over all cores; {cores} cores cap it at {reserve}\n\
+                 1, 5 and 15 minute averages, times 100\n\
+                 source: /proc/loadavg; container: its own tasks"
+            ),
+        };
+        Some(LoadReadout {
+            one: cell(0, "1m"),
+            five: cell(1, "5m"),
+            fifteen: cell(2, "15m"),
+            reserve,
+            tip,
+        })
+    }
+
     /// The aggregate load of the cores: total usage times the core count /
     /// 100, as busy cores out of [`Self::core_count`].
     pub fn cores_busy(&self) -> Option<f64> {
@@ -195,13 +285,37 @@ impl CpuSnapshot {
     }
 
     /// Rows of the core list, filled column by column as btop lists cores:
-    /// at most 11, so 64 cores make 6 columns, C0-C10 in the first
-    /// (ACC-VIEW-48-CORE-BARS).
+    /// at most 16, so 64 cores make 4 columns and the meter keeps at least
+    /// 70 px of a 1440-wide row (ACC-VIEW-48-CORE-BARS,
+    /// ACC-VIEW-163-CORE-METER).
     pub fn core_rows(&self) -> usize {
         let cores = self.cores.len().min(64);
-        let columns = cores.div_ceil(11).max(1);
+        let columns = cores.div_ceil(16).max(1);
         cores.div_ceil(columns).max(1)
     }
+}
+
+/// One load figure with its kernel window (ACC-VIEW-129-LOAD-LABELS).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadCell {
+    pub figure: String,
+    pub window: &'static str,
+}
+
+/// The load line's parts, shared by the CPU sparkline header and the CPU
+/// gauge (ACC-VIEW-129-LOAD-LABELS).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadReadout {
+    /// The 1, 5 and 15 minute averages, each with its window.
+    pub one: LoadCell,
+    pub five: LoadCell,
+    pub fifteen: LoadCell,
+    /// The widest figure of the active scale, which every figure reserves
+    /// (ACC-VIEW-131-LOAD-WIDTH): `100%` normalised, the core count times
+    /// 100 aggregate.
+    pub reserve: String,
+    /// The stat tooltip: the value's name, then its source lines.
+    pub tip: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -230,12 +344,17 @@ pub struct MemSnapshot {
     pub ram_free: Option<u64>,
     pub ram_available: Option<u64>,
     /// The Memory bar's cache segment (DEF-VIEW-50-MEM-TERMS): MemAvailable -
-    /// MemFree on a host, the cgroup's reclaimable file and slab memory in a
-    /// container.
+    /// MemFree on a host, the cgroup's `inactive_file` in a container,
+    /// docker's cache term (DEF-VIEW-96-MEM-WRONG).
     pub ram_cache: Option<u64>,
-    /// The memory used outside this container; `None` on a host, where the
-    /// bar has no such segment.
+    /// The memory used outside this container; `None` on a host and when a
+    /// container's `memory.max` binds, where the bar has no such segment.
     pub ram_other: Option<u64>,
+    /// The container's `memory.max` when it is below MemTotal: the bar's total
+    /// is this limit, free is the room under it, and the header total is the
+    /// container's, not the host's. `None` on a host and when the limit is
+    /// `max` or at least MemTotal.
+    pub ram_limit: Option<u64>,
     pub ram_percent: Option<f64>,
     /// The memory gauge arc's value: the used history's 1 s EMA, `None`
     /// whenever this tick's raw value is unavailable (ACC-GRAPH-47).
@@ -267,12 +386,33 @@ impl MemSnapshot {
         usage(self.ram_used, self.ram_total)
     }
 
-    /// The used RAM as btop's humanized number and its unit, `("39.7",
-    /// "GiB")`, for readouts that set the unit smaller than the value.
+    /// The used RAM at stat size as its number and unit, `("23.8", "GiB")`,
+    /// for the two readouts that set the unit smaller than the value: the
+    /// Memory gauge's readout and the Memory tile's big value. One decimal
+    /// while the integer part is below three digits, none at three
+    /// (ACC-VIEW-161-MEM-SIZE); every other memory label keeps btop's
+    /// [`human`] form.
     pub fn ram_used_parts(&self) -> Option<(String, String)> {
-        let label = bytes(Some(self.ram_used?));
+        let label = stat_human(self.ram_used?);
         let (value, unit) = label.split_once(' ')?;
         Some((value.to_string(), unit.to_string()))
+    }
+
+    /// The Memory tile's full scale in the unit [`Self::ram_used_parts`]
+    /// prints, for the number effect's rate threshold (ACC-VIEW-126): the
+    /// effective total, so a change under one percent of it updates the text
+    /// without starting an effect. Empty when the value is unavailable.
+    pub fn ram_used_range(&self) -> String {
+        let Some((_, unit)) = self.ram_used_parts() else {
+            return String::new();
+        };
+        let Some(total) = self.ram_total else {
+            return String::new();
+        };
+        let Some(start) = UNITS.iter().position(|name| *name == unit) else {
+            return String::new();
+        };
+        format!("{:.0}", total as f64 / 1024_f64.powi(start as i32))
     }
 
     pub fn ram_bar(&self) -> Option<u8> {
@@ -535,9 +675,11 @@ impl ProcSnapshot {
 #[derive(Debug, Clone, Default)]
 pub struct ProcEntry {
     pub pid: i32,
-    /// btop `proc_info::name`, the `comm` value.
-    pub name: Option<String>,
-    pub user: Option<String>,
+    /// btop `proc_info::name`, the `comm` value. Shared by pointer between the
+    /// cache and every sample's row, so a tick copies no string
+    /// (DEF-PERF-76-SERVER-COST).
+    pub name: Option<Arc<str>>,
+    pub user: Option<Arc<str>>,
     /// btop `proc_info::cpu_p`.
     pub cpu_pct: Option<f64>,
     /// btop `proc_info::cpu_c`, cumulative CPU over the process age.
@@ -552,9 +694,12 @@ pub struct ProcEntry {
     /// btop `proc_info::depth`, the tree-view indentation level.
     pub depth: usize,
     pub state: Option<String>,
-    pub command: String,
+    pub command: Arc<str>,
     /// The row graph left of Cpu% (ACC-VIEW-52-PROC-GRAPH); empty without one.
     pub graph: ChartPath,
+    /// The graph's tone class: the band of the highest sample in its window,
+    /// so the bar keeps the tone of the history it draws (DEF-VIEW-67).
+    pub graph_tone: &'static str,
     /// ACC-VIEW-58-PROC-VIEW: the subtree totals a collapsed row shows; `Some`
     /// on rows with at least one child.
     pub sum: Option<ProcSum>,
@@ -571,6 +716,8 @@ pub struct ProcSum {
     /// The summed CPU graph; empty while no descendant used CPU in the last
     /// 10 updates, and on a row below the top level.
     pub graph: ChartPath,
+    /// The summed graph's tone class, from its own window's peak (DEF-VIEW-67).
+    pub graph_tone: &'static str,
 }
 
 impl ProcSum {
@@ -757,83 +904,416 @@ impl GpuDevice {
     }
 }
 
-/// Start the sampler. The returned receiver always holds the latest snapshot;
-/// `None` means the first sample has not landed yet. Aborting the returned
-/// task drops the sender, which ends every SSE stream.
+/// ACC-PERF-136-SLEEP: the sleep gate between the sampler and the request
+/// handlers. It counts the open SSE streams, remembers the page requests no
+/// sample has served yet, and knows when the last sample landed.
+///
+/// The sampler waits on [`Wake::changes`] while nothing is subscribed, so a
+/// parked server holds no timer and reads no source. `/` and `/events` bump
+/// the gate, and the sampler wakes to an immediate tick.
+pub struct Wake {
+    state: watch::Sender<WakeState>,
+    /// Whether a sampler is behind this gate. The one [`crate::AppState::new`]
+    /// builds has none, so its handlers never wait for a sample.
+    attached: bool,
+    /// When the last sample was published; `None` before the first one. Kept
+    /// out of the watch value so a tick does not wake the sleepers.
+    sampled_at: Mutex<Option<Instant>>,
+    /// Holds the channel open, so a change is never lost to a closed channel.
+    _keep: watch::Receiver<WakeState>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct WakeState {
+    /// Open SSE streams.
+    subscribers: usize,
+    /// Page requests no sample has served yet.
+    requests: usize,
+    /// The sampler has stopped its timer and waits for a change.
+    parked: bool,
+}
+
+impl Wake {
+    /// A gate with no sampler behind it.
+    pub fn detached() -> Arc<Self> {
+        Self::new(false)
+    }
+
+    fn attached() -> Arc<Self> {
+        Self::new(true)
+    }
+
+    fn new(attached: bool) -> Arc<Self> {
+        // A fresh server has nobody connected, so its sampler starts parked.
+        let (state, keep) = watch::channel(WakeState {
+            parked: attached,
+            ..WakeState::default()
+        });
+        Arc::new(Self {
+            state,
+            attached,
+            sampled_at: Mutex::new(None),
+            _keep: keep,
+        })
+    }
+
+    /// One open SSE stream; dropping the guard releases it.
+    pub fn subscribe(self: &Arc<Self>) -> Subscription {
+        self.modify(|state| state.subscribers += 1);
+        Subscription {
+            wake: Arc::clone(self),
+        }
+    }
+
+    /// A page request: the sampler produces a sample even with no stream open.
+    pub fn request(&self) {
+        self.modify(|state| state.requests += 1);
+    }
+
+    /// Whether the newest sample is missing or older than `interval`, so a
+    /// handler must wait for the next one instead of showing it.
+    pub fn stale(&self, interval: Duration) -> bool {
+        self.attached
+            && self
+                .sampled_at
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .is_none_or(|at| at.elapsed() > interval)
+    }
+
+    fn modify(&self, modify: impl FnOnce(&mut WakeState)) {
+        self.state.send_modify(modify);
+    }
+
+    /// A receiver that wakes on every subscription, request and park change.
+    fn changes(&self) -> watch::Receiver<WakeState> {
+        self.state.subscribe()
+    }
+
+    fn idle(&self) -> bool {
+        let state = self.state.borrow();
+        state.subscribers == 0 && state.requests == 0
+    }
+
+    fn parked(&self) -> bool {
+        self.state.borrow().parked
+    }
+
+    fn set_parked(&self, parked: bool) {
+        if self.parked() != parked {
+            self.modify(|state| state.parked = parked);
+        }
+    }
+
+    /// This tick serves every page request waiting for one.
+    fn take_requests(&self) {
+        if self.state.borrow().requests > 0 {
+            self.modify(|state| state.requests = 0);
+        }
+    }
+
+    fn sampled(&self) {
+        *self
+            .sampled_at
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(Instant::now());
+    }
+}
+
+/// One open SSE stream. The sampler stays awake while it lives.
+pub struct Subscription {
+    wake: Arc<Wake>,
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        self.wake
+            .modify(|state| state.subscribers = state.subscribers.saturating_sub(1));
+    }
+}
+
+/// ACC-PERF-149-SPLIT-CADENCE: the results of the last slow pass - the process
+/// walk, the process counts and every chart path - held so each fast frame
+/// reuses them unchanged and only the values move.
+#[derive(Default)]
+struct SlowPass {
+    /// Completed passes, counting from the first one.
+    seq: u64,
+    /// The interval this pass ran at, [`Config::proc_refresh_ms`] raised to
+    /// at least `update_ms` and rounded up to a tick boundary, because a slow
+    /// pass can never outrun a tick.
+    period_ms: u64,
+    proc: ProcSnapshot,
+    cpu_chart: ChartPath,
+    mem_chart: ChartPath,
+    net_down: ChartPath,
+    net_up: ChartPath,
+    scale_down: ScaleFrame,
+    scale_up: ScaleFrame,
+    gpu_charts: Vec<ChartPath>,
+}
+
+impl SlowPass {
+    /// Hold `snapshot`'s charts and process walk as pass `seq`.
+    fn new(snapshot: &Snapshot, seq: u64, period_ms: u64) -> Self {
+        Self {
+            seq,
+            period_ms,
+            proc: snapshot.proc.clone(),
+            cpu_chart: snapshot.cpu.chart.clone(),
+            mem_chart: snapshot.mem.used_chart.clone(),
+            net_down: snapshot.net.down_chart.clone(),
+            net_up: snapshot.net.up_chart.clone(),
+            scale_down: snapshot.net.scale_down.clone(),
+            scale_up: snapshot.net.scale_up.clone(),
+            gpu_charts: snapshot
+                .gpu
+                .devices
+                .iter()
+                .map(|device| device.chart.clone())
+                .collect(),
+        }
+    }
+
+    /// Put the held slow results back over a fast frame's freshly built ones.
+    fn apply(&self, snapshot: &mut Snapshot) {
+        snapshot.cpu.chart = self.cpu_chart.clone();
+        snapshot.mem.used_chart = self.mem_chart.clone();
+        snapshot.net.down_chart = self.net_down.clone();
+        snapshot.net.up_chart = self.net_up.clone();
+        snapshot.net.scale_down = self.scale_down.clone();
+        snapshot.net.scale_up = self.scale_up.clone();
+        snapshot.proc = self.proc.clone();
+        // A device the sweep added since the pass keeps the chart it just
+        // built, because the pass holds nothing for it.
+        for (device, chart) in snapshot.gpu.devices.iter_mut().zip(&self.gpu_charts) {
+            device.chart = chart.clone();
+        }
+    }
+}
+
+/// The running sampler: the snapshot channel, the sleep gate and the task.
+pub struct Sampler {
+    /// The latest frame behind an `Arc`; `None` until the first one lands.
+    /// Every client clones the pointer, not the sample or the fragments
+    /// (ACC-PERF-16-NO-OVERHEAD).
+    pub snapshots: watch::Receiver<Option<Arc<Frame>>>,
+    /// The gate `/` and `/events` wake.
+    pub wake: Arc<Wake>,
+    /// Aborting it drops the sender, which ends every SSE stream.
+    pub task: JoinHandle<()>,
+}
+
+/// Start the sampler, parked until the first request or stream.
 ///
 /// ACC-CONF-61-CONFIG-PAGES: a new `config` value applies from the next tick;
 /// a new `update_ms` starts a new interval at once, so every client sees the
 /// new cadence within two ticks. A GPU sweep in flight finishes on the old one.
-pub fn spawn(
-    mut config_updates: watch::Receiver<Config>,
-) -> (watch::Receiver<Option<Snapshot>>, JoinHandle<()>) {
+/// ACC-PERF-149-SPLIT-CADENCE: a new `proc_refresh_ms` makes the next tick a
+/// slow pass, which anchors the new period.
+pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
     let config = config_updates.borrow_and_update().clone();
     // btop's `Shared::init` collects the CPU counters before the runner
-    // starts, so its first drawn value is a delta over milliseconds.
+    // starts, so its first drawn value is a delta over milliseconds. This
+    // one read happens before the first park; nothing reads while parked.
     match &config.container {
         Some(container) => cpu::seed_container(&config.proc_root, container, config.update_ms),
         None => cpu::seed(&config.proc_root, config.update_ms),
     }
+    let wake = Wake::attached();
     // DEF-CPU-44: the container's load average counts its tasks every
     // LOAD_FREQ on its own timer, off the tick path, one count at a time; the
-    // first count ran in `seed_container`.
+    // first count ran in `seed_container`. ACC-PERF-136-SLEEP: it parks with
+    // the sampler, so a sleeping server counts nothing.
     if let Some(cgroup) = config.container.as_ref().and_then(|c| c.cgroup.clone()) {
-        let proc_root = config.proc_root.clone();
-        tokio::spawn(async move {
-            let start = tokio::time::Instant::now() + cpu::LOAD_FREQ;
-            let mut ticker = tokio::time::interval_at(start, cpu::LOAD_FREQ);
-            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            loop {
-                ticker.tick().await;
-                let (proc_root, cgroup) = (proc_root.clone(), cgroup.clone());
-                let count = move || cpu::count_container_load(&proc_root, &cgroup);
-                let _ = tokio::task::spawn_blocking(count).await;
-            }
-        });
+        spawn_load_counter(Arc::clone(&wake), config.proc_root.clone(), cgroup);
     }
     let (sender, receiver) = watch::channel(None);
-    let sampler = tokio::spawn(async move {
+    let sampler_wake = Arc::clone(&wake);
+    let task = tokio::spawn(async move {
         let mut config = Arc::new(config);
         let mut update_ms = config.update_ms;
         let proc_root = config.proc_root.clone();
         let mut mem = mem::MemCollector::default();
-        // The first GPU sweep runs before the first tick, as btop's init does;
-        // later sweeps run off the tick path (see `gpu`), at most one at a time.
-        let mut gpu_latest = gpu::collect(&proc_root, &config);
+        // GPU sweeps run off the tick path (see `gpu`), at most one at a time
+        // and one per slow pass, plus one started by each wake so its values
+        // land in a later frame without holding the first one
+        // (ACC-PERF-142-WAKE-FAST).
+        let mut gpu_latest = GpuSnapshot::default();
         let mut gpu_sweep: Option<JoinHandle<GpuSnapshot>> = None;
-        let mut ticker = ticker(update_ms);
+        let mut wake_sweep = false;
+        let mut ticker: Option<tokio::time::Interval> = None;
+        // ACC-PERF-149-SPLIT-CADENCE: the held slow results and the number of
+        // fast ticks before the next pass; 0 makes the next tick slow. The
+        // first tick after startup is slow; the first tick after a sleep is
+        // fast and the walk follows on the next tick (ACC-PERF-142-WAKE-FAST).
+        let mut slow = SlowPass::default();
+        let mut ticks_to_slow = 0_u64;
         loop {
-            tokio::select! {
-                _ = ticker.tick() => {}
-                Ok(()) = config_updates.changed() => {
-                    config = Arc::new(config_updates.borrow_and_update().clone());
-                    if config.update_ms != update_ms {
-                        update_ms = config.update_ms;
-                        ticker = self::ticker(update_ms);
-                    }
-                    continue;
+            if sampler_wake.idle() {
+                // ACC-PERF-136-SLEEP: nothing is connected, so no timer stays
+                // registered, no collector reads and no load count runs.
+                // Drop any pending timer, so a parked server holds none.
+                drop(ticker.take());
+                if let Some(sweep) = gpu_sweep.take() {
+                    sweep.abort();
                 }
+                // The held GPU values are dropped so the next frame never
+                // shows a value from before the sleep. ACC-PERF-142-WAKE-FAST:
+                // the held slow results stay, so the first post-wake frame
+                // reuses the walk and the charts it already knows instead of
+                // rebuilding them; the next slow pass refreshes them.
+                gpu_latest = GpuSnapshot::default();
+                sampler_wake.set_parked(true);
+                if sampler_wake.idle() {
+                    // Subscribe first, then check again: a change before the
+                    // receiver exists is caught by the check, one after it
+                    // wakes `changed`, so no wake is lost.
+                    let mut changes = sampler_wake.changes();
+                    if sampler_wake.idle() && changes.changed().await.is_err() {
+                        return;
+                    }
+                }
+                sampler_wake.set_parked(false);
+                // The first tick after a wake runs at once and reads the
+                // configuration that changed while parked.
+                config = Arc::new(config_updates.borrow_and_update().clone());
+                update_ms = config.update_ms;
+                // ACC-PERF-142-WAKE-FAST: after a sleep the first tick runs
+                // only the fast collectors and starts the GPU sweep, so the
+                // first frame waits for neither the walk nor the sweep; the
+                // held slow result rides along and the next tick refreshes
+                // it. The first wake after startup runs the slow pass at
+                // once, when no result is held.
+                let held = slow.seq > 0;
+                ticks_to_slow = u64::from(held);
+                wake_sweep = held;
+                ticker = Some(self::ticker(update_ms));
             }
+            let ticker = ticker.get_or_insert_with(|| self::ticker(update_ms));
+            ticker.tick().await;
+            // ACC-CONF-61-CONFIG-PAGES: apply a new configuration from the next
+            // tick; a new interval starts a fresh timer that ticks at once.
+            if config_updates.has_changed().unwrap_or(false) {
+                config = Arc::new(config_updates.borrow_and_update().clone());
+                if config.update_ms != update_ms {
+                    update_ms = config.update_ms;
+                    *ticker = self::ticker(update_ms);
+                }
+                // A new slow period applies from the next tick, which runs a
+                // slow pass at once and anchors the new period.
+                ticks_to_slow = 0;
+                continue;
+            }
+            sampler_wake.take_requests();
             if let Some(sweep) = gpu_sweep.take_if(|sweep| sweep.is_finished())
                 && let Ok(gpu) = sweep.await
             {
                 gpu_latest = gpu;
             }
-            if gpu_sweep.is_none() {
+            // ACC-PERF-149-SPLIT-CADENCE and DEF-PERF-76-SERVER-COST: the GPU
+            // sweep runs once per slow pass, not every tick. The readings are
+            // instantaneous, so a held sweep is the value the next one would
+            // return; the values move at the slow rate, and every tick still
+            // draws the held value (sample and hold), so the chart keeps the
+            // tick's time axis. btop at a 250 ms update reads NVML every
+            // cycle: this is the walk's stated cadence deviation, extended to
+            // the GPU, not a different formula or source.
+            // ACC-PERF-142-WAKE-FAST: a wake starts its own sweep at once,
+            // so its values land in a later frame of the same stream.
+            let sweep_due = std::mem::take(&mut wake_sweep) || ticks_to_slow == 0;
+            if sweep_due && gpu_sweep.is_none() {
                 let config = Arc::clone(&config);
                 gpu_sweep = Some(tokio::task::spawn_blocking(move || {
                     gpu::collect(&config.proc_root, &config)
                 }));
             }
             let mut gpu = gpu_latest.clone();
-            gpu::attach_charts(&proc_root, &mut gpu.devices, update_ms);
-            let snapshot = collect(&proc_root, &config, &mut mem, gpu);
-            if sender.send(Some(snapshot)).is_err() {
+            gpu::attach_charts(&proc_root, &mut gpu.devices, update_ms, config.window_ms());
+            let mut snapshot = collect_fast(&proc_root, &config, &mut mem, gpu);
+            // ACC-PERF-149-SPLIT-CADENCE: the slow pass rebuilds the process
+            // walk and the chart paths; a slow pass never outruns a tick, so
+            // its period is at least `update_ms` and lands on a tick boundary,
+            // which the page's chart clock reads as `slow_ms`. Counting ticks
+            // rather than wall time keeps the 1 s cadence off the timer's
+            // jitter: at 250 ms and 1000 ms every fourth tick is slow.
+            let every = config
+                .proc_refresh_ms
+                .max(config.update_ms)
+                .div_ceil(config.update_ms);
+            let period = every * config.update_ms;
+            if ticks_to_slow == 0 {
+                // The process collector's histories span wall-clock time, so
+                // they are told the slow period, not the tick.
+                let mut slow_config = (*config).clone();
+                slow_config.update_ms = period;
+                snapshot.proc = proc::collect(&proc_root, &slow_config);
+                slow = SlowPass::new(&snapshot, slow.seq + 1, period);
+                ticks_to_slow = every - 1;
+            } else {
+                ticks_to_slow -= 1;
+                slow.apply(&mut snapshot);
+            }
+            snapshot.slow_ms = slow.period_ms;
+            snapshot.slow_seq = slow.seq;
+            sampler_wake.sampled();
+            // ACC-PERF-16-NO-OVERHEAD: the fragments are rendered once, here,
+            // and every client shares them, so a viewer adds no render work.
+            if sender.send(Some(Arc::new(Frame::new(snapshot)))).is_err() {
                 break;
             }
         }
     });
-    (receiver, sampler)
+    Sampler {
+        snapshots: receiver,
+        wake,
+        task,
+    }
+}
+
+/// DEF-CPU-44 and ACC-PERF-136-SLEEP: the container's load count every
+/// [`cpu::LOAD_FREQ`] while the sampler is awake, one count at a time, and
+/// parked with it. The first count after a wake runs at once, so the shown
+/// load never predates the sleep.
+fn spawn_load_counter(wake: Arc<Wake>, proc_root: PathBuf, cgroup: PathBuf) {
+    spawn_load_counter_with(wake, move || {
+        cpu::count_container_load(&proc_root, &cgroup);
+    });
+}
+
+/// [`spawn_load_counter`] with the count injected, so a test can observe the
+/// steps without a `/proc` tree.
+fn spawn_load_counter_with(wake: Arc<Wake>, count: impl Fn() + Clone + Send + Sync + 'static) {
+    tokio::spawn(async move {
+        let mut changes = wake.changes();
+        loop {
+            while wake.parked() {
+                if changes.changed().await.is_err() {
+                    return;
+                }
+            }
+            let mut at = tokio::time::Instant::now();
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep_until(at) => {}
+                    // Only a park ends the loop; a subscription, request or
+                    // request reset goes back to the timer without counting.
+                    _ = changes.changed() => {
+                        if wake.parked() {
+                            break;
+                        }
+                        continue;
+                    }
+                }
+                if wake.parked() {
+                    break;
+                }
+                let count = count.clone();
+                let _ = tokio::task::spawn_blocking(count).await;
+                at += cpu::LOAD_FREQ;
+            }
+        }
+    });
 }
 
 /// A sampling interval whose first tick fires at once; a late tick is skipped.
@@ -843,20 +1323,25 @@ fn ticker(update_ms: u64) -> tokio::time::Interval {
     ticker
 }
 
-fn collect(
+/// The fast collectors, run every tick at `update_ms`; the process walk and
+/// the chart strings come from the last slow pass (ACC-PERF-149-SPLIT-CADENCE).
+fn collect_fast(
     proc_root: &Path,
     config: &Config,
     mem: &mut mem::MemCollector,
     gpu: GpuSnapshot,
 ) -> Snapshot {
+    let mut cpu = cpu::collect(proc_root, config);
+    cpu.load_scale = config.cpu_load;
     Snapshot {
-        cpu: cpu::collect(proc_root, config),
+        cpu,
         mem: mem.collect(proc_root, config),
         net: net::collect(proc_root, config),
-        proc: proc::collect(proc_root, config),
         gpu,
         update_ms: config.update_ms,
+        window_ms: crate::chart::window(config.window_ms(), config.update_ms),
         container: config.container.is_some(),
+        ..Snapshot::default()
     }
 }
 
@@ -1027,9 +1512,80 @@ fn human_with(value: u64, shorten: bool) -> String {
     out
 }
 
+/// The stat-size memory form (ACC-VIEW-161-MEM-SIZE): one decimal while the
+/// integer part is below three digits, none at three, so `23.8 GiB` and
+/// `99.9 GiB` keep the tenth and `100 GiB` and `123 GiB` drop it. Only the
+/// Memory gauge's readout and the Memory tile's big value use it; btop's
+/// [`human`] still prints the table cells, legend rows, tooltips and the
+/// header's total. Rounds rather than truncates, so the printed value is the
+/// nearest tenth and stays within the four-character reserve.
+fn stat_human(value: u64) -> String {
+    let mut start = 0;
+    let mut scaled = value as f64;
+    loop {
+        while scaled >= 1024.0 && start + 1 < UNITS.len() {
+            scaled /= 1024.0;
+            start += 1;
+        }
+        // The tenth is rounded before the width is chosen, so 99.96 prints
+        // `100` and not the five-character `100.0`.
+        let text = if start == 0 || (scaled * 10.0).round() >= 1000.0 {
+            format!("{scaled:.0}")
+        } else {
+            format!("{scaled:.1}")
+        };
+        if text != "1024" || start + 1 == UNITS.len() {
+            return format!("{text} {}", UNITS[start]);
+        }
+        // A value rounding up to the next unit's base takes the step rather
+        // than printing `1024 GiB`.
+        scaled /= 1024.0;
+        start += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ACC-VIEW-110-TIME-AXIS and ACC-VIEW-128-TICK-LABELS: the axis labels
+    /// read the window the charts cover, and a sparkline drops the left-edge
+    /// label because its plot box draws no tick there.
+    #[test]
+    fn the_axis_labels_follow_the_window() {
+        let snapshot = Snapshot {
+            update_ms: 250,
+            window_ms: 600_000,
+            ..Snapshot::default()
+        };
+        assert_eq!(snapshot.axis_labels(), ["600 s", "450 s", "300 s", "150 s"]);
+        assert_eq!(snapshot.tick_labels(), ["450 s", "300 s", "150 s"]);
+        assert!(Snapshot::default().axis_labels().is_empty());
+        assert!(Snapshot::default().tick_labels().is_empty());
+    }
+
+    /// ACC-VIEW-163-CORE-METER: the list fills at most 16 rows, so 64 cores
+    /// make 4 columns and every row keeps a meter wide enough to read; a
+    /// shorter list keeps one core per row until it reaches the cap.
+    #[test]
+    fn core_rows_stop_at_sixteen() {
+        let with = |n: usize| CpuSnapshot {
+            cores: (0..n)
+                .map(|i| CoreUsage {
+                    name: format!("cpu{i}"),
+                    usage_pct: None,
+                    smoothed_pct: None,
+                })
+                .collect(),
+            ..CpuSnapshot::default()
+        };
+        assert_eq!(with(64).core_rows(), 16);
+        assert_eq!(with(33).core_rows(), 11);
+        assert_eq!(with(17).core_rows(), 9);
+        assert_eq!(with(16).core_rows(), 16);
+        assert_eq!(with(8).core_rows(), 8);
+        assert_eq!(with(0).core_rows(), 1);
+    }
 
     #[test]
     fn load_per_core_label_keeps_four_characters_per_value() {
@@ -1039,6 +1595,53 @@ mod tests {
             ..CpuSnapshot::default()
         };
         assert_eq!(cpu.load_per_core_label().as_deref(), Some("0.25 9.99 12.5"));
+    }
+
+    /// ACC-VIEW-129-LOAD-LABELS, ACC-VIEW-130-LOAD-SCALE and
+    /// ACC-VIEW-131-LOAD-WIDTH: each average carries its window, the figure
+    /// is a whole percent in the active scale, and the line reserves that
+    /// scale's widest form - 100% normalised, the core count times 100
+    /// aggregate.
+    #[test]
+    fn load_readout_carries_windows_and_the_scales_widest_form() {
+        let cpu = CpuSnapshot {
+            load_avg: Some([32.0, 16.0, 9.6]),
+            effective_cpus: Some(64.0),
+            ..CpuSnapshot::default()
+        };
+        let normalised = cpu.load_readout().expect("a normalised readout");
+        assert_eq!(
+            (normalised.one.window, normalised.one.figure.as_str()),
+            ("1m", "50%")
+        );
+        assert_eq!(
+            (normalised.five.window, normalised.five.figure.as_str()),
+            ("5m", "25%")
+        );
+        assert_eq!(
+            (
+                normalised.fifteen.window,
+                normalised.fifteen.figure.as_str()
+            ),
+            ("15m", "15%")
+        );
+        assert_eq!(normalised.reserve, "100%");
+        let aggregate = CpuSnapshot {
+            load_scale: LoadScale::Aggregate,
+            ..cpu.clone()
+        }
+        .load_readout()
+        .expect("an aggregate readout");
+        assert_eq!(aggregate.one.figure, "3200%");
+        assert_eq!(aggregate.five.figure, "1600%");
+        assert_eq!(aggregate.fifteen.figure, "960%");
+        assert_eq!(aggregate.reserve, "6400%");
+        // A load without a core count has no normalised percent to show.
+        let uncounted = CpuSnapshot {
+            load_avg: Some([1.0, 1.0, 1.0]),
+            ..CpuSnapshot::default()
+        };
+        assert!(uncounted.load_readout().is_none());
     }
 
     #[test]
@@ -1105,6 +1708,83 @@ mod tests {
         assert_eq!(bytes(None), "unavailable");
         assert_eq!(rate(None), "unavailable");
         assert_eq!(rate(Some(1024.0)), "1.00 KiB/s");
+    }
+
+    /// ACC-VIEW-161-MEM-SIZE: the stat-size memory form behind the gauge
+    /// readout and the Memory tile keeps one decimal while the integer part
+    /// is below three digits and drops it at three, so the value never
+    /// outgrows the four-character reserve; every other label keeps btop's
+    /// truncated humanizer form.
+    #[test]
+    fn stat_size_memory_drops_the_decimal_at_three_digits() {
+        fn gib(value: f64) -> u64 {
+            (value * 1024.0 * 1024.0 * 1024.0) as u64
+        }
+        for (value, expected) in [
+            (23.8, "23.8 GiB"),
+            (99.9, "99.9 GiB"),
+            (100.0, "100 GiB"),
+            (123.4, "123 GiB"),
+        ] {
+            assert_eq!(stat_human(gib(value)), expected, "{value} GiB");
+        }
+        // the table cells, legend rows, tooltips and the header's total keep
+        // btop's truncation
+        assert_eq!(human(gib(23.8)), "23.7 GiB");
+        assert_eq!(human(gib(99.9)), "99.8 GiB");
+        // a tenth that rounds into three digits drops the fraction instead of
+        // printing `100.0`, and a value that rounds to the next unit's base
+        // takes the step instead of printing `1024 GiB`
+        assert_eq!(stat_human(gib(99.96)), "100 GiB");
+        assert_eq!(stat_human(gib(1023.99)), "1.0 TiB");
+        // below the base unit the number stays an integer byte count
+        assert_eq!(stat_human(512), "512 Byte");
+        // the two call sites read the stat form through ram_used_parts
+        let snapshot = MemSnapshot {
+            ram_used: Some(gib(123.4)),
+            ..MemSnapshot::default()
+        };
+        assert_eq!(
+            snapshot.ram_used_parts(),
+            Some(("123".to_string(), "GiB".to_string()))
+        );
+        // every value the formatter prints fits the four-character reserve
+        // and carries at most one decimal
+        for tenths in 1..=12_000 {
+            let label = stat_human(tenths * (1 << 30) / 10);
+            let number = label.split_once(' ').expect("a unit").0;
+            assert!(number.len() <= 4, "{label}");
+            assert!(number.matches('.').count() <= 1, "{label}");
+        }
+    }
+
+    /// ACC-VIEW-126: the Memory tile's animation range is the effective total
+    /// in the same unit as the stat value, so the rate threshold divides the
+    /// displayed change by the display range; an unavailable value has none.
+    #[test]
+    fn memory_animation_range_follows_the_displayed_unit() {
+        let gib = 1u64 << 30;
+        let snapshot = MemSnapshot {
+            ram_used: Some(9 * gib),
+            ram_total: Some(16 * gib),
+            ..MemSnapshot::default()
+        };
+        assert_eq!(
+            snapshot.ram_used_parts(),
+            Some(("9.0".to_string(), "GiB".to_string()))
+        );
+        assert_eq!(snapshot.ram_used_range(), "16");
+        let snapshot = MemSnapshot {
+            ram_used: Some(300 * (1 << 20)),
+            ram_total: Some(2 * gib),
+            ..MemSnapshot::default()
+        };
+        assert_eq!(
+            snapshot.ram_used_parts(),
+            Some(("300".to_string(), "MiB".to_string()))
+        );
+        assert_eq!(snapshot.ram_used_range(), "2048");
+        assert_eq!(MemSnapshot::default().ram_used_range(), "");
     }
 
     /// Expected strings are emitted by
@@ -1320,14 +2000,17 @@ mod tests {
     }
 
     /// ACC-CONF-61-CONFIG-PAGES: a new interval from the config menu reaches
-    /// the snapshots within two ticks and sets the next gap.
+    /// the snapshots within two ticks and sets the next gap. An open stream
+    /// keeps the sampler awake to see it (ACC-PERF-136-SLEEP).
     #[tokio::test]
     async fn sampler_follows_a_new_update_interval() {
         let mut config = Config::defaults();
         config.proc_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proc");
         config.update_ms = 100;
         let (updates, receiver) = watch::channel(config.clone());
-        let (mut snapshots, sampler) = spawn(receiver);
+        let sampler = spawn(receiver);
+        let _stream = sampler.wake.subscribe();
+        let mut snapshots = sampler.snapshots;
         snapshots.changed().await.expect("first snapshot");
         config.update_ms = 300;
         updates.send_replace(config);
@@ -1335,7 +2018,7 @@ mod tests {
         while snapshots
             .borrow()
             .as_ref()
-            .map(|snapshot| snapshot.update_ms)
+            .map(|frame| frame.snapshot.update_ms)
             != Some(300)
         {
             assert!(
@@ -1352,6 +2035,202 @@ mod tests {
             "{:?}",
             at.elapsed()
         );
-        sampler.abort();
+        sampler.task.abort();
+    }
+
+    /// ACC-VIEW-130-LOAD-SCALE: the configured load scale reaches the
+    /// sampler's snapshot and its rendered fragments every tick.
+    #[tokio::test]
+    async fn sampler_renders_the_configured_load_scale() {
+        let root = temp_proc_tree("load-scale");
+        // The fixture's loadavg is read-only; a fresh file replaces it.
+        let loadavg = root.join("loadavg");
+        std::fs::remove_file(&loadavg).expect("loadavg");
+        std::fs::write(&loadavg, "32.00 16.00 9.60 2/99 1234\n").expect("loadavg");
+        let mut config = Config::defaults();
+        config.proc_root = root;
+        config.update_ms = 100;
+        config.cpu_load = LoadScale::Aggregate;
+        let (_updates, receiver) = watch::channel(config);
+        let sampler = spawn(receiver);
+        let _stream = sampler.wake.subscribe();
+        let mut snapshots = sampler.snapshots;
+        snapshots.changed().await.expect("first snapshot");
+        let frame = snapshots.borrow().clone().expect("a frame");
+        assert_eq!(frame.snapshot.cpu.load_scale, LoadScale::Aggregate);
+        let cpu = frame
+            .events
+            .iter()
+            .find(|(name, _)| *name == "cpu")
+            .map(|(_, html)| html.as_str())
+            .expect("the cpu fragment");
+        assert!(
+            cpu.contains(r#"<span data-w="6400%" data-num>3200%</span>/1m"#),
+            "{cpu}"
+        );
+        sampler.task.abort();
+    }
+
+    /// A private copy of the recorded `/proc` tree, so a test can add a
+    /// process without touching the fixture or another test's collector state.
+    fn temp_proc_tree(name: &str) -> PathBuf {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proc");
+        let base =
+            std::env::temp_dir().join(format!("btop-web-split-{}-{name}", std::process::id()));
+        let root = base.join("proc");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&root).expect("tree");
+        copy_tree(&source, &root);
+        root
+    }
+
+    fn copy_tree(source: &Path, target: &Path) {
+        for entry in std::fs::read_dir(source).expect("fixture") {
+            let entry = entry.expect("entry");
+            let path = entry.path();
+            let destination = target.join(entry.file_name());
+            if path.is_dir() {
+                std::fs::create_dir_all(&destination).expect("directory");
+                copy_tree(&path, &destination);
+            } else {
+                std::fs::copy(&path, &destination).expect("file");
+            }
+        }
+    }
+
+    /// ACC-PERF-149-SPLIT-CADENCE: a process that appears between slow passes
+    /// is listed by the next slow pass, never by the fast frames before it,
+    /// which reuse the held walk; the configured refresh period reaches the
+    /// sampler as each snapshot's `slow_ms`.
+    #[tokio::test]
+    async fn fast_frames_reuse_the_process_walk_until_the_next_slow_pass() {
+        let root = temp_proc_tree("slow-pass");
+        let mut config = Config::defaults();
+        config.proc_root = root.clone();
+        config.update_ms = 50;
+        config.proc_refresh_ms = 300;
+        let (_updates, receiver) = watch::channel(config);
+        let sampler = spawn(receiver);
+        let _stream = sampler.wake.subscribe();
+        let mut snapshots = sampler.snapshots;
+        snapshots.changed().await.expect("first snapshot");
+        let first = snapshots.borrow_and_update().clone().expect("snapshot");
+        assert_eq!(
+            first.snapshot.slow_seq, 1,
+            "the first tick is not a slow pass"
+        );
+        assert_eq!(first.snapshot.slow_ms, 300);
+        assert_eq!(first.snapshot.update_ms, 50);
+        let before = first.snapshot.proc.total.expect("a process total");
+        // A new process appears between slow passes.
+        std::fs::create_dir_all(root.join("999")).expect("pid directory");
+        copy_tree(&root.join("222"), &root.join("999"));
+        let mut second = None;
+        for _ in 0..40 {
+            snapshots.changed().await.expect("a snapshot");
+            let frame = snapshots.borrow_and_update().clone().expect("snapshot");
+            assert_eq!(frame.snapshot.slow_ms, 300, "the slow period changed");
+            if frame.snapshot.slow_seq == 1 {
+                assert_eq!(
+                    frame.snapshot.proc.total,
+                    Some(before),
+                    "a fast frame rebuilt the process walk"
+                );
+            } else {
+                second = Some(frame);
+                break;
+            }
+        }
+        let second = second.expect("no second slow pass within 40 ticks");
+        assert_eq!(second.snapshot.slow_seq, 2);
+        assert_eq!(
+            second.snapshot.proc.total,
+            Some(before + 1),
+            "the slow pass missed the process that appeared"
+        );
+        sampler.task.abort();
+        let _ = std::fs::remove_dir_all(root.parent().expect("tree base"));
+    }
+
+    /// ACC-PERF-149-SPLIT-CADENCE and ACC-CONF-61-CONFIG-PAGES: a new
+    /// `proc_refresh_ms` from the config menu reaches the sampler and its
+    /// snapshots within two ticks, and anchors a fresh slow pass.
+    #[tokio::test]
+    async fn sampler_follows_a_new_process_refresh_period() {
+        let mut config = Config::defaults();
+        config.proc_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proc");
+        config.update_ms = 100;
+        let (updates, receiver) = watch::channel(config.clone());
+        let sampler = spawn(receiver);
+        let _stream = sampler.wake.subscribe();
+        let mut snapshots = sampler.snapshots;
+        snapshots.changed().await.expect("first snapshot");
+        assert_eq!(
+            snapshots
+                .borrow()
+                .as_ref()
+                .map(|frame| frame.snapshot.slow_ms),
+            Some(1000)
+        );
+        config.set("proc_refresh_ms", "500").expect("valid");
+        updates.send_replace(config);
+        let mut seen = 0;
+        while snapshots
+            .borrow()
+            .as_ref()
+            .map(|frame| frame.snapshot.slow_ms)
+            != Some(500)
+        {
+            assert!(
+                seen < 2,
+                "proc_refresh_ms 500 did not arrive within two snapshots"
+            );
+            snapshots.changed().await.expect("snapshot");
+            seen += 1;
+        }
+        assert_eq!(
+            snapshots
+                .borrow()
+                .as_ref()
+                .map(|frame| frame.snapshot.slow_seq),
+            Some(2)
+        );
+        sampler.task.abort();
+    }
+
+    /// DEF-CPU-44 and ACC-PERF-136-SLEEP: only the LOAD_FREQ timer adds a
+    /// load step. A page request, an SSE connect or a request reset wakes the
+    /// gate too, and each one had been falling through to a full count.
+    #[tokio::test]
+    async fn a_wake_burst_adds_no_load_step() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let wake = Wake::attached();
+        let steps = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&steps);
+        spawn_load_counter_with(Arc::clone(&wake), move || {
+            count.fetch_add(1, Ordering::Relaxed);
+        });
+        // Unpark: the first step runs at once.
+        wake.set_parked(false);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while steps.load(Ordering::Relaxed) == 0 {
+            assert!(tokio::time::Instant::now() < deadline, "no load step");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let first = steps.load(Ordering::Relaxed);
+        // A burst that leaves the sampler awake.
+        for _ in 0..8 {
+            wake.request();
+            drop(wake.subscribe());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            steps.load(Ordering::Relaxed),
+            first,
+            "a wake notification added a load step"
+        );
+        // Parking still ends the count loop.
+        wake.set_parked(true);
     }
 }

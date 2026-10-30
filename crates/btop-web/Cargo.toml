@@ -17,21 +17,64 @@ anyhow.workspace = true
 askama.workspace = true
 async-stream = "0.3"
 axum.workspace = true
+# ACC-NET-144-ACCESS-KEY: base64url without padding is the key's wire and file
+# form; the crate is the standard maintained implementation and links no unsafe.
+base64 = "0.22"
+# ACC-NET-144-ACCESS-KEY: 32 key bytes from the operating system CSPRNG.
+# getrandom is the standard maintained wrapper over getrandom(2) with no unsafe
+# in this build, and its API is one call.
+getrandom = "0.4"
+# ACC-NET-146-SECRET-INPUT: an inherited descriptor is read through a safe
+# wrapper that owns the fd and closes it on drop; libc's read takes a raw
+# number only through unsafe, which this crate forbids. MIT.
+filedescriptor = "0.8"
+# ACC-NET-146-SECRET-INPUT: an encrypted PKCS#8 private key is parsed and its
+# PBES2/PBKDF2/scrypt envelope decrypted by RustCrypto's PKCS#8 and PKCS#5
+# crates (Apache-2.0 OR MIT); the "pem" feature decodes the PEM label and the
+# "pkcs5" feature exposes the encrypted-key type.
+pkcs8 = { version = "0.11", default-features = false, features = ["encryption", "pem", "pkcs5"] }
+# ACC-NET-146-SECRET-INPUT: passphrase and key buffers are zeroed when they
+# drop (MIT OR Apache-2.0).
+zeroize = "1"
+# ACC-NET-143-AGENT-MODES: the client's transport. hyper, hyper-util and
+# http-body-util already arrive with axum and are pinned in Cargo.lock; the
+# SSE record format is decoded locally because both ends are this binary.
+# ACC-NET-145-TLS-PINNING: the agent listener serves hyper over a rustls
+# connection, which needs hyper's server side and hyper-util's tower adapter.
+hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["service", "tokio"] }
+http-body-util = "0.1.5"
 itoa = "1"
 nix = { version = "0.30", features = ["dir", "fs", "hostname", "net", "feature", "user"] }
 nvml-wrapper = "0.13"
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
+# ACC-NET-145-TLS-PINNING: the agent's self-signed pair, generated with a
+# random key. rcgen writes the DER and PEM; the licence is MIT OR Apache-2.0.
+rcgen = "0.14"
 rocm_smi_lib = { version = "0.3.2", optional = true }
 rust-embed = { workspace = true, features = ["mime-guess"] }
+# ACC-NET-145-TLS-PINNING: rustls is the TLS 1.3 implementation for both the
+# agent listener and the client, with the ring provider (Apache-2.0 OR ISC OR
+# MIT) because aws-lc-sys carries OpenSSL-derived files. tls12 stays compiled
+# so the tests can present a TLS 1.2-only client and observe the refusal; our
+# own configurations offer TLS 1.3 alone. tokio-rustls wraps the tokio streams
+# (MIT OR Apache-2.0); the operator's PEM pair is decoded by rustls-pki-types'
+# own PEM reader, which rustls re-exports, so no separate pemfile crate.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# ACC-NET-145-TLS-PINNING: the certificate fingerprint is SHA-256 over the
+# DER; sha2 is the maintained implementation (MIT OR Apache-2.0).
+sha2 = "0.11"
 spline1d = { version = "0.1.1", default-features = false, features = ["alloc"] }
 thiserror.workspace = true
 tokio.workspace = true
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tower.workspace = true
+ttf-parser = "0.25"
 
 [lints]
 workspace = true
