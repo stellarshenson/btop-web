@@ -102,9 +102,30 @@
 //!   smallest 1, 2 or 5 x 10^k at or above both 10 and the largest drawn
 //!   sample; a change of that ceiling runs through [`Scale`], as the network
 //!   plots do (ACC-GRAPH-67-SMOOTH-SCALE)
+//!
+//! Process popup (ACC-VIEW-176-PROC-POPUP), btop's `Proc::detailed` and
+//! `_collect_details` (`src/linux/btop_collect.cpp`): while a popup asks about
+//! a pid, each slow pass pushes that row's Cpu% and MemB into two histories
+//! over the configured chart window and reads `<proc_root>/<pid>/io`
+//! (`read_bytes`, `write_bytes`) and the GPU nodes in `<proc_root>/<pid>/fd`.
+//! The pass adds no walk and no timer, and with no popup open it costs one
+//! empty `retain`. btop keeps one detailed pid; this server has many viewers,
+//! so it keeps up to [`DETAIL_LIMIT`], and a pid no request asked about for
+//! [`DETAIL_MISSED`] passes goes. Departures from btop on the owner's
+//! criterion: the plot is the table's Cpu%, not `cpu_p * cores`, its ceiling
+//! follows the peak, and the command line has no 1000-byte limit.
+//!
+//! DEF-GRAPH-129-PROC-PLOT: every slow pass also keeps each row's Cpu% and MemB
+//! in a compact record over the chart window, from the values the pass already
+//! computes, with no read of its own; a new watch's histories are replayed from
+//! it. btop starts its rings when the process is selected, so its graph opens
+//! empty; the owner reported that as a defect, so here a popup opens on the
+//! process's history. A sampler that slept with no viewer took no samples: the
+//! samples either side of the sleep sit one slot apart, as on the CPU panel's
+//! chart, whose [`History`] also counts samples and not wall time.
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::fs;
 use std::fs::File;
@@ -117,11 +138,14 @@ use std::time::{Instant, SystemTime};
 use nix::fcntl::{OFlag, open, openat};
 use nix::sys::stat::Mode;
 
-use crate::chart::{History, PROC_COUNT, PROC_GRAPH, PROC_WINDOW_MS, Scale};
+use crate::chart::{
+    ChartPath, History, NET_PLOT, PROC_COUNT, PROC_GRAPH, PROC_WINDOW_MS, Scale, ScaleFrame,
+    capacity,
+};
 use crate::config::Config;
 
 use super::container;
-use super::gpu::SLOW_PERIOD;
+use super::gpu::{self, SLOW_PERIOD};
 use super::{ProcEntry, ProcSnapshot, ProcSum, cpu_tone};
 
 /// btop's `sort_vector` (`src/btop_shared.hpp`), in the same order.
@@ -156,6 +180,16 @@ struct ProcState {
     count: History,
     /// Moves the count graph to a new ceiling smoothly (ACC-GRAPH-67-SMOOTH-SCALE).
     scale: Scale,
+    /// ACC-VIEW-176-PROC-POPUP: the pids an open popup asks about.
+    detailed: HashMap<i32, Detailed>,
+    /// The last pass's period and chart window, which a new [`Detailed`]'s
+    /// replay takes.
+    period_ms: u64,
+    window_ms: u64,
+    /// DEF-GRAPH-130-PLOT-STEPS: the passes so far, which is the sampler's
+    /// `slow_seq`: it counts one call of [`collect`] each, and this count moves
+    /// under the lock that guards the rings, where the frame's comes later.
+    slow_seq: u64,
 }
 
 impl Default for ProcState {
@@ -170,6 +204,10 @@ impl Default for ProcState {
             kernel_clear_count: 0,
             count: History::new(),
             scale: Scale::default(),
+            detailed: HashMap::new(),
+            period_ms: 0,
+            window_ms: 0,
+            slow_seq: 0,
         }
     }
 }
@@ -258,6 +296,10 @@ struct CachedProcess {
     graph: RowGraph,
     /// The subtree's summed graph, while the pid has children.
     sum_graph: RowGraph,
+    /// DEF-GRAPH-129-PROC-PLOT: Cpu% and MemB per slow pass, oldest first, over
+    /// the chart window; it goes with the pid, and a reused pid clears it. A
+    /// read that fails keeps no sample, so an unread value draws nothing.
+    record: VecDeque<[f32; 2]>,
 }
 
 /// A pid and the `starttime` its identity string was read at, `None` until
@@ -408,6 +450,8 @@ struct Context {
     delta_cputimes: u64,
     /// Container mode, `proc_per_core` false: online / E; otherwise 1.
     cpu_scale: f64,
+    /// The slots a process's record holds: the chart window at this pass's period.
+    record_slots: usize,
 }
 
 /// btop's parsed `/proc/<pid>/stat` fields.
@@ -421,9 +465,236 @@ struct Stat {
     mem: u64,
 }
 
+/// ACC-VIEW-176-PROC-POPUP: the pids one server watches at once. A server has
+/// few viewers, and the watch asked about longest ago makes room for a new one,
+/// so a client that walks every pid holds no more than this many rings
+/// (ACC-PERF-141-CACHE-BOUND).
+const DETAIL_LIMIT: usize = 16;
+
+/// ACC-VIEW-176-PROC-POPUP: the slow passes a watch outlives its last request.
+/// An open popup asks once per pass, so this bears a viewer's lost requests;
+/// a closed popup's rings go within this many passes.
+const DETAIL_MISSED: u32 = 5;
+
+/// One popup plot's samples and the ceiling they draw to.
+#[derive(Default)]
+struct DetailSeries {
+    history: History,
+    scale: Scale,
+    frame: ScaleFrame,
+}
+
+impl DetailSeries {
+    /// DEF-GRAPH-129-PROC-PLOT: a new watch's series, replayed from a record
+    /// through the same smoothing as [`Self::push`]. The first update of a
+    /// [`Scale`] starts idle, so the first body draws at its ceiling with no
+    /// change running from zero.
+    fn seeded(
+        record: impl Iterator<Item = f32>,
+        period_ms: u64,
+        window_ms: u64,
+        ceiling: fn(f64) -> f64,
+    ) -> Self {
+        let mut series = Self::default();
+        series.history.set_window(window_ms);
+        for sample in record {
+            series.history.push(Some(f64::from(sample)), period_ms);
+        }
+        let target = ceiling(series.history.max().unwrap_or_default());
+        series.frame = series.scale.update(target, period_ms, NET_PLOT);
+        series
+    }
+
+    /// One sample, `period_ms` after the last. `ceiling` maps the history's
+    /// peak to the plot's top; a change of it runs through [`Scale`]
+    /// (ACC-GRAPH-67-SMOOTH-SCALE).
+    fn push(
+        &mut self,
+        value: Option<f64>,
+        period_ms: u64,
+        window_ms: u64,
+        ceiling: fn(f64) -> f64,
+    ) {
+        self.history.set_window(window_ms);
+        self.history.push(value, period_ms);
+        let target = ceiling(self.history.max().unwrap_or_default());
+        self.frame = self.scale.update(target, period_ms, NET_PLOT);
+    }
+
+    fn plot(&self) -> ProcPlot {
+        ProcPlot {
+            chart: self.history.chart(NET_PLOT, 0.0, self.frame.draw_max),
+            scale: self.frame.clone(),
+        }
+    }
+}
+
+/// btop's `Proc::detailed`, one per pid an open popup asks about.
+struct Detailed {
+    /// The process this watch belongs to; a reused pid drops the watch.
+    starttime: Option<u64>,
+    /// The whole `cmdline`, read once per watch; `None` when it cannot be read
+    /// or is empty, as a kernel thread's is.
+    command: Option<Arc<str>>,
+    cpu: DetailSeries,
+    mem: DetailSeries,
+    /// btop `detailed.io_read`, `read_bytes` from `<pid>/io`.
+    io_read: Option<u64>,
+    /// btop `detailed.io_write`, `write_bytes` from `<pid>/io`.
+    io_write: Option<u64>,
+    /// The GPU nodes the process holds; `None` when its fd table cannot be read.
+    gpu_nodes: Option<Vec<String>>,
+    /// Slow passes since the last request.
+    missed: u32,
+}
+
+impl Detailed {
+    fn sample(
+        &mut self,
+        root: &ProcRoot,
+        pid: i32,
+        entry: &ProcEntry,
+        (period_ms, window_ms): (u64, u64),
+        buffer: &mut Vec<u8>,
+        path: &mut String,
+    ) {
+        self.cpu
+            .push(entry.cpu_pct, period_ms, window_ms, cpu_ceiling);
+        self.mem.push(
+            // f64 holds every byte count below 2^53 (8 PiB) exactly.
+            entry.mem_bytes.map(|bytes| bytes as f64),
+            period_ms,
+            window_ms,
+            memory_ceiling,
+        );
+        self.read_files(root, pid, buffer, path);
+    }
+
+    /// btop's `detailed.io_read` and `io_write`, and the GPU nodes.
+    fn read_files(&mut self, root: &ProcRoot, pid: i32, buffer: &mut Vec<u8>, path: &mut String) {
+        let io = read_at(root, pid, "io", true, buffer, path)
+            .and_then(|read| std::str::from_utf8(&buffer[..read]).ok());
+        self.io_read = io.and_then(|io| io_counter(io, "read_bytes"));
+        self.io_write = io.and_then(|io| io_counter(io, "write_bytes"));
+        self.gpu_nodes = gpu::held_nodes(&root.fd, pid);
+    }
+}
+
+/// One `<pid>/io` counter, by its exact key.
+fn io_counter(io: &str, key: &str) -> Option<u64> {
+    io.lines().find_map(|line| {
+        line.strip_prefix(key)?
+            .strip_prefix(':')?
+            .trim()
+            .parse()
+            .ok()
+    })
+}
+
+/// The CPU plot's top: the 1, 2 or 5 x 10^k percent at or above the peak, at
+/// least 1, because most rows are a fraction of one percent of the machine.
+fn cpu_ceiling(peak: f64) -> f64 {
+    nice_ceiling(peak.max(1.0)) as f64
+}
+
+/// The memory plot's top: the 1, 2 or 5 x 10^k MiB or GiB at or above the peak.
+fn memory_ceiling(peak: f64) -> f64 {
+    const MIB: f64 = 1_048_576.0;
+    const GIB: f64 = 1_073_741_824.0;
+    let unit = if peak >= GIB { GIB } else { MIB };
+    nice_ceiling((peak / unit).max(1.0)) as f64 * unit
+}
+
+/// One popup plot, ready for a template.
+pub struct ProcPlot {
+    pub chart: ChartPath,
+    pub scale: ScaleFrame,
+}
+
+/// ACC-VIEW-176-PROC-POPUP: what the popup shows beyond the process row.
+pub struct ProcDetail {
+    /// The slow pass the rings hold, the counter of the frames' `data-slow-seq`
+    /// (DEF-GRAPH-130-PLOT-STEPS).
+    pub slow_seq: u64,
+    pub command: Option<Arc<str>>,
+    pub cpu: ProcPlot,
+    pub mem: ProcPlot,
+    pub io_read: Option<u64>,
+    pub io_write: Option<u64>,
+    pub gpu_nodes: Option<Vec<String>>,
+}
+
+/// The popup's values for `pid`, and a watch on it for the next
+/// [`DETAIL_MISSED`] slow passes. `None` when the last pass did not list the
+/// pid, so a request reaches no process the table does not show
+/// (ACC-SCOPE-64-CONTAINER). This reads one process's files on the first
+/// request only; every later value comes from the sampler's slow pass.
+pub fn detail(proc_root: &Path, pid: i32) -> Option<ProcDetail> {
+    let mut states = LAST.lock().unwrap_or_else(|error| error.into_inner());
+    let ProcState {
+        processes,
+        detailed,
+        dir,
+        period_ms,
+        window_ms,
+        slow_seq,
+        ..
+    } = states.get_mut(proc_root)?;
+    let cached = processes.get(&pid)?;
+    let root = dir.as_ref()?;
+    if !detailed.contains_key(&pid) {
+        if detailed.len() >= DETAIL_LIMIT
+            && let Some(oldest) = detailed
+                .iter()
+                .max_by_key(|(_, watch)| watch.missed)
+                .map(|(pid, _)| *pid)
+        {
+            detailed.remove(&oldest);
+        }
+        let mut buffer = Vec::with_capacity(4096);
+        let mut path = String::with_capacity(32);
+        // btop's `Proc::detailed` starts its rings here, and the owner's
+        // DEF-GRAPH-129-PROC-PLOT is the empty axis that gives, so the watch
+        // starts from the process's record.
+        let replay = |at: usize, ceiling| {
+            let samples = cached.record.iter().map(move |sample| sample[at]);
+            DetailSeries::seeded(samples, *period_ms, *window_ms, ceiling)
+        };
+        let mut watch = Detailed {
+            starttime: cached.starttime,
+            command: read_at(root, pid, "cmdline", false, &mut buffer, &mut path)
+                .map(|read| full_command_line(&buffer[..read]))
+                .filter(|command| !command.is_empty())
+                .map(Arc::from),
+            cpu: replay(0, cpu_ceiling),
+            mem: replay(1, memory_ceiling),
+            io_read: None,
+            io_write: None,
+            gpu_nodes: None,
+            missed: 0,
+        };
+        watch.read_files(root, pid, &mut buffer, &mut path);
+        detailed.insert(pid, watch);
+    }
+    let watch = detailed.get_mut(&pid)?;
+    watch.missed = 0;
+    Some(ProcDetail {
+        slow_seq: *slow_seq,
+        command: watch.command.clone(),
+        cpu: watch.cpu.plot(),
+        mem: watch.mem.plot(),
+        io_read: watch.io_read,
+        io_write: watch.io_write,
+        gpu_nodes: watch.gpu_nodes.clone(),
+    })
+}
+
 static LAST: Mutex<BTreeMap<PathBuf, ProcState>> = Mutex::new(BTreeMap::new());
 
 pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
+    let mut states = LAST.lock().unwrap_or_else(|error| error.into_inner());
+    let state = states.entry(proc_root.to_path_buf()).or_default();
+    state.slow_seq += 1;
     let Some((cputimes, online)) = cpu_times(proc_root) else {
         return ProcSnapshot::default();
     };
@@ -445,8 +716,6 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
         }
     };
 
-    let mut states = LAST.lock().unwrap_or_else(|error| error.into_inner());
-    let state = states.entry(proc_root.to_path_buf()).or_default();
     state.passwd.refresh();
     if config.proc_filter_kernel {
         state.kernel_clear_count += 1;
@@ -471,6 +740,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
         uptime: uptime(proc_root),
         delta_cputimes: cputimes.saturating_sub(state.cputimes).max(1),
         cpu_scale,
+        record_slots: capacity(config.window_ms(), config.update_ms),
     };
 
     let Some(dir) = state.dir.take().or_else(|| ProcRoot::open(proc_root)) else {
@@ -533,6 +803,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
                     // unavailable instead of showing the old process's.
                     state.identity.remove(&(pid, Some(starttime)));
                     cached.starttime = Some(stat.starttime);
+                    cached.record.clear();
                     if !read_identity(
                         &dir,
                         pid,
@@ -574,6 +845,37 @@ pub fn collect(proc_root: &Path, config: &Config) -> ProcSnapshot {
             .is_some_and(|cached| cached.starttime == *starttime)
     });
     state.cputimes = cputimes;
+    state.period_ms = config.update_ms;
+    state.window_ms = config.window_ms();
+
+    // ACC-VIEW-176-PROC-POPUP: one sample for each pid a popup asks about.
+    let ProcState {
+        processes,
+        detailed,
+        dir,
+        ..
+    } = &mut *state;
+    if let Some(root) = dir.as_ref() {
+        detailed.retain(|pid, watch| {
+            watch.missed += 1;
+            let Some(cached) = processes
+                .get(pid)
+                .filter(|cached| cached.starttime == watch.starttime)
+                .filter(|_| watch.missed <= DETAIL_MISSED)
+            else {
+                return false;
+            };
+            watch.sample(
+                root,
+                *pid,
+                &cached.entry,
+                (config.update_ms, config.window_ms()),
+                &mut buffer,
+                &mut path,
+            );
+            true
+        });
+    }
 
     let (processes, identity) = (&state.processes, &mut state.identity);
     let mut entries: Vec<ProcEntry> = found
@@ -692,9 +994,13 @@ fn share_count(values: impl Iterator<Item = f64>) -> Option<usize> {
 /// The count graph's ceiling: the smallest 1, 2 or 5 x 10^k at or above both
 /// `largest` and 10, so the scale changes only when the drawn maximum
 /// crosses a step.
-// Own code: one loop; no crate in the tree picks a nice axis ceiling.
 fn count_ceiling(largest: f64) -> u64 {
-    let target = largest.max(10.0);
+    nice_ceiling(largest.max(10.0))
+}
+
+/// The smallest 1, 2 or 5 x 10^k at or above `target`.
+// Own code: one loop; no crate in the tree picks a nice axis ceiling.
+fn nice_ceiling(target: f64) -> u64 {
     let mut decade = 1_u64;
     loop {
         for step in [1, 2, 5] {
@@ -780,6 +1086,12 @@ fn command_line(raw: &[u8]) -> String {
         command.pop();
     }
     String::from_utf8_lossy(&command).into_owned()
+}
+
+/// The popup's command line: [`command_line`] without btop's 1000-byte limit.
+fn full_command_line(raw: &[u8]) -> String {
+    let raw = raw.strip_suffix(&[0]).unwrap_or(raw);
+    String::from_utf8_lossy(raw).replace('\0', " ")
 }
 
 fn uid(root: &ProcRoot, pid: i32, buffer: &mut Vec<u8>, path: &mut String) -> Option<String> {
@@ -893,19 +1205,26 @@ fn apply(cached: &mut CachedProcess, stat: Stat, context: &Context) {
         cached.cpu_s = stat.starttime;
         cached.cpu_t = stat.cpu_t;
     }
-    entry.cpu_pct = Some(
-        process_cpu(
-            stat.cpu_t.saturating_sub(cached.cpu_t),
-            context.delta_cputimes,
-            context.cmult,
-            context.cores,
-        ) * context.cpu_scale,
-    );
+    let cpu_pct = process_cpu(
+        stat.cpu_t.saturating_sub(cached.cpu_t),
+        context.delta_cputimes,
+        context.cmult,
+        context.cores,
+    ) * context.cpu_scale;
+    entry.cpu_pct = Some(cpu_pct);
     entry.cpu_c = context.uptime.map(|uptime| {
         stat.cpu_t as f64 / ((uptime * context.clk_tck) - cached.cpu_s as f64).max(1.0)
     });
     cached.cpu_t = stat.cpu_t;
     entry.mem_bytes = Some(stat.mem);
+    // One allocation of exactly the window, kept at it when the window narrows.
+    let record = &mut cached.record;
+    while record.len() >= context.record_slots {
+        record.pop_front();
+    }
+    record.shrink_to(context.record_slots);
+    record.reserve_exact(context.record_slots - record.len());
+    record.push_back([cpu_pct as f32, stat.mem as f32]);
 }
 
 impl RowGraph {
@@ -1347,6 +1666,304 @@ mod tests {
 
     fn config() -> Config {
         Config::load(None).expect("embedded defaults")
+    }
+
+    /// The pid's CPU ring length; `None` while no popup watches it.
+    fn ring_len(proc_root: &Path, pid: i32) -> Option<usize> {
+        LAST.lock()
+            .unwrap()
+            .get(proc_root)?
+            .detailed
+            .get(&pid)
+            .map(|watch| watch.cpu.history.len())
+    }
+
+    fn record(proc_root: &Path, pid: i32) -> Vec<[f32; 2]> {
+        LAST.lock().unwrap().get(proc_root).unwrap().processes[&pid]
+            .record
+            .iter()
+            .copied()
+            .collect()
+    }
+
+    /// ACC-VIEW-176-PROC-POPUP: a request starts the watch, the sampler's slow
+    /// pass fills it with no further request, and a pid no request asks about
+    /// holds no ring. The watch goes [`DETAIL_MISSED`] passes after its last
+    /// request, and a pid the last pass did not list has no detail.
+    #[test]
+    fn a_popup_watch_fills_on_the_pass_and_goes_with_its_requests() {
+        let proc_root = temp_tree("detail-watch").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        let config = config();
+        assert!(detail(&proc_root, 222).is_none(), "no pass has run");
+        collect(&proc_root, &config);
+        assert!(
+            detail(&proc_root, 99999).is_none(),
+            "the table lists no such pid"
+        );
+        assert_eq!(ring_len(&proc_root, 111), None, "a ring without a request");
+
+        let first = detail(&proc_root, 222).expect("a listed pid");
+        assert_eq!(ring_len(&proc_root, 222), Some(1));
+        assert!(first.cpu.chart.line.is_empty(), "one sample draws no line");
+        assert_eq!(first.io_read, None, "the fixture has no io file");
+        assert_eq!(first.command.as_deref(), Some("hotproc --busy"));
+        detail(&proc_root, 222).expect("a listed pid");
+        assert_eq!(
+            ring_len(&proc_root, 222),
+            Some(1),
+            "a request took a sample"
+        );
+
+        collect(&proc_root, &config);
+        assert_eq!(ring_len(&proc_root, 222), Some(2));
+        let second = detail(&proc_root, 222).expect("a listed pid");
+        assert!(!second.cpu.chart.line.is_empty());
+        assert!(!second.mem.chart.line.is_empty());
+        assert_eq!(second.cpu.scale.label_max, Some(1));
+
+        for _ in 0..DETAIL_MISSED {
+            collect(&proc_root, &config);
+        }
+        assert!(ring_len(&proc_root, 222).is_some());
+        collect(&proc_root, &config);
+        assert_eq!(
+            ring_len(&proc_root, 222),
+            None,
+            "the watch outlived its limit"
+        );
+    }
+
+    /// ACC-VIEW-176-PROC-POPUP: a reused pid is another process, so the old
+    /// process's rings go with it, and so do the rings of a process that exits.
+    #[test]
+    fn a_popup_watch_ends_with_its_process() {
+        let proc_root = temp_tree("detail-reuse").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        let config = config();
+        collect(&proc_root, &config);
+        detail(&proc_root, 222).expect("a listed pid");
+        detail(&proc_root, 111).expect("a listed pid");
+
+        let stat = proc_root.join("222/stat");
+        let reused = fs::read_to_string(&stat)
+            .unwrap()
+            .replace(" 29470638 ", " 29470639 ");
+        fs::write(&stat, reused).unwrap();
+        fs::remove_dir_all(proc_root.join("111")).unwrap();
+        collect(&proc_root, &config);
+        assert_eq!(
+            ring_len(&proc_root, 222),
+            None,
+            "a reused pid kept its rings"
+        );
+        assert_eq!(
+            ring_len(&proc_root, 111),
+            None,
+            "an exited pid kept its rings"
+        );
+        assert!(detail(&proc_root, 111).is_none());
+    }
+
+    /// DEF-GRAPH-129-PROC-PLOT: a new watch draws the passes before its request,
+    /// with its scale idle at the right ceiling, and continues from them.
+    #[test]
+    fn a_new_popup_watch_draws_the_passes_before_it() {
+        let proc_root = temp_tree("detail-seed").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        let config = config();
+        for _ in 0..5 {
+            collect(&proc_root, &config);
+        }
+        assert_eq!(ring_len(&proc_root, 222), None, "a ring without a request");
+
+        let first = detail(&proc_root, 222).expect("a listed pid");
+        assert_eq!(ring_len(&proc_root, 222), Some(5));
+        assert_eq!(first.slow_seq, 5);
+        assert!(!first.cpu.chart.line.is_empty());
+        assert!(!first.mem.chart.line.is_empty());
+        for plot in [&first.cpu, &first.mem] {
+            assert!(plot.scale.style.is_empty(), "a scale change from zero");
+            assert!(plot.scale.label_max.is_some_and(|max| max > 0));
+        }
+        // The mem field of the fixture's stat, not the ceiling's floor of 1 MiB.
+        assert_eq!(
+            first.mem.scale.label_max,
+            Some(memory_ceiling(record(&proc_root, 222)[4][1].into()) as u64)
+        );
+
+        collect(&proc_root, &config);
+        assert_eq!(ring_len(&proc_root, 222), Some(6), "the pass continues it");
+        assert_eq!(detail(&proc_root, 222).expect("listed").slow_seq, 6);
+    }
+
+    /// DEF-GRAPH-129-PROC-PLOT: a process older than the window opens on the
+    /// whole axis: the curve starts one slot in from the left, as every full
+    /// history does, at the plots' slot of one per pass.
+    #[test]
+    fn a_process_older_than_the_window_opens_on_the_whole_axis() {
+        let proc_root = temp_tree("detail-axis").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        let mut config = config();
+        config.update_ms = 1000;
+        config.window_s = 60;
+        let slots = capacity(config.window_ms(), config.update_ms);
+        for _ in 0..slots + 3 {
+            collect(&proc_root, &config);
+        }
+        assert_eq!(record(&proc_root, 222).len(), slots);
+        let first = detail(&proc_root, 222).expect("a listed pid");
+        assert_eq!(ring_len(&proc_root, 222), Some(slots));
+        let start: f64 = first.cpu.chart.line[1..]
+            .split(' ')
+            .next()
+            .and_then(|x| x.parse().ok())
+            .expect("the first vertex");
+        let slot = NET_PLOT.width / (slots - 1) as f64;
+        assert!(start <= slot + 0.01, "the curve starts at {start}");
+
+        // The record follows a narrower window, down to its capacity.
+        config.window_s = 30;
+        collect(&proc_root, &config);
+        let narrowed = capacity(config.window_ms(), config.update_ms);
+        let state = LAST.lock().unwrap();
+        let held = &state.get(&proc_root).unwrap().processes[&222].record;
+        assert_eq!(held.len(), narrowed);
+        assert_eq!(held.capacity(), narrowed);
+    }
+
+    /// DEF-GRAPH-129-PROC-PLOT: a reused pid starts empty, as the watch does, and
+    /// an exited pid's record goes with its row.
+    #[test]
+    fn a_record_ends_with_its_process() {
+        let proc_root = temp_tree("record-reuse").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        let config = config();
+        collect(&proc_root, &config);
+        collect(&proc_root, &config);
+        assert_eq!(record(&proc_root, 222).len(), 2);
+
+        let stat = proc_root.join("222/stat");
+        let reused = fs::read_to_string(&stat)
+            .unwrap()
+            .replace(" 29470638 ", " 29470639 ");
+        fs::write(&stat, reused).unwrap();
+        fs::remove_dir_all(proc_root.join("111")).unwrap();
+        collect(&proc_root, &config);
+        assert_eq!(
+            record(&proc_root, 222).len(),
+            1,
+            "the old process's samples"
+        );
+        assert!(
+            detail(&proc_root, 222)
+                .expect("listed")
+                .cpu
+                .chart
+                .line
+                .is_empty(),
+            "one sample of the new process draws no line"
+        );
+        assert!(
+            !LAST
+                .lock()
+                .unwrap()
+                .get(&proc_root)
+                .unwrap()
+                .processes
+                .contains_key(&111),
+            "an exited pid kept its record"
+        );
+        assert!(detail(&proc_root, 111).is_none());
+    }
+
+    /// DEF-GRAPH-129-PROC-PLOT: a process whose stat cannot be read has no value,
+    /// so it keeps no sample and its plots draw no line.
+    #[test]
+    fn an_unread_value_keeps_no_sample() {
+        let proc_root = temp_tree("record-unread").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        fs::remove_file(proc_root.join("222/stat")).unwrap();
+        let config = config();
+        collect(&proc_root, &config);
+        collect(&proc_root, &config);
+        assert!(record(&proc_root, 222).is_empty());
+        let first = detail(&proc_root, 222).expect("a listed pid");
+        assert!(first.cpu.chart.line.is_empty());
+        assert!(first.mem.chart.line.is_empty());
+    }
+
+    /// ACC-PERF-141-CACHE-BOUND: a client that walks every pid holds at most
+    /// [`DETAIL_LIMIT`] watches, and the newest request always has its own.
+    #[test]
+    fn popup_watches_are_bounded() {
+        let proc_root = temp_tree("detail-bound").join("proc");
+        copy_tree(&fixture("proc"), &proc_root);
+        let pids: Vec<i32> = (1000..1000 + DETAIL_LIMIT as i32 + 4).collect();
+        for pid in &pids {
+            copy_tree(&proc_root.join("222"), &proc_root.join(pid.to_string()));
+        }
+        let config = config();
+        collect(&proc_root, &config);
+        for pid in &pids {
+            detail(&proc_root, *pid).expect("a listed pid");
+            assert!(
+                ring_len(&proc_root, *pid).is_some(),
+                "pid {pid} has no ring"
+            );
+        }
+        let held = LAST.lock().unwrap().get(&proc_root).unwrap().detailed.len();
+        assert_eq!(held, DETAIL_LIMIT);
+    }
+
+    /// The popup's command line keeps what btop's 1000-byte limit removes.
+    #[test]
+    fn the_popup_command_line_has_no_limit() {
+        assert_eq!(full_command_line(b"ttyd\0-d\0 3\0"), "ttyd -d  3");
+        assert_eq!(full_command_line(b""), "");
+        let raw = [b'a'; 5000];
+        assert_eq!(full_command_line(&raw).len(), 5000);
+        assert_eq!(command_line(&raw).len(), 999);
+    }
+
+    /// `write_bytes` is not `cancelled_write_bytes`, and a missing or
+    /// malformed counter is unavailable.
+    #[test]
+    fn io_counters_are_read_by_their_exact_key() {
+        let io =
+            "rchar: 9\nread_bytes: 5242880\nwrite_bytes: 1048576\ncancelled_write_bytes: 4096\n";
+        assert_eq!(io_counter(io, "read_bytes"), Some(5_242_880));
+        assert_eq!(io_counter(io, "write_bytes"), Some(1_048_576));
+        assert_eq!(
+            io_counter("cancelled_write_bytes: 4096\n", "write_bytes"),
+            None
+        );
+        assert_eq!(io_counter("read_bytes: x\n", "read_bytes"), None);
+    }
+
+    /// The popup plots' tops: 1, 2 or 5 x 10^k above the peak, at least 1%
+    /// and 1 MiB, and a whole GiB step from 1 GiB up.
+    #[test]
+    fn popup_plot_ceilings_follow_the_peak() {
+        const MIB: f64 = 1_048_576.0;
+        const GIB: f64 = 1024.0 * MIB;
+        for (peak, top) in [
+            (0.0, 1.0),
+            (0.4, 1.0),
+            (1.2, 2.0),
+            (57.0, 100.0),
+            (640.0, 1000.0),
+        ] {
+            assert_eq!(cpu_ceiling(peak), top, "cpu peak {peak}");
+        }
+        for (peak, top) in [
+            (0.0, MIB),
+            (700.0 * MIB, 1000.0 * MIB),
+            (1.2 * GIB, 2.0 * GIB),
+            (17.0 * GIB, 20.0 * GIB),
+        ] {
+            assert_eq!(memory_ceiling(peak), top, "memory peak {peak}");
+        }
     }
 
     fn configured(edit: impl FnOnce(&mut Config)) -> Config {

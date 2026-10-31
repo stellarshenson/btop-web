@@ -28,8 +28,9 @@ use axum::body::Bytes;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use http_body_util::{BodyExt, Empty};
-use hyper::Request;
+use hyper::body::Incoming;
 use hyper::header::{ACCEPT, AUTHORIZATION, HOST};
+use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use tokio::sync::broadcast;
 
@@ -110,12 +111,26 @@ impl Client {
             .map(|(name, addr, key)| {
                 let shared = Arc::new(Shared::new());
                 let state = Arc::clone(&shared);
-                let pins = Arc::clone(&pins);
+                let upstream_pins = Arc::clone(&pins);
                 let upstream_name = name.clone();
+                let (upstream_addr, upstream_key) = (addr.clone(), key.clone());
                 tokio::spawn(async move {
-                    upstream(upstream_name, addr, key, pins, state).await;
+                    upstream(
+                        upstream_name,
+                        upstream_addr,
+                        upstream_key,
+                        upstream_pins,
+                        state,
+                    )
+                    .await;
                 });
-                Link { name, shared }
+                Link {
+                    name,
+                    shared,
+                    addr,
+                    key,
+                    pins: Arc::clone(&pins),
+                }
             })
             .collect();
         Ok(Self { links })
@@ -144,24 +159,50 @@ pub struct Link {
     /// The page's label for the agent.
     pub name: String,
     shared: Arc<Shared>,
+    addr: String,
+    key: String,
+    pins: Arc<Pins>,
 }
 
 impl Link {
+    /// ACC-VIEW-176-PROC-POPUP: the agent's popup body for `pid`, unchanged. An
+    /// open popup asks once per slow pass, over one connection per request; the
+    /// agent's sampler holds the rings.
+    pub async fn detail(&self, pid: i32) -> Result<String> {
+        tokio::time::timeout(CONNECT_TIMEOUT, async {
+            let path = format!("/proc/{pid}");
+            let response = get(
+                &self.name,
+                &self.addr,
+                &self.key,
+                &self.pins,
+                &path,
+                "text/html",
+            )
+            .await?;
+            let body = response.into_body().collect().await?.to_bytes();
+            anyhow::Ok(String::from_utf8_lossy(&body).into_owned())
+        })
+        .await
+        .context("agent did not answer within 10 s")?
+    }
+
     /// Whether the agent's stream is up; the strip chip reads it.
     pub fn connected(&self) -> bool {
         self.shared.view().connected
     }
 
-    /// Relay this agent's fragments to one browser, in arrival order.
-    pub fn relay(&self) -> impl IntoResponse {
+    /// Relay this agent's fragments to one browser, in arrival order, after
+    /// the stamp of the build that served the browser its page
+    /// (DEF-VIEW-119-STALE-TAB).
+    pub fn relay(&self, stamp: Arc<str>) -> impl IntoResponse {
         let mut receiver = self.shared.events.subscribe();
         let stream = async_stream::stream! {
+            yield Ok::<_, std::convert::Infallible>(Event::default().event("stamp").data(&*stamp));
             loop {
                 match receiver.recv().await {
                     Ok(fragment) => {
-                        yield Ok::<_, std::convert::Infallible>(
-                            Event::default().event(fragment.name).data(fragment.data),
-                        );
+                        yield Ok(Event::default().event(fragment.name).data(fragment.data));
                     }
                     // A lagging viewer skips to the next frame: every
                     // fragment replaces its panel whole.
@@ -253,6 +294,11 @@ impl Shared {
     }
 
     fn publish(&self, fragment: Fragment) {
+        // DEF-VIEW-119-STALE-TAB: the agent's stamp names the agent's build, not
+        // the page's, and it is not a sample.
+        if fragment.name == "stamp" {
+            return;
+        }
         {
             let mut view = self.view.lock().unwrap_or_else(|error| error.into_inner());
             view.connected = true;
@@ -287,48 +333,62 @@ async fn upstream(name: String, addr: String, key: String, pins: Arc<Pins>, shar
     }
 }
 
-async fn follow(name: &str, addr: &str, key: &str, pins: Arc<Pins>, shared: &Shared) -> Result<()> {
+/// One connection to an agent and one GET of `path`; an answer other than
+/// success is an error.
+async fn get(
+    name: &str,
+    addr: &str,
+    key: &str,
+    pins: &Arc<Pins>,
+    path: &str,
+    accept: &str,
+) -> Result<Response<Incoming>> {
     let pin = pins.get(name);
+    let (stream, presented) = tls::connect(addr, name, pin.as_deref()).await?;
+    // ACC-NET-145-TLS-PINNING: the first fingerprint is written
+    // before the first request; a pin that cannot be written fails
+    // the connection instead of trusting an agent the client cannot
+    // remember. The write syncs a file, so it runs off the async
+    // workers.
+    if pin.is_none() {
+        let presented = presented.context("the handshake presented no certificate")?;
+        let writer = Arc::clone(pins);
+        let agent = name.to_string();
+        tokio::task::spawn_blocking(move || writer.record(&agent, &presented))
+            .await
+            .context("the pin writer task panicked")??;
+    }
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+        .await
+        .context("HTTP handshake")?;
+    tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    let request = Request::builder()
+        .uri(format!("http://{addr}{path}"))
+        .header(HOST, addr)
+        .header(ACCEPT, accept)
+        // ACC-NET-144-ACCESS-KEY: the key never appears in the URL,
+        // where a log or a proxy would keep it.
+        .header(AUTHORIZATION, format!("Bearer {key}"))
+        .body(Empty::<Bytes>::new())?;
+    let response = sender.send_request(request).await?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "agent answered {}",
+        response.status()
+    );
+    Ok(response)
+}
+
+async fn follow(name: &str, addr: &str, key: &str, pins: Arc<Pins>, shared: &Shared) -> Result<()> {
     // ACC-PERF-136-SLEEP is not the only bound: a link that blackholes a
     // connect, handshake or request now fails within one deadline and
     // retries, instead of waiting out the kernel's retransmit budget.
-    let response = tokio::time::timeout(CONNECT_TIMEOUT, async {
-        let (stream, presented) = tls::connect(addr, name, pin.as_deref()).await?;
-        // ACC-NET-145-TLS-PINNING: the first fingerprint is written
-        // before the first request; a pin that cannot be written fails
-        // the connection instead of trusting an agent the client cannot
-        // remember. The write syncs a file, so it runs off the async
-        // workers.
-        if pin.is_none() {
-            let presented = presented.context("the handshake presented no certificate")?;
-            let writer = Arc::clone(&pins);
-            let agent = name.to_string();
-            tokio::task::spawn_blocking(move || writer.record(&agent, &presented))
-                .await
-                .context("the pin writer task panicked")??;
-        }
-        let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
-            .await
-            .context("HTTP handshake")?;
-        tokio::spawn(async move {
-            let _ = connection.await;
-        });
-        let request = Request::builder()
-                .uri(format!("http://{addr}/events"))
-                .header(HOST, addr)
-                .header(ACCEPT, "text/event-stream")
-                // ACC-NET-144-ACCESS-KEY: the key never appears in the URL,
-                // where a log or a proxy would keep it.
-                .header(AUTHORIZATION, format!("Bearer {key}"))
-                .body(Empty::<Bytes>::new())?;
-        let response = sender.send_request(request).await?;
-        anyhow::ensure!(
-            response.status().is_success(),
-            "agent answered {}",
-            response.status()
-        );
-        anyhow::Ok(response)
-    })
+    let response = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        get(name, addr, key, &pins, "/events", "text/event-stream"),
+    )
     .await
     .context("agent did not answer within 10 s")??;
     shared.set_connected(true);
@@ -450,6 +510,23 @@ mod tests {
         assert_eq!(fragments[0].data, "<div>\n</div>");
         assert_eq!(fragments[1].name, "mem");
         assert_eq!(fragments[1].data, "x");
+    }
+
+    /// DEF-VIEW-119-STALE-TAB: an agent's reconnect while a page is open must
+    /// not put the agent's stamp in front of that page, or a client and an
+    /// agent of different builds would reload the page on every reconnect.
+    #[test]
+    fn an_agents_stamp_reaches_no_viewer() {
+        let shared = Shared::new();
+        let mut viewer = shared.events.subscribe();
+        for (name, data) in [("stamp", "another-build"), ("cpu", "<div>")] {
+            shared.publish(Fragment {
+                name: name.to_string(),
+                data: data.to_string(),
+            });
+        }
+        assert_eq!(viewer.try_recv().expect("the cpu fragment").name, "cpu");
+        assert!(viewer.try_recv().is_err());
     }
 
     /// ACC-PERF-149-SPLIT-CADENCE: the advertised interval comes from the

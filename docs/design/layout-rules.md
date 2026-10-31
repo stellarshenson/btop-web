@@ -68,13 +68,13 @@ The dashboard is one fixed viewport: a top bar, four bands and twelve column wei
 
 ## 5. Side columns
 
-- The gauge side takes its natural width and never stretches: 188.36 px CPU facts and 178.86 px Memory rows at 1440x900; 144.92 and 165.77 at 1024x768; 0 at 390, where P2 hides the gauges
-- The Memory legend's widest row is `available = free + cache` at 178.86 px, 17.9 em of the row type; the 18.1 em `--gauge-side-w` leaves about 1 percent
-- The faces change the natural width: the Memory rows measure 178.86 px in the system face and 170.63 px under GalaxaTron Narrow at 1440x900, 165.77 and 162.42 at 1024x768; the gauge box is the same in both faces, 147.61 x 150.23 at 1440x900 and 133.58 x 135.95 at 1024x768, because the body height decides at 1440 and the face-independent `--gauge-side-w` token at 1024
+- The gauge side takes its natural width and never stretches: 155.45 px CPU facts and 163.31 px Memory rows at 1440x900; 139.17 and 141.06 at 1024x768; 0 at 390, where P2 hides the gauges
+- The Memory legend's widest row is `other reclaimable` in a container with no limit and `free + reclaimable` under a limit or on a host; the first measures 163.31 px at 1440x900 in the system face, inside the 21.3 em `--gauge-side-w`
+- The faces change the natural width: the Memory rows measure 163.31 px in the system face and 171.06 px under GalaxaTron Narrow at 1440x900, 141.06 and 149.38 at 1024x768; the gauge box is the same in both faces, 184.41 x 159.25 at 1440x900 and 141.59 x 122.28 at 1024x768, because the body height decides at 1440 and the face-independent `--gauge-side-w` token at 1024
 - The gauge leaves `--gauge-side-w` beside it: 181.00 / 167.42 / 162.90; the gauge shrinks first and the side keeps its content
 - The network legend is a fixed token: `--legend-w = clamp(112px, 43.635px + E * 0.086538, 168px)` = 168 at 1440, 132.25 at 1024, 112 at 390; the plots take the rest with `minmax(0, 1fr)`
 - The GPU legend is 224 px (192 px at 599 and below); each lane is scale 27 / plot 1fr / legend 224 with 10 px column gaps
-- Alignment: every Memory row starts at one label edge, 0 px spread; every percent cell ends at the content box's right edge, 0 px spread; the available row has no percent and its value ends flush right, 36.59 px right of the values that carry a percent; facts stack label over value, left aligned
+- Alignment: every Memory row starts at one label edge, 0 px spread; every percent cell ends at the content box's right edge, 0 px spread; the free + reclaimable row's value and percent sit in the same two columns as the other rows; facts stack label over value, left aligned
 - A side column never wraps under the plot; the plot column is `minmax(0, 1fr)` and gives width first, then the tier drops the side: P3 removes the gauge facts, the gauge scale and the legend meta and model, P2 makes the GPU legend one line per entry and removes the scale gutter
 - The load triple is the one value that wraps: each figure with its window is a nowrap cell and the cells wrap as units (ACC-VIEW-129/130/131)
 - The Network legend fills its cell height: its entries sit within 12 px of the cell's top and bottom edges, never centred with an empty block under the last entry (DEF-LAYOUT-93)
@@ -101,7 +101,7 @@ The dashboard is one fixed viewport: a top bar, four bands and twelve column wei
 - Type steps on `E = min(100vw, 160vh)`: `--fs-12` 11 to 12, `--fs-11` 10 to 11, `--fs-10` 9 to 10, `--fs-9` 8 to 9 px; `--stat-size` 22 to 32, `--lg-v` 12 to 14; body 12 px at line-height 1.25 with tabular figures
 - Tracking: uppercase chips 0.03em, legend names and gauge labels 0.05em, config labels 0.04em, panel headings and brand 0.01em; large stat values -0.015em and gauge values -0.02em; units and the narrow-face exception 0
 - Reserved width (ACC-LAYOUT-74): every live value is an inline block whose hidden `::before` carries its widest form in `data-w`; digits are tabular and right-aligned in the reserve, so the empty part falls before the number and the unit or the next word keeps its x
-- Reserves in the page: core value `data-w="100"` 15.28 px, memory percent `data-w="100%"` 28.59 px at 1440 and 26.41 at 1024, available `data-w="0000 MiB"` 46.91 and 43.31, the scale gutter 27 px, the network legend 168 px, the GPU legend 224 px, the Pid cell 7ch + 16 px below 900
+- Reserves in the page: core value `data-w="100"` 15.28 px, memory percent `data-w="100%"` 23.64 px at 1440 and 21.67 at 1024, memory value `data-w="0000 MiB"` 38.77 and 35.55, the scale gutter 27 px, the network legend 168 px, the GPU legend 224 px, the Pid cell 7ch + 16 px below 900
 - The stat tooltip opens after 1500 ms of rest on one stat; a move to a different stat restarts the wait and staying on the same stat does not (ACC-VIEW-168)
 - The tooltip sits 12 px right and 16 px below the pointer, flips at the viewport edge and stays 4 px inside it
 
@@ -132,7 +132,7 @@ The dashboard is one fixed viewport: a top bar, four bands and twelve column wei
 ## Evidence
 
 - `tmp/workflows/btop-web-layout/checkpoints/band-split.json`: band 2 panels 469.33 x 192.25 at 1440x900 and 333.00 x 180.67 at 1024x768; cores meter 65.67 px, 64 rows in 4 columns x 16, 27 percent paints 17.73 px; no scroll or clip at 1440x900, 1024x768, 390x844
-- `tmp/workflows/btop-web-layout/checkpoints/mem-legend.json`: Memory rows 178.86 / 165.77 px; CPU side 188.36 / 144.92 px; gauges 147.61 x 150.23 and 133.58 x 135.95; vertical fill 0.02 / 6.49 px; label and percent edges aligned
+- `tmp/workflows/btop-web-layout/checkpoints/mem-legend.json`: Memory rows 178.86 / 165.77 px; CPU side 188.36 / 144.92 px in `tmp/workflows/btop-web-layout/measure-mem-legend/after.json`, which this checkpoint names; gauges 147.61 x 150.23 and 133.58 x 135.95; vertical fill 0.02 / 6.49 px; label and percent edges aligned
 - `tmp/workflows/btop-web-gauge-size/checkpoints/gauge.json`: circle 97.58 x 99.31 at 900x700; squircle 88.13 x 96.00 at 1440x600 and 1024x600, the shape DEF-LAYOUT-94 replaced there; the token clamp and the shape threshold
 - `tmp/workflows/btop-web-space/checkpoints/short-view.json`: the short-view gauge at 1280x600, 1280x720, 1024x600, 1440x600, 1440x900 and 390x844 - gauge box, body, Memory panel content width, per-panel largest empty region, all five themes in dark and light, the system and GalaxaTron faces, contrast and clipping
 - `tmp/workflows/btop-web-space/short-view/`: before/after measurement JSON and screenshots for the short-view change

@@ -26,7 +26,9 @@ use crate::routes::agent_name;
 /// value events keep the tick; the first frame of a stream always carries
 /// the held slow result. ACC-PERF-16-NO-OVERHEAD: the sampler rendered the
 /// fragments once for every viewer, so a stream clones a pointer and yields
-/// the held text.
+/// the held text. DEF-VIEW-119-STALE-TAB: every connection opens with one
+/// `stamp` event naming this build, so a page from another build reloads; no
+/// frame carries it.
 pub async fn events(
     State(state): State<AppState>,
     RawQuery(query): RawQuery,
@@ -37,7 +39,7 @@ pub async fn events(
         let link = client
             .select(agent_name(query.as_deref()))
             .ok_or(AppError::NotFound)?;
-        return Ok(link.relay().into_response());
+        return Ok(link.relay(state.asset_stamp.clone()).into_response());
     }
     let subscription = state.wake.subscribe();
     let interval = Duration::from_millis(state.config.borrow().update_ms.max(1));
@@ -48,8 +50,10 @@ pub async fn events(
     if state.wake.stale(interval) {
         let _ = tokio::time::timeout(interval, receiver.changed()).await;
     }
+    let stamp = state.asset_stamp.clone();
     let stream = stream! {
         let _subscription = subscription;
+        yield Ok::<_, Infallible>(Event::default().event("stamp").data(&*stamp));
         let mut slow_seq = None;
         loop {
             let frame = (*receiver.borrow_and_update()).clone();
@@ -59,7 +63,7 @@ pub async fn events(
                     if *name == "proc" && !slow {
                         continue;
                     }
-                    yield Ok::<_, Infallible>(Event::default().event(*name).data(html));
+                    yield Ok(Event::default().event(*name).data(html));
                 }
                 slow_seq = Some(frame.snapshot.slow_seq);
             }

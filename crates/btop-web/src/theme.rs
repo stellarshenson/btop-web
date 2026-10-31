@@ -397,9 +397,9 @@ impl Palette {
                 contrast_ratio(text_strong, *one).total_cmp(&contrast_ratio(text_strong, *other))
             })
             .unwrap_or(surface);
-        // Alternate rows and their hover tint away from the text colour, so
-        // they separate without spending contrast. A pure black or white
-        // surface has no room in that direction and carries no row tint.
+        // Alternate rows tint away from the text colour, so they separate
+        // without spending contrast. A pure black or white surface has no room
+        // in that direction and carries no row tint.
         let away = if contrast_ratio([0, 0, 0], surface) >= contrast_ratio([255, 255, 255], surface)
         {
             [255, 255, 255]
@@ -411,7 +411,7 @@ impl Palette {
         // surface, one small step off it so the box separates without a new
         // palette entry, moving away from the accent so the border keeps its
         // floor on both; the text tones are clamped against the new fill.
-        let tip_surface = step_off(surface, accent, TIP_CONTRAST);
+        let tip_surface = step_off(surface, surface, accent, TIP_CONTRAST);
         // The accent is already 3:1 on the panel; on a near-white panel the
         // fill can only step darker, which costs some of that, so the border
         // is the accent moved back to the floor on the fill.
@@ -422,6 +422,20 @@ impl Palette {
             tip_surface,
             TEXT_CONTRAST,
         );
+        let zebra = blend(surface, away, ZEBRA_TINT);
+        // ACC-VIEW-198-ROW-HOVER: the hovered row is one step off the plain and
+        // the zebra row, on the side that leaves the text the most contrast. A
+        // surface too near black or white has room only toward the text, and
+        // a token at its floor on the surface cannot keep it there, so that
+        // cell takes the tooltip's strong line, which holds in every variant.
+        let row_hover = step_off(surface, zebra, text, ROW_HOVER_CONTRAST);
+        let on_row_hover = |token: Rgb| {
+            if contrast_ratio(token, row_hover) >= TEXT_CONTRAST {
+                token
+            } else {
+                tip_text
+            }
+        };
         let mem_used = ensure_contrast(self.color("used_end"), surface, UI_CONTRAST);
         let mem_free = ensure_contrast(self.color("free_end"), surface, UI_CONTRAST);
         // The Memory bar's cache segment sits beside used, other (muted) and
@@ -478,8 +492,13 @@ impl Palette {
                 "chip-fg",
                 ensure_contrast(text_strong, chip_tint, TEXT_CONTRAST),
             ),
-            ("zebra", blend(surface, away, ZEBRA_TINT)),
-            ("row-hover", blend(surface, away, HOVER_TINT)),
+            ("zebra", zebra),
+            ("row-hover", row_hover),
+            ("row-hover-text", on_row_hover(text)),
+            ("row-hover-muted", on_row_hover(muted)),
+            ("row-hover-ok", on_row_hover(ok)),
+            ("row-hover-warn", on_row_hover(warn)),
+            ("row-hover-crit", on_row_hover(crit)),
             (
                 "net-down-text",
                 ensure_contrast(self.color("download_end"), surface, TEXT_CONTRAST),
@@ -796,10 +815,11 @@ const GRADIENT_TEXT_CONTRAST: f64 = TEXT_CONTRAST + 0.05;
 /// Margin so an independent contrast computation cannot round below the floor.
 const CONTRAST_MARGIN: f64 = 0.01;
 /// Tint weights the stylesheet paints over the surface: the house chip's hue
-/// at 12%, the alternate process row at 3% and its hover at 7%.
+/// at 12% and the alternate process row at 3%.
 const CHIP_TINT: f64 = 0.12;
 const ZEBRA_TINT: f64 = 0.03;
-const HOVER_TINT: f64 = 0.07;
+/// ACC-VIEW-198-ROW-HOVER: the hovered row's distance from the plain and zebra rows.
+const ROW_HOVER_CONTRAST: f64 = 1.25;
 /// The plot grid: the text colour at 12% over the surface, 1.1 to 1.6:1.
 const GRID_TINT: f64 = 0.12;
 /// DEF-VIEW-84-TIP-VISIBLE: the tooltip fill's distance from the panel, and
@@ -849,18 +869,18 @@ fn dim_towards(rgb: Rgb, background: Rgb, ratio: f64) -> Rgb {
 }
 
 /// The smallest blend of `background` towards black or white that reaches
-/// `ratio` against it, in whichever direction leaves `keep` the most contrast
-/// on the result. A pure black or pure white background has room in one
-/// direction only.
+/// `ratio` against it and against `also`, in whichever direction leaves `keep`
+/// the most contrast on the result. A pure black or pure white background has
+/// room in one direction only.
 // Own search, as ensure_contrast: the crate measures a ratio, it does not solve for one.
-fn step_off(background: Rgb, keep: Rgb, ratio: f64) -> Rgb {
+fn step_off(background: Rgb, also: Rgb, keep: Rgb, ratio: f64) -> Rgb {
     let mut best: Option<Rgb> = None;
     for target in [[0, 0, 0], [255, 255, 255]] {
         let step = (1..=255u16).find(|step| {
-            contrast_ratio(
-                blend(background, target, f64::from(*step) / 255.0),
-                background,
-            ) >= ratio + CONTRAST_MARGIN
+            let candidate = blend(background, target, f64::from(*step) / 255.0);
+            [background, also]
+                .iter()
+                .all(|base| contrast_ratio(candidate, *base) >= ratio + CONTRAST_MARGIN)
         });
         let Some(step) = step else { continue };
         let candidate = blend(background, target, f64::from(step) / 255.0);
@@ -1089,7 +1109,7 @@ mod tests {
     /// The Default light palette is the Steel dark with every lightness
     /// inverted, under the `STEEL_LIGHT` overrides from the JupyterLab light
     /// and Steel Light themes (ACC-THEME-65-STEEL-DEFAULT). Every token is pinned so a conversion swap cannot move one channel
-    /// (DEF-LIB-19-HSL-CONVERT); the semantic tokens are the last thirty-one.
+    /// (DEF-LIB-19-HSL-CONVERT); the semantic tokens are the last forty.
     /// The status tokens use the 4.5:1 text floor (DEF-THEME-20-LIGHT-GREEN),
     /// and chip-fg, zebra, row-hover and the net text variants carry the
     /// tinted-layer fix (DEF-THEME-21-TINT-CONTRAST).
@@ -1166,7 +1186,12 @@ mod tests {
             "--crit:#b32323;",
             "--chip-fg:#000000;",
             "--zebra:#ffffff;",
-            "--row-hover:#ffffff;",
+            "--row-hover:#e4e4e4;",
+            "--row-hover-text:#23262a;",
+            "--row-hover-muted:#000000;",
+            "--row-hover-ok:#000000;",
+            "--row-hover-warn:#000000;",
+            "--row-hover-crit:#b32323;",
             "--net-down-text:#294f79;",
             "--net-up-text:#875726;",
             "--chart-gpu-0:#938834;",

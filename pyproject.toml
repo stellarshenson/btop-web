@@ -1,0 +1,31 @@
+# The companion client, not the server: the server is the Cargo workspace beside this file.
+# This file sits at the root because the shared-data source below must resolve both in a clone
+# and in the unpacked sdist that python -m build makes the wheel from.
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "btop-web-client"
+version = "0.1.0"
+description = "Client for the newline-delimited JSON telemetry stream of btop-web"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+
+[project.scripts]
+btop-web-client = "btop_web_client.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/btop_web_client"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+".agents/skills/btop-web-client" = "share/jupyter/agents/skills/btop-web-client"
+
+[tool.hatch.build.targets.sdist]
+only-include = ["python", ".agents/skills/btop-web-client", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+cache_dir = "target/pytest-cache"

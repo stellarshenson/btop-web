@@ -75,9 +75,8 @@ Options:
                         choice: top, all or tree (default tree when btop's
                         proc_tree is True, otherwise top)
       --title <TEXT>    Page title in the browser tab (default btop-web)
-      --readonly        Refuse every mutating request (default)
-      --no-readonly     Turn the read-only guard off; config menu edits are
-                        saved to btop-web.conf at
+      --readonly        Refuse every mutating request. Without it, config menu
+                        edits are saved to btop-web.conf at
                         $XDG_CONFIG_HOME/btop-web/btop-web.conf, or at
                         ~/.config/btop-web/btop-web.conf when XDG_CONFIG_HOME
                         is unset; btop.conf is never written
@@ -103,7 +102,7 @@ fn main() -> Result<()> {
 
 async fn run() -> Result<()> {
     let mut config_path: Option<PathBuf> = None;
-    let mut readonly = true;
+    let mut readonly = false;
     let mut debug = false;
     let mut update_ms: Option<u64> = None;
     let mut theme: Option<usize> = None;
@@ -308,7 +307,6 @@ async fn run() -> Result<()> {
                 ));
             }
             "--readonly" => readonly = true,
-            "--no-readonly" => readonly = false,
             "-h" | "--help" => {
                 print!("{USAGE}");
                 return Ok(());
@@ -544,9 +542,11 @@ async fn run() -> Result<()> {
     let listener = TcpListener::bind(config.listen)
         .await
         .with_context(|| format!("cannot bind {}", config.listen))?;
+    // With port 0 the configured address does not name the port in use.
+    let listen = listener.local_addr().context("listener address")?;
     tracing::info!(
         mode = config.mode.as_str(),
-        listen = %config.listen,
+        listen = %listen,
         update_ms = config.update_ms,
         theme = config.theme_id(),
         proc_root = %config.proc_root.display(),

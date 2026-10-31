@@ -90,7 +90,7 @@ pub fn render(
         _ => ("events".to_string(), Vec::new(), String::new()),
     };
     let note = match (state.readonly, file) {
-        (true, _) => "read-only: start with --no-readonly to change".to_string(),
+        (true, _) => "read-only: restart without --readonly to change".to_string(),
         (false, Some(path)) => format!(
             "changes apply to every viewer and are saved to {} (btop-web.conf; $XDG_CONFIG_HOME/btop-web/ when set, else ~/.config/btop-web/; btop.conf stays the baseline)",
             path.display()
@@ -166,8 +166,8 @@ pub async fn index(
     if state.client.is_none() {
         // ACC-GRAPH-164-NET-SCALE: a page load is the only thing that lowers
         // the network axis; the reset lands before the sampler's next tick, so
-        // the first sample after the reload anchors the step at the measured
-        // peak.
+        // the first sample after the reload sets the ceiling to the decade above
+        // the measured peak.
         let proc_root = state.config.borrow().proc_root.clone();
         crate::collector::net::reset_scale(&proc_root);
         let interval = Duration::from_millis(state.config.borrow().update_ms.max(1));

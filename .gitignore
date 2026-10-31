@@ -1,6 +1,8 @@
 /target
 /tmp
 /coverage
+/dist
+__pycache__/
 /graphify-out
 /logs/*.log
 *.local.conf

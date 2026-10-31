@@ -235,7 +235,8 @@ fn tooltip_surface_separates_and_keeps_its_text_readable() {
 /// their hover paint a derived tint over it, the network arrows use derived
 /// text variants of the raw graph colours, a house chip paints 12% of its
 /// hue, and the config popover paints its controls on the raised surface.
-/// Every text token on those layers must reach the 4.5:1 text floor
+/// Every text token on those layers must reach the 4.5:1 text floor, on the
+/// hover through its row-hover token
 /// (DEF-THEME-21-TINT-CONTRAST, DEF-THEME-22-POPOVER-CONTRAST).
 #[test]
 fn text_on_tinted_layers_reaches_4_5_to_1() {
@@ -243,17 +244,56 @@ fn text_on_tinted_layers_reaches_4_5_to_1() {
         for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
             let colors = semantic(palette);
             let surface = colors["surface"];
-            for layer in ["zebra", "row-hover"] {
-                for token in ["text", "muted", "ok", "warn", "crit"] {
-                    let ratio = contrast(colors[token], colors[layer]);
-                    assert!(
-                        ratio >= 4.5,
-                        "{} {mode}: {token} {} on {layer} {} is {ratio:.2}:1",
-                        pair.id,
-                        hex(colors[token]),
-                        hex(colors[layer])
-                    );
-                }
+            for token in ["text", "muted", "ok", "warn", "crit"] {
+                let ratio = contrast(colors[token], colors["zebra"]);
+                assert!(
+                    ratio >= 4.5,
+                    "{} {mode}: {token} {} on zebra {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(colors[token]),
+                    hex(colors["zebra"])
+                );
+            }
+            // ACC-VIEW-198-ROW-HOVER: the hovered row reaches 1.25:1 against
+            // both rows it sits among. A hovered cell paints its own token
+            // where that holds 4.5:1 on the step and --tip-text where it cannot.
+            let hover = colors["row-hover"];
+            for row in ["surface", "zebra"] {
+                let ratio = contrast(hover, colors[row]);
+                assert!(
+                    ratio >= 1.25,
+                    "{} {mode}: row-hover {} on {row} {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(hover),
+                    hex(colors[row])
+                );
+            }
+            for (cell, token) in [
+                ("row-hover-text", "text"),
+                ("row-hover-muted", "muted"),
+                ("row-hover-ok", "ok"),
+                ("row-hover-warn", "warn"),
+                ("row-hover-crit", "crit"),
+            ] {
+                let ratio = contrast(colors[cell], hover);
+                assert!(
+                    ratio >= 4.5,
+                    "{} {mode}: {cell} {} on row-hover {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(colors[cell]),
+                    hex(hover)
+                );
+                let expected = if contrast(colors[token], hover) >= 4.5 {
+                    colors[token]
+                } else {
+                    colors["tip-text"]
+                };
+                assert_eq!(
+                    hex(colors[cell]),
+                    hex(expected),
+                    "{} {mode}: {cell} is neither its token nor the stronger one",
+                    pair.id
+                );
             }
             for token in ["net-down-text", "net-up-text"] {
                 let ratio = contrast(colors[token], surface);
@@ -291,6 +331,27 @@ fn text_on_tinted_layers_reaches_4_5_to_1() {
                 hex(colors["text"]),
                 hex(raised)
             );
+            // The Processes filter paints --surface-raised as well, barely off
+            // the bar (ACC-VIEW-187-FILTER-SEGMENT). --muted sits at its floor
+            // on --surface, so the hint mixes 20% --text back in and stays
+            // dimmer than the typed --text (ACC-VIEW-188-FILTER-HINT).
+            let ratio = contrast(raised, surface);
+            assert!(
+                (1.02..=1.12).contains(&ratio),
+                "{} {mode}: filter {} on the bar {} is {ratio:.3}:1",
+                pair.id,
+                hex(raised),
+                hex(surface)
+            );
+            let hint = mix(colors["text"], colors["muted"], 0.2);
+            let ratio = contrast(hint, raised);
+            assert!(
+                (4.5..contrast(colors["text"], raised)).contains(&ratio),
+                "{} {mode}: filter hint {} on {} is {ratio:.2}:1",
+                pair.id,
+                hex(hint),
+                hex(raised)
+            );
             let selected = mix(colors["accent"], raised, 0.12);
             let ratio = contrast(colors["chip-fg"], selected);
             assert!(
@@ -300,6 +361,45 @@ fn text_on_tinted_layers_reaches_4_5_to_1() {
                 hex(colors["chip-fg"]),
                 hex(raised)
             );
+        }
+    }
+}
+
+/// ACC-VIEW-172-GAUGE-TICKS: the inner ticks are stroked with `--surface`
+/// at [`TICK_OPACITY`] (app.css `.g-tick.inner`), so the composite stays
+/// faint on the grey track (`--meter-track` is `--border`) and on the ok,
+/// warn and crit fills they cross, in every pair and mode: the measured
+/// range is 1.37:1 to 2.00:1, above the plot grid's floor and far below the
+/// 3:1 a chart colour carries. The raw surface keeps that 3:1 separation, so
+/// the opacity alone sets how slight the tick reads.
+const TICK_OPACITY: f64 = 0.3;
+
+#[test]
+fn gauge_inner_ticks_are_faint_on_the_track_and_every_fill() {
+    for pair in embedded_pairs() {
+        for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
+            let colors = semantic(palette);
+            let tick = colors["surface"];
+            for token in ["border", "ok", "warn", "crit"] {
+                let fill = colors[token];
+                let ratio = contrast(tick, fill);
+                assert!(
+                    ratio >= 3.0,
+                    "{} {mode}: the inner tick {} on {token} {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(tick),
+                    hex(fill)
+                );
+                let drawn = mix(tick, fill, TICK_OPACITY);
+                let ratio = contrast(drawn, fill);
+                assert!(
+                    (1.25..=2.05).contains(&ratio),
+                    "{} {mode}: the faded inner tick {} on {token} {} is {ratio:.2}:1",
+                    pair.id,
+                    hex(drawn),
+                    hex(fill)
+                );
+            }
         }
     }
 }
@@ -409,34 +509,54 @@ fn gpu_series_tokens_are_distinct_and_reach_3_to_1() {
     }
 }
 
-/// DEF-VIEW-50-MEM-TERMS: the Memory bar's used, cache, other (muted) and
-/// free segments sit side by side, so every pair differs by CIEDE2000 15 or
-/// more (17.6 is the measured minimum, free and muted in Everforest dark).
+/// ACC-VIEW-190-MEM-RECLAIM: the memory segments as app.css mixes them for the
+/// bar and the keys, in table order, with free the track colour. The gauge arc
+/// draws the first two against the track (ACC-VIEW-192-GAUGE-CONTAINER).
+fn memory_segments(colors: &BTreeMap<&'static str, Rgb>) -> [(&'static str, Rgb); 5] {
+    const BLACK: Rgb = [0, 0, 0];
+    const WHITE: Rgb = [255, 255, 255];
+    [
+        ("used", mix(colors["ok"], BLACK, 0.80)),
+        ("cache", mix(colors["ok"], WHITE, 0.50)),
+        ("other", mix(colors["chart-mem-cached"], BLACK, 0.75)),
+        ("other-cache", mix(colors["chart-mem-cached"], WHITE, 0.40)),
+        ("free", colors["border"]),
+    ]
+}
+
+/// ACC-VIEW-190-MEM-RECLAIM: each segment reaches 1.5:1 against the next, in
+/// table order, and the reclaimable tone is lighter than its owner's colour.
+/// A row that reads zero puts the two reclaimable tones beside the bare track,
+/// and those pairs reach 1.5:1 too.
 #[test]
-fn memory_bar_segments_are_distinct() {
-    const SEGMENTS: [&str; 4] = [
-        "chart-mem-used",
-        "chart-mem-cached",
-        "muted",
-        "chart-mem-free",
-    ];
+fn memory_segments_reach_1_5_to_1_against_their_neighbours() {
     for pair in embedded_pairs() {
         for (mode, palette) in [("dark", &pair.dark), ("light", &pair.light)] {
             let colors = semantic(palette);
-            for first in 0..SEGMENTS.len() {
-                for second in first + 1..SEGMENTS.len() {
-                    let (one, other) = (colors[SEGMENTS[first]], colors[SEGMENTS[second]]);
-                    let difference = lab(one).difference(lab(other));
-                    assert!(
-                        difference >= 15.0,
-                        "{} {mode}: {} {} and {} {} differ by {difference:.1}",
-                        pair.id,
-                        SEGMENTS[first],
-                        hex(one),
-                        SEGMENTS[second],
-                        hex(other)
-                    );
-                }
+            let segments = memory_segments(&colors);
+            let neighbours = segments.windows(2).map(|two| (two[0], two[1]));
+            let beside_track = [(segments[1], segments[4])];
+            for (one, other) in neighbours.chain(beside_track) {
+                let ratio = contrast(one.1, other.1);
+                assert!(
+                    ratio >= 1.5,
+                    "{} {mode}: {} {} and {} {} are {ratio:.2}:1",
+                    pair.id,
+                    one.0,
+                    hex(one.1),
+                    other.0,
+                    hex(other.1)
+                );
+            }
+            let lightness = |color: Rgb| lab(color).l;
+            for (base, tone) in [(0, 1), (2, 3)] {
+                assert!(
+                    lightness(segments[tone].1) > lightness(segments[base].1),
+                    "{} {mode}: {} is not lighter than {}",
+                    pair.id,
+                    segments[tone].0,
+                    segments[base].0
+                );
             }
         }
     }

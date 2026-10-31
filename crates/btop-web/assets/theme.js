@@ -8,6 +8,7 @@
   var MODE_KEY = "btop-web-mode";
   var THEME_KEY = "btop-web-theme";
   var FONT_KEY = "btop-web-font";
+  var LIVE_STATUS_KEY = "btop-web-live-status";
   var root = document.documentElement;
 
   function read(key) {
@@ -58,10 +59,17 @@
   if (font !== "galaxatron") {
     font = "system";
   }
+  // ACC-VIEW-200-LIVE-STATUS: on, dimmed or off, set here in the head so an off
+  // status never paints; on is the default and anything unrecognised is on.
+  var liveStatus = read(LIVE_STATUS_KEY);
+  if (liveStatus !== "dimmed" && liveStatus !== "off") {
+    liveStatus = "on";
+  }
 
   root.setAttribute("data-theme", theme);
   root.setAttribute("data-mode", mode);
   root.setAttribute("data-font", font);
+  root.setAttribute("data-live-status", liveStatus);
 
   // DEF-LAYOUT-90-LOAD-SHIFT: the stored face is prefetched from the head, so
   // the swap in app.css finds it before the first paint and no text re-lays out
@@ -252,6 +260,12 @@
       fontButtons[fontIndex].classList.toggle("on", fontOn);
       fontButtons[fontIndex].setAttribute("aria-checked", String(fontOn));
     }
+    var liveButtons = document.querySelectorAll('[data-group="live-status"] .opt');
+    for (var liveIndex = 0; liveIndex < liveButtons.length; liveIndex += 1) {
+      var liveOn = liveButtons[liveIndex].getAttribute("data-value") === liveStatus;
+      liveButtons[liveIndex].classList.toggle("on", liveOn);
+      liveButtons[liveIndex].setAttribute("aria-checked", String(liveOn));
+    }
   }
 
   function ready() {
@@ -306,6 +320,20 @@
         font = button.getAttribute("data-value");
         root.setAttribute("data-font", font);
         write(FONT_KEY, font);
+        sync();
+      });
+    }
+
+    var liveGroup = document.querySelector('[data-group="live-status"]');
+    if (liveGroup) {
+      liveGroup.addEventListener("click", function (event) {
+        var button = event.target.closest(".opt");
+        if (!button || !liveGroup.contains(button)) {
+          return;
+        }
+        liveStatus = button.getAttribute("data-value");
+        root.setAttribute("data-live-status", liveStatus);
+        write(LIVE_STATUS_KEY, liveStatus);
         sync();
       });
     }

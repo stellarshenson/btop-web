@@ -24,8 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # @master reads the channel from rust-toolchain.toml; the version is not pinned here.
-      - uses: dtolnay/rust-toolchain@master
+      # Same channel as rust-toolchain.toml. The tag pins it: @master needs a toolchain input.
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2

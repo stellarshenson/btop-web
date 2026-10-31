@@ -2,7 +2,8 @@ name: Docker
 
 on:
   push:
-    tags: ["v*"]
+    # cargo-release tags btop-web-v<version>; make release prints btop-web-v1.0.2
+    tags: ["btop-web-v*"]
 
 permissions:
   contents: read
@@ -24,9 +25,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # type=semver refuses the crate prefix in the tag, so the groups take the version out of it
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=btop-web-v(.*),group=1
+            type=match,pattern=btop-web-v(\d+\.\d+),group=1
       - uses: docker/build-push-action@v6
         with:
           context: .

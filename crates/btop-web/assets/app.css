@@ -100,16 +100,20 @@
   --gap: clamp(5px, calc(1.327px + var(--e) * 0.004808), 8px);
   --pad: var(--gap);
   /* the one gap between a live number and its unit, every stat tile and
-     gauge; the gauge readouts carry it as a 2.65-unit tspan dx, which renders
-     the same 4 px at their scale of 1.5088 - SVG text cannot read custom
-     properties (DEF-VIEW-68-UNIT-GAP, DEF-VIEW-69-GAUGE-GAP) */
+     gauge; the gauge readouts carry it as a 2.5-unit tspan dx, which renders
+     the same 4 px at their scale of 1.6 - an SVG dx attribute cannot read
+     custom properties (DEF-VIEW-68-UNIT-GAP, DEF-VIEW-69-GAUGE-GAP) */
   --unit-gap: 4px;
   --fs-12: clamp(11px, calc(8.788px + var(--e) * 0.002404), 12px);
   --fs-11: clamp(10px, calc(7.788px + var(--e) * 0.002404), 11px);
   --fs-10: clamp(9px, calc(6.788px + var(--e) * 0.002404), 10px);
   --fs-9: clamp(8px, calc(7.519px + var(--e) * 0.001202), 9px);
   --lg-v: clamp(12px, calc(10.788px + var(--e) * 0.002404), 14px);
-  --legend-w: clamp(112px, calc(43.635px + var(--e) * 0.086538), 168px);
+  /* ACC-VIEW-174-NET-STRIP: the network legend column is its widest row and no
+     more: the value's widest form, 1023 Byte/s at 7.1 lg-v in the wider face,
+     plus the 8 px swatch, its 6 px gap, the 10 px padding and the 1 px rule. The
+     link line, 105.75 px at most, fits inside it at every tier */
+  --legend-w: calc(var(--lg-v) * 7.1 + 25px);
   /* the GPU mini bars reserve 48 px inside the legend, so the legend keeps the
      width the value line needs at every tier (ACC-VIEW-79-GPU-BARS). The
      narrow face's digits advance 0.655 em against the system stack's 0.636 em,
@@ -117,9 +121,10 @@
      checked with the narrow face at all three viewports and a wider value
      ends in its ellipsis, never in a shifted neighbour (DEF-VIEW-46-LEGEND-SHIFT) */
   --gpu-legend-w: 224px;
-  /* the plot scale gutter: four characters of fs-9 ("100%", "999M") and the
-     10 px gap to the plot box. Labels right-align on it, so a ceiling that
-     changes width moves no plot (DEF-GRAPH-63-GRID-UNITS, ACC-LAYOUT-74) */
+  /* the plot scale gutter: four characters of fs-9 ("100%") and the 10 px gap
+     to the plot box; #p-net widens it for its rate labels. Labels right-align
+     on it, so a ceiling that changes width moves no plot
+     (DEF-GRAPH-63-GRID-UNITS, ACC-LAYOUT-74) */
   --scale-w: 27px;
   --filter-w: clamp(92px, calc(63.019px + var(--e) * 0.048077), 132px);
   /* DEF-VIEW-87-GAUGE-SIZE: the design width of the circle. The circle is
@@ -128,12 +133,39 @@
      (DEF-LAYOUT-89). The container query below repeats the token's clamp in a
      length it can compare, so the shape needs no script (DEF-LAYOUT-90) */
   --gauge-w: clamp(96px, 9.2vw, 132px);
-  /* DEF-LAYOUT-89-MEM-LEGEND: the Memory legend's widest row (available =
-     free + cache with its 186 GiB value) measures 17.9 em of the row type at
-     1440x900 and 1024x768; 18.1 leaves about 1 percent. The gauge leaves this
-     column beside it, so the rows keep their natural width and the CPU and
-     Memory gauges keep one size whatever their side content is */
-  --gauge-side-w: calc(18.1 * var(--fs-10));
+  /* DEF-LAYOUT-89-MEM-LEGEND: the side column the design box leaves, in em of
+     the --fs-10 row type, so the CPU and Memory gauges keep one size whatever
+     their side content is. The rows themselves take --mem-fs and fit what the
+     grown box leaves (ACC-VIEW-189-GAUGE-ROOM). DEF-LAYOUT-113-ROW-OVERLAP:
+     21.3 em holds the widest row with 0000 MiB and 100%,
+     in both faces on a tall window; a shorter window's height caps the gauge
+     first. The tighter spacing below 1280 px sets its own value */
+  --gauge-side-w: calc(21.3 * var(--fs-10));
+  /* ACC-VIEW-189-GAUGE-ROOM: the gauge box draws this many times the design
+     box above, and the SVG readout's size is divided by the same factor, so
+     it renders at the design px while the band's inner edge moves away from
+     it. One number, because calc cannot divide a length by a length. 1.06 is
+     what the tallest measured body holds: the 189 px box at 1920x1080 plus the
+     12 px of padding the body gave up is 1.0635 times 189. On a taller body
+     the height caps the box, so the readout renders up to 2 percent smaller */
+  --gauge-grow: 1.06;
+  /* the vertical padding .gauge-body gave up, 6 + 8 to 1 + 1 */
+  --gauge-freed: 12px;
+  /* the memory table one px under the panel's row type, and 8 percent under
+     that (ACC-VIEW-197-MEM-FONT); below 1280 px the panel keeps 4:4:4, so the
+     five rows' longer labels fit by the tighter spacing the same block sets */
+  --mem-fs: calc((var(--fs-10) - 1px) * 0.92);
+  /* DEF-LAYOUT-121-MEM-TABLE: the bar's 6 px and the 4 px under it, and one row
+     pitch for the memory table and the CPU facts: 20 px where the body holds
+     it, else what the body leaves seven rows after the bar and 8 px above and
+     below the block. Read inside .gauge-body, the container 100cqh names */
+  --mem-bar-room: 10px;
+  --mem-row-h: min(20px, calc((100cqh - var(--mem-bar-room) - 16px) / 7));
+  --mem-gap: 8px;
+  --mem-key: 7px;
+  --mem-key-gap: 5px;
+  --gauge-pad-x: 10px;
+  --gauge-gap: 10px;
   --lh-name: calc(var(--fs-10) * 1.25);
   --lh-val: calc(var(--lg-v) * 1.1);
   --lh-meta: calc(var(--fs-9) * 1.25);
@@ -192,7 +224,7 @@
    the token to it; this rule gives every text that sets none the face's
    tracking. The process panel and the CONFIG popover keep the system face, so
    :not() takes them and their subtrees out. */
-[data-font="galaxatron"] :where(:not(#p-proc, #p-proc *, .config, .config *)) {
+[data-font="galaxatron"] :where(:not(#p-proc, #p-proc *, .config, .config *, .proc-detail, .proc-detail *)) {
   --track: calc(0.5px + 0.01em);
   letter-spacing: var(--track);
 }
@@ -205,6 +237,7 @@
    --font-display, like every other panel heading. ACC-THEME-169: the system
    face keeps its own spacing, so the tracking token returns to 0 here. */
 [data-font="galaxatron"] #p-proc,
+[data-font="galaxatron"] .proc-detail,
 [data-font="galaxatron"] .config {
   --font-ui: var(--ui);
   --track: 0px;
@@ -307,12 +340,15 @@ body {
   isolation: isolate;
 }
 
+/* DEF-VIEW-132-DIGIT-SHIFT: the face's own tracking on a layer would move a
+   digit sideways while an effect runs, so a layer keeps its host's spacing. */
 .num-tween,
 .num-base,
 .num-echo,
 .num-odo {
   font-variant-numeric: tabular-nums;
   white-space: pre;
+  letter-spacing: inherit;
 }
 
 .num-base {
@@ -557,6 +593,42 @@ select.opt option {
   display: none;
 }
 
+/* ACC-VIEW-200-LIVE-STATUS: dimmed is a plain label in the form of .u-meta,
+   still packed by the chip's auto margin, so no neighbour moves */
+[data-live-status="dimmed"] .chip-live {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  font-size: var(--fs-10);
+}
+
+[data-live-status="dimmed"] .chip-live::before,
+[data-live-status="dimmed"] .chip-live .lamp,
+[data-live-status="dimmed"] .chip-live.paused .live-age,
+[data-live-status="dimmed"] .chip-live.stale .live-age {
+  display: none;
+}
+
+[data-live-status="dimmed"] .chip-live .live-word {
+  text-transform: none;
+  letter-spacing: var(--track);
+}
+
+[data-live-status="dimmed"] .chip-live .live-age {
+  color: inherit;
+}
+
+/* off: the next item takes the auto margin, so it and those after it stay at
+   the bar's right end */
+[data-live-status="off"] .chip-live {
+  display: none;
+}
+
+[data-live-status="off"] .chip-live + * {
+  margin-left: auto;
+}
+
 .chip-readonly {
   --chip-hue: var(--warn);
   border-color: var(--warn);
@@ -579,6 +651,49 @@ select.opt option {
   border-color: var(--accent);
   color: var(--chip-fg);
   cursor: pointer;
+}
+
+/* ACC-VIEW-182-COPY-JSON: the top bar's copy control. The icon swaps to a
+   check and the chip takes the ok hue for the confirmation, then returns to
+   rest; both glyphs share the one 12 px box, so the button's width never
+   changes and the chips after it do not move (ACC-LAYOUT-74-RESERVED-WIDTH) */
+.chip-copy {
+  --chip-hue: var(--accent);
+  border-color: var(--accent);
+  color: var(--chip-fg);
+  cursor: pointer;
+}
+
+.chip-copy.copied {
+  --chip-hue: var(--ok);
+  border-color: var(--ok);
+}
+
+.copy-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+.copy-sheet,
+.copy-check {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.copy-check {
+  display: none;
+  stroke-width: 1.4;
+}
+
+.chip-copy.copied .copy-sheet {
+  display: none;
+}
+
+.chip-copy.copied .copy-check {
+  display: block;
 }
 
 /* ACC-NET-143-AGENT-MODES: one chip per agent a client shows, its name and
@@ -914,6 +1029,13 @@ html[data-off~="proc"] [data-panel="proc"],
   white-space: nowrap;
 }
 
+/* DEF-LAYOUT-121-MEM-TABLE: 1 px inside the clip that the margin gives back,
+   so the clip keeps the first glyph's left edge and nothing moves */
+.head-right > .meta {
+  margin-left: -1px;
+  padding-left: 1px;
+}
+
 .cpu-name {
   flex: 0 1 auto;
   min-width: 0;
@@ -948,6 +1070,12 @@ html[data-off~="proc"] [data-panel="proc"],
    lines are the quarter marks of the configured window (ACC-VIEW-110); the
    small process-row graphs stay bare (owner 2026-10-28: noisy there) */
 [data-chart]:not([data-chart="proc"]) {
+  /* ACC-PERF-133-PAGE-COST: the box paints after the positioned axis beside it.
+     The scrolling svg is a compositor layer, and text painted after a layer it
+     may touch moves to a layer of its own, which loses LCD text. */
+  position: relative;
+  z-index: 1;
+  overflow: clip;
   background:
     linear-gradient(var(--grid-line), var(--grid-line)) 25% 0 / 1px 100% no-repeat,
     linear-gradient(var(--grid-line), var(--grid-line)) 50% 0 / 1px 100% no-repeat,
@@ -990,36 +1118,30 @@ html[data-off~="proc"] [data-panel="proc"],
   bottom: 0;
 }
 
-/* ACC-GRAPH-98-ANIM-CLOCK: between readouts a chart's drawn series group moves
-   left by a fraction of one slot; only the series moves, never the grid under
-   its box, the axis or a label, and the tail the server draws keeps the curve
-   at the right edge. The rule composes with the scale change below, which must
-   stay after this one: both select the same group.
-   DEF-PERF-77-PAGE-COST: will-change keeps the group its own compositor layer,
-   and app.js scrolls a wrapper around it (the rule below), so the scroll never
-   rewrites this transform, which a scale change animates. */
-.chart .series,
-.chart .gpu-series {
-  will-change: transform;
-  transform: translateX(var(--shift, 0px));
-}
-
-/* DEF-PERF-77-PAGE-COST: the scroll is a compositor animation of the wrapper
-   <g> app.js puts around the series group; the wrapper's own --shift-to carries
-   the distance, and app.js starts it with the negative delay that continues the
-   slow pass's phase. Two identical keyframe sets, because a changed animation
-   name is what restarts a CSS animation, so a resume restarts in one write. */
+/* ACC-GRAPH-98-ANIM-CLOCK: between readouts a chart's svg moves left by a
+   fraction of one slot; only the svg moves, never the grid under its box, the
+   axis or a label. The tail the server draws past the viewBox keeps the curve
+   at the right edge, so the svg shows its overflow and the plot box clips it.
+   DEF-PERF-77-PAGE-COST: the scroll is a compositor animation; the svg's own
+   --shift-to carries the distance as a share of its width, and app.js starts it
+   with the negative delay that continues the slow pass's phase. Two identical
+   keyframe sets, because a changed animation name is what restarts a CSS
+   animation, so a resume restarts in one write.
+   ACC-PERF-133-PAGE-COST: on the svg, a CSS box, the animation needs no layout
+   per frame; on a <g> inside it the browser lays the SVG out and tests the
+   hover again on every frame. */
 @keyframes chart-shift-a {
   from { transform: translateX(0); }
-  to { transform: translateX(var(--shift-to, 0px)); }
+  to { transform: translateX(var(--shift-to, 0)); }
 }
 
 @keyframes chart-shift-b {
   from { transform: translateX(0); }
-  to { transform: translateX(var(--shift-to, 0px)); }
+  to { transform: translateX(var(--shift-to, 0)); }
 }
 
-.chart [data-shift] {
+[data-chart] > .chart {
+  overflow: visible;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
 }
@@ -1034,6 +1156,7 @@ html[data-off~="proc"] [data-panel="proc"],
 }
 
 .chart .rescale {
+  will-change: transform;
   transform-box: view-box;
   transform: translateX(var(--shift, 0px)) scaleY(calc(var(--k0) * pow(var(--q), var(--p))));
 }
@@ -1070,6 +1193,22 @@ html[data-off~="proc"] [data-panel="proc"],
 
 [data-chart="proc-count"] .line {
   stroke: var(--chart-proc);
+}
+
+[data-chart="proc-detail-cpu"] .area {
+  fill: var(--chart-cpu);
+}
+
+[data-chart="proc-detail-cpu"] .line {
+  stroke: var(--chart-cpu);
+}
+
+[data-chart="proc-detail-mem"] .area {
+  fill: var(--chart-mem-used);
+}
+
+[data-chart="proc-detail-mem"] .line {
+  stroke: var(--chart-mem-used);
 }
 
 .net-down .area {
@@ -1184,6 +1323,21 @@ html[data-off~="proc"] [data-panel="proc"],
 .stat-facts b {
   font-weight: 500;
   color: var(--text);
+}
+
+/* DEF-VIEW-114-CPU-TEMP: the facts first show at 900 px, and the head has no
+   room for frequency, temperature and a 64-core load below 920 px in the system
+   face and 970 px in the narrow face, so the frequency drops rather than clip */
+@media (max-width: 919px) {
+  .stat-facts > span:has(+ .cpu-temp) {
+    display: none;
+  }
+}
+
+@media (max-width: 969px) {
+  [data-font="galaxatron"] .stat-facts > span:has(+ .cpu-temp) {
+    display: none;
+  }
 }
 
 /* DEF-VIEW-79-FOOTER-GAP: the 80% count's digits start at the label and its
@@ -1335,7 +1489,8 @@ html[data-off~="proc"] [data-panel="proc"],
 }
 
 /* the time axis starts at the plot column, past the scale gutter */
-.net-plots > .xaxis {
+.net-plots > .xaxis,
+.pd-plot > .xaxis {
   margin-left: calc(var(--scale-w) + 10px);
 }
 
@@ -1360,6 +1515,31 @@ html[data-off~="proc"] [data-panel="proc"],
   align-content: space-between;
 }
 
+#p-net .sw {
+  grid-row: 1 / span 4;
+}
+
+/* ACC-VIEW-174-NET-STRIP: the link line ends the legend; a fault chip appears
+   only above zero and wraps under the line when the line leaves it no room,
+   so the line never moves. House chip at the row's height, the READ-ONLY hue */
+.net-link {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1px 4px;
+}
+
+.net-link > .chip {
+  --chip-hue: var(--warn);
+  height: 13px;
+  padding: 0 3px;
+  border-color: var(--warn);
+  color: var(--chip-fg);
+  font-size: var(--fs-9);
+  line-height: 11px;
+}
+
 /* DEF-LAYOUT-99-NET-CLIP: the panel is the height container, because the
    legend cell is the panel less its header and body padding. At 1280x720 the
    full-tier panel is 152.08 px and the cell 113.61 px, while the two five-row
@@ -1371,6 +1551,9 @@ html[data-off~="proc"] [data-panel="proc"],
    12 px the lg-v floor, and no larger type fits. */
 #p-net {
   container: net-panel / size;
+  /* DEF-GRAPH-102-NET-SCALE: the gutter holds a label with its unit, 9.99 MiB/s
+     at fs-9 in the wider face, 52.91 px */
+  --scale-w: 54px;
 }
 
 /* the media guard is the tiers that show the meta rows (drop-p3 hides them
@@ -1398,6 +1581,16 @@ html[data-off~="proc"] [data-panel="proc"],
 
     #p-net .legend-meta {
       line-height: 1.1;
+    }
+
+    #p-net .net-link {
+      row-gap: 0;
+      margin-top: -2px;
+    }
+
+    #p-net .net-link > .chip {
+      height: 11px;
+      line-height: 9px;
     }
   }
 
@@ -1513,8 +1706,8 @@ html[data-off~="proc"] [data-panel="proc"],
 
 /* a lane under 1 px per unit leaves less than the half stroke above 100% and
    below 0%; the stroke paints into the plot margin and the body padding */
-#p-gpu .chart {
-  overflow: visible;
+#p-gpu [data-chart] {
+  overflow-y: visible;
 }
 
 .gpu-lane {
@@ -1682,8 +1875,8 @@ html[data-off~="proc"] [data-panel="proc"],
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 6px 10px 8px;
+  gap: var(--gauge-gap);
+  padding: 1px var(--gauge-pad-x);
   overflow: hidden;
 }
 
@@ -1692,8 +1885,8 @@ html[data-off~="proc"] [data-panel="proc"],
   flex: 0 1 auto;
   min-width: 0;
   width: auto;
-  height: 100%;
-  aspect-ratio: 112 / 122;
+  height: calc(var(--gauge-grow) * (100cqh - var(--gauge-freed)));
+  aspect-ratio: 132 / 122;
 }
 
 .gauge svg {
@@ -1759,19 +1952,32 @@ html[data-off~="proc"] [data-panel="proc"],
 
 /* the preferred shape: a circle sized by the smaller of the height the body
    allows and the width the side column leaves (DEF-LAYOUT-89): the body
-   content height times 112/114, capped by the content width less the 10 px gap
-   and the natural side column. At 1440x900 the height decides, 147.6 of
-   150.25 px; at 1024x768 the side column decides, 133.6 px, and both panels
-   take that one size (DEF-VIEW-87). The threshold is the --gauge-w token
-   (clamp(96px, 9.2vw, 132px)) times 114/112, written as a clamp of the same
-   three terms because a container query cannot read a custom property:
-   97.714286, 9.364286vw and 134.357143 are 96, 9.2vw and 132 times 114/112. */
-@container gauge (min-height: clamp(97.714286px, 9.364286vw, 134.357143px)) {
+   content height times 132/114, capped by the content width less the 10 px gap
+   and the natural side column. At 1440x900 the height decides, 173.95 px wide
+   by 150.25 px tall; at 1024x768 the side column decides, 133.6 px, and both
+   panels take that one size (DEF-VIEW-87). The box is 132 units wide to hold
+   the eleven scale labels; at the same height its 132/114 aspect draws the
+   band at the size the old 112-wide box drew (ACC-VIEW-171, ACC-VIEW-173).
+   The threshold is the --gauge-w token (clamp(96px, 9.2vw, 132px)) times
+   114/112 - the body height the band's design size needs - written as a clamp
+   of the same three terms because a container query cannot read a custom
+   property: 97.714286, 9.364286vw and 134.357143 are 96, 9.2vw and 132 times
+   114/112, each plus the 12 px of --gauge-freed. ACC-VIEW-189-GAUGE-ROOM: the
+   sizes above are the design box, and the box drawn is --gauge-grow times it;
+   100% plus twice the padding is the body's own width, the same at any
+   padding. */
+@container gauge (min-height: clamp(109.714286px, calc(9.364286vw + 12px), 146.357143px)) {
   .gauge {
     flex: 0 0 auto;
-    width: min(calc(100cqh * 112 / 114), calc(100% - 10px - var(--gauge-side-w)));
+    width: min(
+      calc(100cqh * 132 / 114),
+      calc(var(--gauge-grow) * min(
+        calc((100cqh - var(--gauge-freed)) * 132 / 114),
+        calc(100% + 2 * var(--gauge-pad-x) - 30px - var(--gauge-side-w))
+      ))
+    );
     height: auto;
-    aspect-ratio: 112 / 114;
+    aspect-ratio: 132 / 114;
   }
 
   .gauge > .g-squircle {
@@ -1805,6 +2011,11 @@ html[data-off~="proc"] [data-panel="proc"],
   stroke: var(--crit);
 }
 
+/* ACC-VIEW-190-MEM-RECLAIM: a memory segment takes its row's key colour */
+.g-fill[data-seg] {
+  stroke: var(--seg);
+}
+
 .g-tick {
   fill: none;
   stroke: var(--muted);
@@ -1813,6 +2024,16 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .g-tick.major {
   stroke-width: 1.5;
+}
+
+/* ACC-VIEW-172: the tick across the band itself, stroked in the panel
+   surface at 0.3 opacity so it is only slightly visible and the band reads
+   as one shape; theme_contrast.rs composites that opacity and holds it
+   above the 1.1:1 plot grid and below 2.05:1 on the track (--border) and on
+   the ok, warn and crit fills in every pair and mode */
+.g-tick.inner {
+  stroke: var(--surface);
+  opacity: 0.3;
 }
 
 .g-scale,
@@ -1828,14 +2049,20 @@ html[data-off~="proc"] [data-panel="proc"],
   dominant-baseline: central;
 }
 
+/* ACC-VIEW-173: the eight labels at 10..90 other than 50 are 5 px against
+   the 0, 50 and 100 labels' 8 px; app.js carries the same design size */
+.g-scale.minor {
+  font-size: 5px;
+}
+
 /* the value and its unit are one block centred on the gauge axis, so the
    block's centre holds as its width changes and nothing else sits on its
    line (ACC-VIEW-87-NUMBER-PLACE) */
 .g-value {
   color: var(--text-strong);
-  font-size: 16px;
+  font-size: calc(16px / var(--gauge-grow));
   font-weight: 600;
-  letter-spacing: calc(-0.02em + var(--track));
+  letter-spacing: calc(-0.02em + var(--track) / var(--gauge-grow));
 }
 
 .g-unit {
@@ -1844,14 +2071,14 @@ html[data-off~="proc"] [data-panel="proc"],
      when ACC-VIEW-162-GAUGE-FIT shrinks the readout */
   font-size: 0.5625em;
   font-weight: 500;
-  letter-spacing: var(--track);
+  letter-spacing: calc(var(--track) / var(--gauge-grow));
 }
 
 .g-label {
   color: var(--muted);
-  font-size: 9px;
+  font-size: calc(9px / var(--gauge-grow));
   text-transform: uppercase;
-  letter-spacing: calc(0.05em + var(--track));
+  letter-spacing: calc(0.05em + var(--track) / var(--gauge-grow));
 }
 
 .gauge[data-state="unavailable"] .g-label {
@@ -1861,13 +2088,18 @@ html[data-off~="proc"] [data-panel="proc"],
 
 /* the facts and memory rows take their natural width and hug the panel's
    right edge, so the legend never stretches and the gauge takes the height
-   (DEF-LAYOUT-89) */
+   (DEF-LAYOUT-89). DEF-LAYOUT-121-MEM-TABLE: both columns hang from the top of
+   the centred seven-row block, so the first rows of the two panels are level
+   whatever rows the memory table shows, and they end on the head text's right
+   edge, the head's 8 px padding, while the gauge keeps the body's padding */
 .gauge-side {
   flex: 0 1 auto;
+  align-self: flex-start;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  margin-top: calc((100cqh - var(--mem-bar-room) - 7 * var(--mem-row-h)) / 2);
+  margin-right: calc(8px - var(--gauge-pad-x));
 }
 
 /* the CPU name (titled, ellipsised) shrinks before the core count */
@@ -1875,84 +2107,76 @@ html[data-off~="proc"] [data-panel="proc"],
   flex-shrink: 0;
 }
 
+/* the first fact starts where the memory table's first row does, under the
+   room its bar takes */
 .facts {
-  gap: 8px;
+  padding-top: var(--mem-bar-room);
 }
 
+/* ACC-VIEW-178-CPU-FACTS, DEF-VIEW-117-CPU-CHIPS: the CPU facts are plain rows
+   built like the memory table beside them: one row height, rule, type size and
+   label colour, label at the left edge, value at the right. ACC-VIEW-197-MEM-FONT:
+   geometricPrecision keeps fractional advances, because the narrow face's
+   whole-pixel advances at this size leave a hole between m and a in reclaimable */
+.mem-row,
 .fact {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow: hidden;
-  font-size: var(--fs-10);
+  align-items: center;
+  gap: var(--mem-gap);
+  height: var(--mem-row-h);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--mem-fs);
   color: var(--muted);
   white-space: nowrap;
+  text-rendering: geometricPrecision;
 }
 
-.fact b {
+.mem-row {
   overflow: hidden;
-  font-size: var(--fs-12);
+}
+
+.mem-bar + .mem-row,
+.fact:first-child {
+  border-top: 0;
+}
+
+.mem-row span:first-child,
+.fact > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mem-row b,
+.fact b {
   font-weight: 500;
   color: var(--text);
-  text-overflow: ellipsis;
 }
 
-.fact small {
-  font-size: var(--fs-9);
-  font-weight: 400;
-  color: var(--muted);
+/* ACC-VIEW-129/130/131: the load triple is its row's value on one line where
+   it fits, with each figure in its own reserved width; where it does not fit
+   it wraps under the label, right-aligned, and a figure and its window wrap as
+   one cell */
+.fact.load {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: var(--mem-row-h);
+  row-gap: 0;
 }
 
-/* ACC-VIEW-129/130/131: the gauge's load triple keeps its windows and its
-   reserved figures, so it wraps between figures rather than truncating one:
-   the facts column now has the width the fixed gauge leaves (DEF-VIEW-87),
-   at every viewport, and a figure and its window wrap as one cell */
 .fact.load b {
+  margin-left: auto;
   white-space: normal;
+  text-align: right;
 }
 
 .load-cell {
   white-space: nowrap;
 }
 
-@media (max-width: 1100px) {
-  #p-cpu-gauge .fact.load b {
-    font-size: var(--fs-10);
-    line-height: 1.25;
-  }
-}
-
-.mem-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 20px;
-  overflow: hidden;
-  border-top: 1px solid var(--border-subtle);
-  font-size: var(--fs-10);
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.mem-bar + .mem-row {
-  border-top: 0;
-}
-
-.mem-row span:first-child {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.mem-row b {
-  font-weight: 500;
-  color: var(--text);
-}
-
-/* DEF-VIEW-50-MEM-TERMS: one bar, used | cache | other | free = total, and a
-   key on each legend row; other is a container's outside use. The available
-   row is the widest and sets the arc's width: it has no percent cell (the
-   Memory tile shows it), and its value reserves 0000 MiB so the arc keeps
-   its size (ACC-LAYOUT-74-RESERVED-WIDTH) */
+/* DEF-VIEW-50-MEM-TERMS, DEF-VIEW-101-MEM-BREAKDOWN: one bar, its parts sum to
+   the total, and a key on each legend row. The free + reclaimable row is a
+   sum and has no key (ACC-VIEW-195-MEM-SUM), and each row's value reserves
+   0000 MiB (ACC-LAYOUT-74-RESERVED-WIDTH) */
 .mem-bar {
   display: flex;
   flex: 0 0 auto;
@@ -1968,25 +2192,56 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .mem-key {
   display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 5px;
+  width: var(--mem-key);
+  height: var(--mem-key);
+  margin-right: var(--mem-key-gap);
 }
 
+/* ACC-VIEW-175-MEM-SHARE, ACC-VIEW-190-MEM-RECLAIM: the bar, the keys and the
+   gauge arc share one colour per row: the container in green, the others in a
+   second colour, reclaimable a lighter tone of its owner's, free the bare
+   track. Darkening the base leaves room for the lighter tone in the bright
+   dark themes; theme_contrast.rs holds these mixes to 1.5:1 per neighbour */
 [data-seg="used"] {
-  --seg: var(--chart-mem-used);
+  --seg: color-mix(in srgb, var(--ok) 80%, black);
 }
 
 [data-seg="cache"] {
-  --seg: var(--chart-mem-cached);
+  --seg: color-mix(in srgb, var(--ok) 50%, white);
 }
 
 [data-seg="other"] {
-  --seg: var(--muted);
+  --seg: color-mix(in srgb, var(--chart-mem-cached) 75%, black);
+}
+
+[data-seg="other-cache"] {
+  --seg: color-mix(in srgb, var(--chart-mem-cached) 40%, white);
 }
 
 [data-seg="free"] {
-  --seg: var(--chart-mem-free);
+  --seg: var(--meter-track);
+}
+
+/* ACC-VIEW-189-GAUGE-ROOM: the side column is what limits the gauge up to
+   about 1240 px wide, so the spacing steps down before anything is dropped;
+   1279 px keeps the step past that point */
+@media (max-width: 1279px) {
+  :root {
+    --mem-gap: 4px;
+    --mem-key: 6px;
+    --mem-key-gap: 3px;
+    --gauge-pad-x: 5px;
+    --gauge-gap: 2px;
+    --gauge-side-w: calc(18.1 * var(--fs-10));
+  }
+}
+
+/* DEF-LAYOUT-113-ROW-OVERLAP: from about 1090 px the narrow face's rows snap one
+   step wider than 18.1 em leaves room for */
+@media (min-width: 1080px) and (max-width: 1279px) {
+  [data-font="galaxatron"] {
+    --gauge-side-w: calc(18.7 * var(--fs-10));
+  }
 }
 
 /* cores: btop's column-major list, one row per core - label, a meter
@@ -2173,14 +2428,46 @@ html[data-off~="proc"] [data-panel="proc"],
   flex: 0 0 auto;
 }
 
-/* the filter takes the config popover's house input style, .opt with
-   .cfg-in (DEF-VIEW-49-FILTER-STYLE); two classes outrank input.cfg-in's width */
-.cfg-in.filter {
-  width: var(--filter-w);
+/* ACC-VIEW-187-FILTER-SEGMENT, ACC-VIEW-188-FILTER-HINT: the filter is a plain
+   section of the Processes bar (DEF-VIEW-108-FILTER-FRAME). .head-right
+   stretches over the bar's height and crosses .ph's 8 px padding to the bar's
+   right end, where the panel's overflow clips it to the corner. One left rule
+   in the bar's rule colour replaces .opt's frame and keeps that colour in every
+   state (DEF-VIEW-110-FILTER-RED). The focus outline stays off, and the caret
+   marks focus. --surface-raised (2% --text) is
+   the smallest whole share at 1.02:1 or more on the bar in every theme. --muted
+   sits at its 4.5:1 floor on the bar, so any fill toward the text drops it
+   under the floor; the hint mixes 20% --text back in and stays dimmer than the
+   typed --text (theme_contrast.rs). appearance: none drops the browser's search
+   field, its inner frame and its clear button. The typed value keeps its case
+   (.opt.cfg-in). Two classes outrank .opt and input.cfg-in. */
+#p-proc .head-right {
+  align-self: stretch;
+  margin-right: -8px;
 }
 
-.filter::placeholder {
-  color: var(--muted);
+.cfg-in.filter {
+  align-self: stretch;
+  width: var(--filter-w);
+  height: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0;
+  outline: none;
+  background: var(--surface-raised);
+}
+
+.cfg-in.filter::-webkit-search-decoration,
+.cfg-in.filter::-webkit-search-cancel-button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.cfg-in.filter::placeholder {
+  color: color-mix(in srgb, var(--text) 20%, var(--muted));
+  opacity: 1;
 }
 
 .proc-wrap {
@@ -2202,13 +2489,13 @@ html[data-off~="proc"] [data-panel="proc"],
   width: 150px;
 }
 
-/* DEF-VIEW-65-TREE-GLYPHS: the tree prefix takes three mono cells per level
-   plus the four-cell branch; the Program column widens with the display level
-   so no glyph clips at the 10 px type step, and the name ellipsizes into what
-   is left. 0.602em is DejaVu Sans Mono's advance, the widest face in stack;
-   the 17 px is the cell's 16 px padding and 1 px of rounding */
+/* ACC-VIEW-180-PROC-TREE: the prefix is one 12 px step per ancestor level
+   plus the row's own elbow step and the toggle slot, so it reserves
+   (level + 2) * 12 px at the display level whatever the face; with the cell's
+   16 px padding and 1 px of rounding that is 149 px at level 9, so the 150 px
+   floor holds at every level and the name ellipsizes into what is left. */
 .proc-wrap[data-tree] .ptable col.proc-program {
-  width: max(150px, calc((var(--tree-level, 3) * 3 + 4) * 0.602em + 17px));
+  width: max(150px, calc((var(--tree-level, 3) + 2) * var(--tree-step) + 17px));
 }
 
 .ptable th {
@@ -2238,8 +2525,51 @@ html[data-off~="proc"] [data-panel="proc"],
   background: var(--zebra);
 }
 
-.ptable tbody tr:hover {
+/* ACC-VIEW-198-ROW-HOVER: the row-hover tokens are the cell's own colour where
+   it holds 4.5:1 on the step and the tooltip's strong line where it cannot; the
+   connector rules stay --muted, a graphic at 3:1. The row and its cells both
+   paint the step: one layer leaves a visible hairline at a fractional cell edge
+   at a device scale of 1.75, and the second layer covers it */
+.ptable tbody tr:focus-visible,
+.ptable tbody tr:focus-visible td,
+.ptable tbody tr:hover,
+.ptable tbody tr:hover td {
   background: var(--row-hover);
+}
+
+.ptable tbody tr:focus-visible,
+.ptable tbody tr:hover {
+  color: var(--row-hover-text);
+}
+
+.ptable tbody tr:focus-visible .cpu-ok,
+.ptable tbody tr:hover .cpu-ok {
+  color: var(--row-hover-ok);
+}
+
+.ptable tbody tr:focus-visible .cpu-warn,
+.ptable tbody tr:hover .cpu-warn {
+  color: var(--row-hover-warn);
+}
+
+.ptable tbody tr:focus-visible .cpu-crit,
+.ptable tbody tr:hover .cpu-crit {
+  color: var(--row-hover-crit);
+}
+
+.ptable tbody tr:focus-visible .cpu-zero,
+.ptable tbody tr:hover .cpu-zero {
+  color: var(--row-hover-muted);
+}
+
+/* ACC-VIEW-176-PROC-POPUP: a row opens its popup */
+.ptable tbody tr {
+  cursor: pointer;
+}
+
+/* ACC-VIEW-201-ROW-FOCUS: the row-hover rules above mark the focused row */
+.ptable tbody tr:focus-visible {
+  outline: none;
 }
 
 .ptable .num {
@@ -2296,7 +2626,7 @@ html[data-off~="proc"] [data-panel="proc"],
    the server keeps no summed graph, so a deeper collapsed row shows none */
 .ptable tr:not([data-collapsed]) svg.sum,
 .ptable tr[data-collapsed] svg:has(+ svg.sum),
-.ptable tr[data-collapsed="deep"] svg {
+.ptable tr[data-collapsed="deep"] svg[data-chart="proc"] {
   display: none;
 }
 
@@ -2324,22 +2654,100 @@ html[data-off~="proc"] [data-panel="proc"],
   content: "\25b2";
 }
 
-/* btop's tree prefix, one three-character mono slot per level, and the
-   triangle toggle in the branch slot; the slots' spaces are significant */
-.ptable .tree {
-  font-family: var(--mono);
-  color: var(--muted);
-  white-space: pre;
+/* btop's tree prefix and its toggle, drawn as boxes (ACC-VIEW-180-PROC-TREE):
+   one 12 px step per level, a 1 px rule for every open ancestor and a 1 px
+   elbow into the row, in the muted token, so the geometry is the same in
+   either face and crisp at any zoom. The step is the one value the Program
+   column's reserved width reads. The rules span the whole row through the
+   row-height offset, so the rules of adjacent rows meet; a leaf keeps the
+   toggle's step as margin, so its name starts where a sibling's does. */
+.proc-wrap {
+  --tree-step: 12px;
 }
 
+.ptable .tree {
+  display: inline-flex;
+  height: 1lh;
+  vertical-align: top;
+  color: var(--muted);
+}
+
+.ptable .tree.leaf {
+  margin-right: var(--tree-step);
+}
+
+.ptable .tstep {
+  position: relative;
+  flex: none;
+  width: var(--tree-step);
+}
+
+/* a continuing ancestor and a middle sibling's branch run the whole row */
+.ptable .tline::before,
+.ptable .tb-mid::before {
+  top: calc((1lh - var(--proc-row-h, var(--row-h))) / 2);
+  height: var(--proc-row-h, var(--row-h));
+}
+
+/* the last sibling's branch starts at the row top and turns into the arm */
+.ptable .tb-last::before {
+  top: calc((1lh - var(--proc-row-h, var(--row-h))) / 2);
+  height: calc(var(--proc-row-h, var(--row-h)) / 2);
+}
+
+/* the first root's branch starts at the arm and runs to the row's bottom */
+.ptable .tb-first::before {
+  top: 50%;
+  height: calc(var(--proc-row-h, var(--row-h)) / 2);
+}
+
+.ptable .tline::before,
+.ptable .tbranch::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  border-left: 1px solid currentColor;
+}
+
+.ptable .tbranch::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  border-top: 1px solid currentColor;
+}
+
+/* the toggle is a filled triangle that points right when collapsed and down
+   while aria-expanded is true; app.js swaps the path, which a transform
+   cannot do without clipping the shape at the svg's own 0 0; the button is a
+   step wide and the row tall, so the whole cell height is its hit area, and
+   the negative margins keep the line box at one line, so no row grows */
 .ptable .twisty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--tree-step);
+  height: var(--proc-row-h, var(--row-h));
+  margin: calc((1lh - var(--proc-row-h, var(--row-h))) / 2) 0;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
   font: inherit;
   line-height: inherit;
+  vertical-align: top;
   cursor: pointer;
+}
+
+.ptable .twisty svg {
+  width: 4px;
+  height: 5px;
+}
+
+.ptable .twisty svg path {
+  fill: currentColor;
 }
 
 /* ACC-VIEW-104-CONFIG-DIM: while the config popover is open one scrim dims
@@ -2360,6 +2768,158 @@ html[data-off~="proc"] [data-panel="proc"],
 
 .scrim[hidden] {
   display: none;
+}
+
+/* ACC-VIEW-176-PROC-POPUP: a panel over the process table up to the Cpu%
+   column, placed by app.js, so it covers no plot (ACC-GRAPH-24-UNOBSCURED). It
+   scrolls inside itself when the table is shorter than its body, so it never
+   adds page scroll. Each fact holds its own grid cell and each plot value
+   reserves its widest form, so a changing value moves nothing beside it
+   (ACC-LAYOUT-74-RESERVED-WIDTH). ACC-VIEW-199-POPUP-DIM: it sits above the
+   scrim, below the config popover and the tooltip. */
+.proc-detail {
+  position: fixed;
+  z-index: 36;
+}
+
+.proc-detail[hidden],
+.proc-detail .chip[hidden] {
+  display: none;
+}
+
+.proc-detail > .ph {
+  cursor: auto;
+  touch-action: auto;
+}
+
+.proc-detail h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: var(--fs-10);
+  color: var(--text);
+}
+
+.pd-live {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pd-facts {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 2px 12px;
+}
+
+.pd-fact {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.pd-wide {
+  grid-column: span 2;
+}
+
+.pd-fact b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.pd-plots {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-auto-rows: minmax(84px, 1fr);
+  gap: 6px 10px;
+}
+
+.pd-plot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pd-plot-head,
+.pd-command-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* DEF-VIEW-124-POPUP-CHIPS: a section label controls nothing, so it is plain
+   text in the CPU facts' label style; CLOSE and COPY stay chips */
+.pd-label {
+  font-size: var(--mem-fs);
+  color: var(--muted);
+}
+
+/* ACC-VIEW-202-PLOT-LABELS: a plot's name reads as a panel heading does, at its
+   size, weight and colour, not the Memory table's smaller token */
+.pd-plot-head .pd-label {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* the plot box and its scale gutter share one height, so a scale label stands
+   on its grid line, as in #p-net */
+.pd-plot .net-plot {
+  margin: 3px 0;
+}
+
+.pd-plot-head b {
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.pd-scale {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.pd-command {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pd-cmd {
+  font-family: var(--mono);
+  font-size: var(--fs-11);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 /* config popover: the only theme, mode, GPU, pause and layout controls, and
@@ -2485,6 +3045,11 @@ select.cfg-in {
   grid-template-columns: 46px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
+}
+
+/* ACC-VIEW-200-LIVE-STATUS: LIVE STATUS on one line, every row of the page aligned */
+#cfg-page-general .cfg-row {
+  grid-template-columns: 70px minmax(0, 1fr);
 }
 
 .cfg-label {
@@ -2627,6 +3192,15 @@ select.opt {
 
   /* the corner total and the zero stay; the quarter labels would collide */
   #p-gpu .plot-scale > .scale-mid {
+    display: none;
+  }
+}
+
+/* DEF-LAYOUT-104-WIDE-TEXT: the 75% and 25% labels sit a quarter of the gutter
+   from the corner labels; at 9 px type their boxes clear those only from a
+   64 px lane. Below it the total, the 50% label and the zero stay */
+@container gpu-lane (height < 64px) {
+  #p-gpu .plot-scale > .scale-mid:nth-child(even) {
     display: none;
   }
 }
@@ -2791,9 +3365,12 @@ select.opt {
   }
 
   /* with no side column there is nothing to reserve (DEF-LAYOUT-89) */
-  @container gauge (min-height: clamp(97.714286px, 9.364286vw, 134.357143px)) {
+  @container gauge (min-height: clamp(109.714286px, calc(9.364286vw + 12px), 146.357143px)) {
     .gauge {
-      width: calc(100cqh * 112 / 114);
+      width: min(
+        calc(100cqh * 132 / 114),
+        calc(var(--gauge-grow) * (100cqh - var(--gauge-freed)) * 132 / 114)
+      );
     }
   }
 
@@ -2808,14 +3385,14 @@ select.opt {
   }
 
   /* the tree prefix would widen Program past the panel: the name ellipsizes
-     instead, and the cell keeps the prefix's width so no glyph clips at any
-     level (DEF-VIEW-65-TREE-GLYPHS) */
+     instead, and the cell keeps the prefix's width so no rule clips at any
+     level (ACC-VIEW-180-PROC-TREE) */
   .ptable td:has(> .tree) {
     max-width: 0;
   }
 
   .proc-wrap[data-tree] .ptable td:has(> .tree) {
-    min-width: calc((var(--tree-level, 3) * 3 + 4) * 0.602em + 17px);
+    min-width: calc((var(--tree-level, 3) + 2) * var(--tree-step) + 17px);
   }
 }
 
@@ -2846,6 +3423,10 @@ select.opt {
    as a tick. This state replaces the circle/squircle choice, so both gauges
    show one shape whatever a stored panel size does. */
 @media (max-height: 640px) {
+  .gauge-body {
+    padding: 6px 10px 8px;
+  }
+
   .gauge {
     position: relative;
     flex: 1 1 auto;
@@ -2864,9 +3445,16 @@ select.opt {
     overflow: visible;
   }
 
-  .gauge > .g-wide .g-track,
+  /* DEF-VIEW-112-WIDE-ARC: the stretch makes a percent of direction a different
+     px length on each side, so a fill here is a dash along the whole band
+     (#g-wide-arc in index.html): under non-scaling-stroke a dash length is
+     screen px, and the band's px length is close to linear in the box,
+     1.096 W + 1.185 H, within 0.7 percent for W 270 to 1800 at H 96
+     (chart.rs tests it). No script: container units follow every resize. */
   .gauge > .g-wide .g-fill {
-    vector-effect: non-scaling-stroke;
+    --pct-px: calc(1.096cqw + 1.185cqh);
+    stroke-dasharray: calc((var(--to) - var(--from)) * var(--pct-px)) 9999px;
+    stroke-dashoffset: calc(var(--from) * var(--pct-px) * -1);
   }
 
   .g-read {
@@ -2915,7 +3503,8 @@ select.opt {
   }
 
   #p-gpu .net-body > .xaxis,
-  .net-plots > .xaxis {
+  .net-plots > .xaxis,
+  .pd-plot > .xaxis {
     margin-left: 0;
   }
 

@@ -2,7 +2,7 @@
 //! trees and read the page and one SSE frame over a socket.
 
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -43,10 +43,12 @@ fn fixture_cpu_total() -> String {
 }
 
 /// The XDG config directory for `name`, without clearing it, so a test can
-/// find a file the binary wrote there.
+/// find a file the binary wrote there. The root is per process, because two
+/// e2e binaries in one target directory would clear each other's keys.
+// shortcut: each run's directory stays until cargo clean, remove old ones if the size ever matters.
 fn xdg_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join("e2e-xdg")
+        .join(format!("e2e-xdg-{}", std::process::id()))
         .join(name)
 }
 
@@ -87,6 +89,56 @@ fn agent_key(xdg: &Path) -> String {
         .to_string()
 }
 
+/// The address in the server's listening line, once the log holds that line.
+fn listening_address(log: &str) -> Option<SocketAddr> {
+    let line = log
+        .lines()
+        .find(|line| line.contains("btop-web listening"))?;
+    let (_, rest) = line.split_once("127.0.0.1:")?;
+    let (port, _) = rest.split_once(|c: char| !c.is_ascii_digit())?;
+    Some(SocketAddr::from(([127, 0, 0, 1], port.parse().ok()?)))
+}
+
+/// Spawn `command` on a port the kernel gives it at its own bind and wait for
+/// its listening line. A port picked here and released stays free until the
+/// child binds, and another server of this parallel binary can get it in that
+/// gap (DEF-TEST-109-AGENT-FLAKY). The line comes after an agent has written
+/// its access key and TLS pair. The output stays in a file, so a server that
+/// exits first fails the test with its own words.
+fn spawn_listening(mut command: Command) -> (Server, SocketAddr) {
+    static LOG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let log = xdg_path("server-logs");
+    std::fs::create_dir_all(&log).expect("log dir");
+    let log = log.join(format!(
+        "{}.log",
+        LOG.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let file = std::fs::File::create(&log).expect("server log");
+    command
+        .env("BTOP_WEB_LISTEN", "127.0.0.1:0")
+        .env("RUST_LOG", "info")
+        .stdout(file.try_clone().expect("server log"))
+        .stderr(file);
+    let mut server = Server(command.spawn().expect("spawn server"));
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let exited = server.0.try_wait().expect("wait");
+        let text = std::fs::read_to_string(&log).expect("server log");
+        if let Some(address) = listening_address(&text) {
+            return (server, address);
+        }
+        assert!(
+            exited.is_none(),
+            "the server exited before listening, {exited:?}: {text}"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "the server did not listen in 20 s: {text}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 /// Start the binary on a free loopback port against the recorded tree, with
 /// its own XDG_CONFIG_HOME.
 fn start(update_ms: Option<&str>, args: &[&str]) -> (Server, SocketAddr) {
@@ -99,41 +151,29 @@ fn start(update_ms: Option<&str>, args: &[&str]) -> (Server, SocketAddr) {
 /// ones given, and the collector root is removed unless named, so a client
 /// never inherits it.
 fn start_mode(xdg: &str, args: &[String], envs: &[(&str, &str)]) -> (Server, SocketAddr) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("free port");
-    let address = listener.local_addr().expect("address");
-    drop(listener);
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(args)
-        .env("BTOP_WEB_LISTEN", address.to_string())
         .env("XDG_CONFIG_HOME", xdg_home(xdg))
         .env_remove("BTOP_WEB_UPDATE_MS")
-        .env_remove("BTOP_WEB_PROC_ROOT")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .env_remove("BTOP_WEB_PROC_ROOT");
     for (key, value) in envs {
         command.env(key, value);
     }
-    (Server(command.spawn().expect("spawn btop-web")), address)
+    spawn_listening(command)
 }
 
 fn start_in(xdg: &Path, update_ms: Option<&str>, args: &[&str]) -> (Server, SocketAddr) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("free port");
-    let address = listener.local_addr().expect("address");
-    drop(listener);
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(args)
-        .env("BTOP_WEB_LISTEN", address.to_string())
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", xdg)
-        .env_remove("BTOP_WEB_UPDATE_MS")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .env_remove("BTOP_WEB_UPDATE_MS");
     if let Some(update_ms) = update_ms {
         command.env("BTOP_WEB_UPDATE_MS", update_ms);
     }
-    (Server(command.spawn().expect("spawn btop-web")), address)
+    spawn_listening(command)
 }
 
 /// The exit code, stdout and stderr of the binary run with `args`; it must
@@ -183,22 +223,16 @@ fn run_env(args: &[&str], envs: &[(&str, &str)]) -> (Option<i32>, String, String
 /// Start an agent on a free loopback port against the recorded tree, with its
 /// own XDG directory and extra environment variables.
 fn start_agent(xdg: &str, args: &[&str], envs: &[(&str, &str)]) -> (Server, SocketAddr) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("free port");
-    let address = listener.local_addr().expect("address");
-    drop(listener);
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(args)
-        .env("BTOP_WEB_LISTEN", address.to_string())
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", xdg_home(xdg))
-        .env_remove("BTOP_WEB_UPDATE_MS")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .env_remove("BTOP_WEB_UPDATE_MS");
     for (key, value) in envs {
         command.env(key, value);
     }
-    (Server(command.spawn().expect("spawn btop-web")), address)
+    spawn_listening(command)
 }
 
 /// A single-quoted shell word for a path, so the descriptor script carries
@@ -567,27 +601,27 @@ fn binary_serves_fixture_metrics_and_an_event_stream() {
     assert!(events.contains("data: "));
 }
 
-/// ACC-CONF-147-OPTIONS-EDIT and ACC-CONF-148-OWN-FILE: with the guard off, a
-/// same-origin POST changes `update_ms` for the one sampler and writes it to
-/// btop-web.conf under XDG_CONFIG_HOME; a second viewer already connected
-/// follows the new cadence without a reload; the `-c` btop.conf stays byte
-/// for byte, a restart with both files runs at the new value, and a read-only
-/// restart renders the row as text again.
+/// ACC-CONF-186-READ-WRITE, ACC-CONF-147-OPTIONS-EDIT and ACC-CONF-148-OWN-FILE:
+/// with no mode flag, a same-origin POST changes `update_ms` for the one
+/// sampler and writes it to btop-web.conf under XDG_CONFIG_HOME; a second viewer
+/// already connected follows the new cadence without a reload; the `-c`
+/// btop.conf stays byte for byte, a restart with both files runs at the new
+/// value, and a `--readonly` restart renders the row as text again and refuses
+/// the POST.
 #[test]
 fn config_post_writes_the_web_file_and_leaves_btop_conf_alone() {
     use std::os::unix::fs::PermissionsExt;
     let original =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("config/btop-web.conf"))
             .expect("shipped defaults");
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("e2e-config-post");
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let base = dir.join("btop.conf");
+    let base = xdg_home("config-post-base").join("btop.conf");
     std::fs::write(&base, &original).expect("copy");
     let base_before = std::fs::read(&base).expect("base");
     let xdg = xdg_home("config-post");
-    let args = ["-c", base.to_str().expect("utf-8 path"), "--no-readonly"];
+    let args = ["-c", base.to_str().expect("utf-8 path")];
     let (_server, address) = start_in(&xdg, None, &args);
-    page_with(address, ">250 ms<");
+    let page = page_with(address, ">250 ms<");
+    assert!(!page.contains("readonly-reason"), "{page}");
     // The second viewer is connected before the write and never reloads.
     let mut viewer = LiveEvents::open(address);
     let body = "key=update_ms&value=500";
@@ -644,6 +678,42 @@ fn config_post_writes_the_web_file_and_leaves_btop_conf_alone() {
         "{page}"
     );
     assert!(!page.contains(r#"hx-post="config""#), "{page}");
+    assert!(page.contains("readonly-reason"), "{page}");
+    let body = "key=update_ms&value=1000";
+    let response = exchange(
+        address,
+        &format!(
+            "POST /config HTTP/1.1\r\nHost: {address}\r\nOrigin: http://{address}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ),
+    )
+    .expect("response");
+    assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+    assert_eq!(
+        std::fs::read_to_string(&web).expect("web file"),
+        "update_ms = 500\n"
+    );
+}
+
+/// ACC-CONF-186-READ-WRITE: `--readonly` is the only mode flag. The former
+/// negated flag and a flag that restates the default stop startup.
+#[test]
+fn no_flag_negates_or_restates_the_read_only_mode() {
+    for flag in ["--no-readonly", "--read-write"] {
+        let (code, _, stderr) = run(&[flag]);
+        assert_ne!(code, Some(0), "{flag}: {stderr}");
+        assert!(
+            stderr.contains(&format!("unknown argument `{flag}`")),
+            "{stderr}"
+        );
+    }
+    let (code, help, _) = run(&["--help"]);
+    assert_eq!(code, Some(0));
+    assert!(help.contains("--readonly"), "{help}");
+    assert!(
+        !help.contains("--no-") && !help.contains("--read-write"),
+        "{help}"
+    );
 }
 
 /// ACC-NET-144-ACCESS-KEY: a client with no key line, or with a key file it
@@ -655,7 +725,7 @@ fn a_client_without_an_access_key_refuses_to_start() {
     assert!(stderr.contains("nas"), "{stderr}");
     assert!(stderr.contains("connect_key"), "{stderr}");
 
-    let conf = Path::new(env!("CARGO_TARGET_TMPDIR")).join("missing-key.conf");
+    let conf = xdg_home("missing-key").join("missing-key.conf");
     std::fs::write(
         &conf,
         "connect_key = nas=/nonexistent/btop-web-access-key\n",
@@ -683,18 +753,13 @@ fn a_client_without_an_access_key_refuses_to_start() {
 #[test]
 fn the_created_key_never_reaches_stdout_or_stderr() {
     let xdg = xdg_home("key-print");
-    let logs = Path::new(env!("CARGO_TARGET_TMPDIR")).join("key-print");
-    let _ = std::fs::remove_dir_all(&logs);
-    std::fs::create_dir_all(&logs).expect("log dir");
+    let logs = xdg_home("key-print-logs");
     let stdout_path = logs.join("stdout.log");
     let stderr_path = logs.join("stderr.log");
-    let listener = TcpListener::bind("127.0.0.1:0").expect("free port");
-    let address = listener.local_addr().expect("address");
-    drop(listener);
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .arg("--agent")
-        .env("BTOP_WEB_LISTEN", address.to_string())
+        .env("BTOP_WEB_LISTEN", "127.0.0.1:0")
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", &xdg)
         .stdout(Stdio::from(
@@ -782,10 +847,12 @@ fn agent_and_client_modes() {
     }
     let agent_events = tls_event_stream(alpha_addr, &alpha_key);
     assert!(agent_events.contains("event: cpu"), "{agent_events}");
+    let detail = tls_response_with_key(alpha_addr, "/proc/222", &alpha_key, "hotproc --busy");
+    assert!(detail.contains("proc-detail-cpu"), "{detail}");
 
     // The key file paths live in a configuration file, never on the command
     // line; the --connect flags carry the URLs only.
-    let key_file = Path::new(env!("CARGO_TARGET_TMPDIR")).join("modes-connect-keys.conf");
+    let key_file = xdg_home("modes-connect").join("keys.conf");
     std::fs::write(
         &key_file,
         format!(
@@ -811,6 +878,13 @@ fn agent_and_client_modes() {
         format!("beta=http://{beta_addr}"),
     ];
     let (_client, client_addr) = start_mode("modes-client", &client_args, &[]);
+
+    // ACC-VIEW-176-PROC-POPUP: a client relays the selected agent's popup body,
+    // and a pid the agent does not list stays a 404.
+    let detail = response_with(client_addr, "/proc/222?agent=alpha", "hotproc --busy");
+    assert!(detail.contains("proc-detail-cpu"), "{detail}");
+    let absent = get(client_addr, "/proc/99999?agent=alpha").expect("a response");
+    assert!(absent.starts_with("HTTP/1.1 404"), "{absent}");
 
     // The client names both agents; the first is selected by default.
     let page = response_with(client_addr, "/", "href=\"?agent=alpha\"");
@@ -849,6 +923,11 @@ fn agent_and_client_modes() {
         let missing = get(client_addr, path).expect("unknown agent");
         assert!(missing.starts_with("HTTP/1.1 404"), "{path}: {missing}");
     }
+
+    // DEF-VIEW-119-STALE-TAB: the relay opens with the client's own stamp, and
+    // the agent's stamp does not pass, or a page could compare against it.
+    let relayed = read_event_stream_at(client_addr, "/events?agent=alpha", None);
+    assert_eq!(relayed.matches("event: stamp").count(), 1, "{relayed}");
 
     // The strip carries one sample age per agent, and each selection relays
     // that agent's own interval, 250 ms against 500 ms.
@@ -936,7 +1015,8 @@ fn agent_and_client_modes() {
     // keeps streaming. No invented data: the stopped chip carries the word,
     // not a zero age.
     drop(beta);
-    let strip = response_with(client_addr, "/agents?agent=alpha", "unavailable");
+    // The chip's text: its data-w attribute holds the same word in every state.
+    let strip = response_with(client_addr, "/agents?agent=alpha", ">unavailable<");
     assert!(
         strip.contains("beta</span><b class=\"agent-age\" data-w=\"unavailable\">unavailable"),
         "{strip}"
@@ -949,6 +1029,83 @@ fn agent_and_client_modes() {
         read_event_stream_at(client_addr, "/events?agent=alpha", None).contains("event: cpu"),
         "the surviving agent stopped streaming"
     );
+}
+
+/// ACC-VIEW-176-PROC-POPUP: the popup in a real browser, on the recorded tree
+/// with a GPU holder: it opens with the row's pid and its plots, and Escape, the
+/// close control and a click outside each close it and return focus to the row.
+/// Ignored because `make ci` runs where no browser is installed; `make
+/// test-client` runs it and needs python3 with Playwright and its chromium.
+#[test]
+#[ignore = "needs python3 with Playwright; make test-client runs it"]
+fn proc_popup_opens_with_the_pid_and_closes_on_escape() {
+    let root = fixture("proc-gpu/proc");
+    let (_server, address) = start_mode(
+        "proc-popup",
+        &[],
+        &[(
+            "BTOP_WEB_PROC_ROOT",
+            root.to_str().expect("utf-8 fixture path"),
+        )],
+    );
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/client/proc_popup.py");
+    let status = Command::new("python3")
+        .arg("-I")
+        .arg(script)
+        .arg(format!("http://{address}/"))
+        .status()
+        .expect("python3 runs");
+    assert!(status.success(), "the browser test failed: {status}");
+}
+
+/// ACC-PERF-133-PAGE-COST in a real browser: a frame writes into the nodes on
+/// the page, so a kept node keeps its identity and the panel ends equal to the
+/// fragment. Ignored for the reason above; `make test-client` runs it.
+#[test]
+#[ignore = "needs python3 with Playwright; make test-client runs it"]
+fn frames_patch_the_panels_in_place() {
+    let root = fixture("proc-gpu/proc");
+    let (_server, address) = start_mode(
+        "frame-patch",
+        &[],
+        &[(
+            "BTOP_WEB_PROC_ROOT",
+            root.to_str().expect("utf-8 fixture path"),
+        )],
+    );
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/client/frame_patch.py");
+    let status = Command::new("python3")
+        .arg("-I")
+        .arg(script)
+        .arg(format!("http://{address}/"))
+        .status()
+        .expect("python3 runs");
+    assert!(status.success(), "the browser test failed: {status}");
+}
+
+/// ACC-VIEW-200-LIVE-STATUS in a real browser: on, dimmed and off through a
+/// reload, in LIVE, PAUSED and STALE, and nothing else in the top bar moves.
+/// Ignored for the reason above; `make test-client` runs it.
+#[test]
+#[ignore = "needs python3 with Playwright; make test-client runs it"]
+fn live_status_shows_on_dimmed_and_off() {
+    let root = fixture("proc-gpu/proc");
+    let (_server, address) = start_mode(
+        "live-status",
+        &[],
+        &[(
+            "BTOP_WEB_PROC_ROOT",
+            root.to_str().expect("utf-8 fixture path"),
+        )],
+    );
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/client/live_status.py");
+    let status = Command::new("python3")
+        .arg("-I")
+        .arg(script)
+        .arg(format!("http://{address}/"))
+        .status()
+        .expect("python3 runs");
+    assert!(status.success(), "the browser test failed: {status}");
 }
 
 /// ACC-NET-146-SECRET-INPUT: the certificate, encrypted key, access key and
@@ -968,9 +1125,6 @@ fn descriptors_carry_every_secret_and_the_agent_starts() {
     let key = fixture("tls/agent-encrypted.key");
     let binary = Path::new(env!("CARGO_BIN_EXE_btop-web"));
 
-    let listener = TcpListener::bind("127.0.0.1:0").expect("free port");
-    let address = listener.local_addr().expect("address");
-    drop(listener);
     let script = format!(
         "exec 3<{}; exec 4<{}; exec 5<{}; exec 6<{}; exec {} --agent \
          --tls-cert-fd 3 --tls-key-fd 4 --access-key-fd 5 \
@@ -985,13 +1139,10 @@ fn descriptors_carry_every_secret_and_the_agent_starts() {
     command
         .arg("-c")
         .arg(script)
-        .env("BTOP_WEB_LISTEN", address.to_string())
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", &dir)
-        .env_remove("BTOP_WEB_UPDATE_MS")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let server = Server(command.spawn().expect("spawn sh"));
+        .env_remove("BTOP_WEB_UPDATE_MS");
+    let (server, address) = spawn_listening(command);
 
     // The key read from fd 5 is the one the listener demands.
     let health = tls_response_with_key(address, "/healthz", ACCESS_KEY, "ok");

@@ -49,32 +49,41 @@
 //! ceilings are the fixed `net_download` and `net_upload` Mebibits as
 //! `(value << 20) / 8` bytes per second, btop's fixed-mode behaviour.
 //!
-//! Latched axis step (ACC-GRAPH-164-NET-SCALE, owner 2026-10-29): with
-//! `net_auto` the axis is a tenfold ladder, not btop's ceiling. A page load
-//! anchors the step at the selected interface's measured peak (`net_stat::top`,
-//! the highest speed seen) or at the `net_floor`, whichever is higher. A peak
-//! above the step moves it to the next tenfold step, so a peak just past a
-//! 3.4 M step makes that step 34 M rather than 1.3 times the mean, and nothing
-//! but a page load lowers it - a decaying peak leaves it where it is.
-//! `net_sync` feeds both directions with the higher measured peak, so both
-//! lanes show one step. With `net_auto` false the fixed ceiling is shown, as
-//! btop does. btop's `graph_max` above keeps its own rise and fall for parity;
-//! only the shown axis and the chart scaling follow the step. [`reset_scale`]
-//! is the page-load hook; a new interface selection re-anchors the step at its
-//! own peak.
+//! Decade axis (ACC-GRAPH-164-NET-SCALE, DEF-GRAPH-102-NET-SCALE, owner
+//! 2026-10-29 and 2026-10-30): with `net_auto` the axis is a decade ladder, not
+//! btop's ceiling: 1, 10 or 100 of the binary unit the legend prints, the
+//! lowest of them at or above the selected interface's measured peak
+//! (`net_stat::top`, the highest speed seen). A sample above the ceiling raises
+//! it at once. The ceiling then stays through any drop, because a scale that
+//! shrinks hides the traffic level; `net_fall` does not apply to it. Only a
+//! page load lowers it: [`reset_scale`] sets it to the decade above the peak.
+//! `top` only rises while the server runs, so after a burst that is the same
+//! ceiling, and it is lower only after `net_floor` was reduced. `net_sync` feeds
+//! both directions with the higher peak, so both lanes show one ceiling. With
+//! `net_auto` false the fixed ceiling is shown, as btop does. btop's `graph_max`
+//! above keeps its own rise and fall for parity; only the shown axis and the
+//! chart scaling follow the decade. A new interface selection starts the axis
+//! again at its own peak.
 //!
 //! Smooth scale (ACC-GRAPH-67-SMOOTH-SCALE, a btop-web addition): each
-//! direction's shown step feeds a [`Scale`], which moves the drawn ceiling and
+//! direction's shown ceiling feeds a [`Scale`], which moves the drawn ceiling and
 //! the scale label to a new value over 1 s or more instead of in one frame; a
 //! new selection starts at its own ceiling without a change. `graph_max_down`
 //! and `graph_max_up` keep btop's values.
 //!
-//! Floor (ACC-GRAPH-96-NET-AUTOSCALE): with `net_auto` the shown step never
-//! goes below `net_floor` Mbit/s (1 by default, 125000 bytes per second), so
-//! idle traffic draws low and calm instead of filling the box; btop's ceiling
-//! still follows its rule and its own 10 KiB floor. With `net_auto` false the
-//! shown ceiling is the fixed one, btop's behaviour. The axis label prints the
-//! shown step of each direction.
+//! Floor (ACC-GRAPH-96-NET-AUTOSCALE): with `net_auto` the shown ceiling never
+//! goes below the decade that holds `net_floor` Mbit/s (1 by default, 125000
+//! bytes per second, so 1 MiB/s), so idle traffic draws low and calm instead of
+//! filling the box; btop's ceiling still follows its rule and its own 10 KiB
+//! floor. With `net_auto` false the shown ceiling is the fixed one, btop's
+//! behaviour. The axis label prints the shown ceiling of each direction.
+//!
+//! Link facts (ACC-VIEW-174-NET-STRIP, owner 2026-10-30, a btop-web addition;
+//! btop's net box has none of them): `<iface>/{speed,duplex,operstate}` and
+//! `<iface>/statistics/{rx,tx}_{errors,dropped}` of the selected interface. A
+//! fact the kernel reports as unknown stays unknown. Period:
+//! [`SLOW_PERIOD`], because reading `speed` can reach the driver and the facts
+//! rarely change.
 //!
 //! Period: every sample, `update_ms` (250 ms by default; btop's 2000).
 //!
@@ -97,11 +106,13 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Instant;
 
 use nix::ifaddrs::getifaddrs;
 use nix::net::if_::InterfaceFlags;
 
-use super::{NetInterface, NetSnapshot, sys_root};
+use super::gpu::SLOW_PERIOD;
+use super::{NetInterface, NetLink, NetSnapshot, sys_root};
 use crate::chart::{History, NET_PLOT, Scale};
 use crate::config::Config;
 
@@ -164,10 +175,13 @@ struct NetState {
     rescale: bool,
     /// The shown download and upload ceilings (ACC-GRAPH-67-SMOOTH-SCALE).
     scale: [Scale; 2],
-    /// The latched tenfold axis step per direction, bytes per second; 0 is
-    /// unset and anchors at the measured peak on the next sample
-    /// (ACC-GRAPH-164-NET-SCALE).
-    step: [u64; 2],
+    /// The latched decade ceiling per direction, bytes per second; 0 is unset
+    /// and takes the measured peak on the next sample (ACC-GRAPH-164-NET-SCALE).
+    axis: [u64; 2],
+    /// The selected interface's link facts and when they were read
+    /// (ACC-VIEW-174-NET-STRIP).
+    link: NetLink,
+    link_read: Option<Instant>,
     /// The last successful result, returned once the error gate closes.
     last: Option<NetSnapshot>,
 }
@@ -183,19 +197,11 @@ impl Default for NetState {
             max_count: [[0; 2]; 2],
             rescale: true,
             scale: Default::default(),
-            step: [0; 2],
+            axis: [0; 2],
+            link: NetLink::default(),
+            link_read: None,
             last: None,
         }
-    }
-}
-
-impl NetState {
-    /// A page load drops the latched steps and the running change, so the
-    /// next sample anchors the axis at the measured peak again
-    /// (ACC-GRAPH-164-NET-SCALE).
-    fn page_load(&mut self) {
-        self.step = [0; 2];
-        self.scale = Default::default();
     }
 }
 
@@ -244,13 +250,14 @@ pub fn collect(proc_root: &Path, config: &Config) -> NetSnapshot {
 }
 
 /// ACC-GRAPH-164-NET-SCALE: a page load is the only event that lowers the
-/// network axis. It drops the latched steps, so the next sample anchors them
-/// at the selected interface's measured peak again; the shown scale starts
-/// there without a change instead of animating down from the latch.
+/// network axis. It drops the latched ceilings, so the next sample sets them to
+/// the decade above the selected interface's measured peak; the shown scale
+/// starts there without a change instead of animating down from the latch.
 pub fn reset_scale(proc_root: &Path) {
     let mut states = LAST.lock().unwrap_or_else(|error| error.into_inner());
     if let Some(state) = states.get_mut(proc_root) {
-        state.page_load();
+        state.axis = [0; 2];
+        state.scale = Default::default();
     }
 }
 
@@ -372,9 +379,8 @@ fn sample(
     if selection_absent {
         state.max_count = [[0; 2]; 2];
         state.scale = Default::default();
-        // ACC-GRAPH-164-NET-SCALE: the step belongs to the selected
-        // interface's peak, so the next sample anchors it again.
-        state.step = [0; 2];
+        // ACC-GRAPH-164-NET-SCALE: the axis belongs to the selected interface.
+        state.axis = [0; 2];
         if config.net_auto {
             state.rescale = true;
         }
@@ -402,6 +408,16 @@ fn sample(
             }
             best.map(|iface| iface.name.clone())
         };
+    }
+
+    if let Some(name) = state.selected_iface.as_deref()
+        && (selection_absent
+            || state
+                .link_read
+                .is_none_or(|read| read.elapsed() >= SLOW_PERIOD))
+    {
+        state.link = read_link(&sys.join("class/net").join(name));
+        state.link_read = Some(Instant::now());
     }
 
     // btop's auto scale: rescale when forced or when a counter reached its
@@ -453,9 +469,9 @@ fn sample(
     } else {
         0
     };
-    // ACC-GRAPH-164-NET-SCALE: the axis is the latched tenfold step, anchored
-    // at the measured peak; btop's ceiling above keeps its own rule and the
-    // fixed mode still shows the fixed ceiling.
+    // ACC-GRAPH-164-NET-SCALE: the axis is the latched decade above the measured
+    // peak; btop's ceiling above keeps its own rule and the fixed mode still
+    // shows the fixed ceiling.
     if config.net_auto {
         let mut peaks = [0_u64; 2];
         if let Some(counters) = state
@@ -472,7 +488,7 @@ fn sample(
             peaks = [peaks[DOWN].max(peaks[UP]); 2];
         }
         for direction in [DOWN, UP] {
-            step_scale(&mut state.step[direction], peaks[direction], floor);
+            step_axis(&mut state.axis[direction], peaks[direction], floor);
         }
     }
     let (graph_max_down, graph_max_up) = if config.net_auto {
@@ -484,10 +500,7 @@ fn sample(
         )
     };
     let (shown_down, shown_up) = if config.net_auto {
-        (
-            state.step[DOWN].max(floor) as f64,
-            state.step[UP].max(floor) as f64,
-        )
+        (state.axis[DOWN] as f64, state.axis[UP] as f64)
     } else {
         (
             graph_max_down.unwrap_or(0) as f64,
@@ -516,6 +529,7 @@ fn sample(
         total_up: total_up_known.then_some(total_up),
         graph_max_down,
         graph_max_up,
+        link: state.link.clone(),
         down_chart,
         up_chart,
         scale_down,
@@ -566,17 +580,20 @@ fn count_scale(max_count: &mut [i32; 2], speed: f64, graph_max: u64, fall_ticks:
     }
 }
 
-/// ACC-GRAPH-164-NET-SCALE: the latched tenfold axis step. An unset step (0)
-/// anchors at the measured peak, never under the floor; a peak above the step
-/// moves it to the next tenfold step; no lower peak ever lowers it.
-fn step_scale(step: &mut u64, peak: u64, floor: u64) {
-    if *step == 0 {
-        *step = peak.max(floor);
-        return;
-    }
-    while peak > *step {
-        *step = step.saturating_mul(10);
-    }
+/// The lowest value of the axis ladder at or above `value`: 1, 10 or 100 of a
+/// binary unit, the units the legend prints (ACC-GRAPH-164-NET-SCALE).
+fn decade_ceiling(value: u64) -> u64 {
+    (0..=6)
+        .flat_map(|power| [1, 10, 100].map(|digit| (1_u64 << (10 * power)).saturating_mul(digit)))
+        .find(|step| *step >= value)
+        .unwrap_or(u64::MAX)
+}
+
+/// ACC-GRAPH-164-NET-SCALE: one tick of the decade axis. A sample above the
+/// ceiling has already raised `peak`, so it raises the ceiling at once and never
+/// overflows the plot. Nothing here lowers the ceiling; [`reset_scale`] does.
+fn step_axis(ceiling: &mut u64, peak: u64, floor: u64) {
+    *ceiling = (*ceiling).max(decade_ceiling(peak.max(floor)));
 }
 
 /// btop's fixed ceiling when `net_auto` is false:
@@ -679,6 +696,27 @@ fn read_trimmed(path: &Path) -> Option<String> {
     std::fs::read_to_string(path)
         .ok()
         .map(|text| text.trim().to_string())
+}
+
+/// ACC-VIEW-174-NET-STRIP: the link facts of the interface at `base`. The
+/// kernel prints a speed of -1 (4294967295 before Linux 4.x) or fails the read
+/// when it does not know it, and `unknown` for duplex and state.
+fn read_link(base: &Path) -> NetLink {
+    let word = |name: &str| read_trimmed(&base.join(name)).filter(|word| word != "unknown");
+    let sum = |names: [&str; 2]| {
+        names
+            .iter()
+            .filter_map(|name| read_counter(&base.join("statistics").join(name)))
+            .reduce(u64::saturating_add)
+    };
+    NetLink {
+        speed_mbps: read_counter(&base.join("speed"))
+            .filter(|speed| *speed > 0 && *speed < u64::from(u32::MAX)),
+        duplex: word("duplex"),
+        operstate: word("operstate"),
+        errors: sum(["rx_errors", "tx_errors"]),
+        drops: sum(["rx_dropped", "tx_dropped"]),
+    }
 }
 
 #[cfg(test)]
@@ -1104,12 +1142,13 @@ mod tests {
         assert_eq!(fall_ticks(2000, 0), 1);
     }
 
-    /// ACC-GRAPH-96: `net_floor` sets the lowest shown ceiling in Mbit/s, so
-    /// zero leaves btop's 10 KiB and 1 shows 125000 bytes per second; with
-    /// `net_auto` off the fixed ceiling is shown whatever the floor says.
+    /// ACC-GRAPH-96: `net_floor` sets the lowest shown ceiling in Mbit/s, on the
+    /// decade ladder: zero leaves btop's 10 KiB and 1 (125000 bytes per second)
+    /// shows 1 MiB/s; with `net_auto` off the fixed ceiling is shown whatever
+    /// the floor says.
     #[test]
     fn the_configured_floor_sets_the_shown_ceiling() {
-        for (floor, shown) in [(0, GRAPH_MIN), (1, 125_000), (2, 250_000)] {
+        for (floor, shown) in [(0, GRAPH_MIN), (1, 1 << 20), (2, 1 << 20), (9, 10 << 20)] {
             let mut config = default_config();
             config.update_ms = 2000;
             config.net_floor = floor;
@@ -1210,81 +1249,173 @@ mod tests {
         );
     }
 
-    /// ACC-GRAPH-96: with `net_auto` the shown axis never goes below
-    /// `net_floor` (1 Mbit/s by default); btop's ceiling keeps its own rule.
-    /// ACC-GRAPH-164-NET-SCALE: a burst raises the axis tenfold and the decay
-    /// after it leaves the axis where it is.
+    /// ACC-GRAPH-164-NET-SCALE: the ladder is 1, 10, 100 of each binary unit.
     #[test]
-    fn the_shown_axis_never_goes_below_the_floor() {
-        const FLOOR: u64 = 125_000;
-        let mut tree = Tree::new("floor", 250);
+    fn the_decade_ceiling_is_the_next_ladder_value() {
+        for (value, ceiling) in [
+            (1, 1),
+            (125_000, 1 << 20),
+            (1 << 20, 1 << 20),
+            ((1 << 20) + 1, 10 << 20),
+            (2_720_000, 10 << 20),
+            (17_000_000, 100 << 20),
+            (101 << 20, 1 << 30),
+            (u64::MAX, u64::MAX),
+        ] {
+            assert_eq!(decade_ceiling(value), ceiling, "value {value}");
+        }
+    }
+
+    /// DEF-GRAPH-102-NET-SCALE: for a peak, the gutter prints the decade above
+    /// it, its half and zero, each with its unit, in bytes per second.
+    #[test]
+    fn the_gutter_labels_are_decade_values_with_units() {
+        let mut tree = Tree::new("labels", 250);
         let mut state = NetState::default();
         let config = default_config();
+        let settled = |tree: &mut Tree, state: &mut NetState, rate: u64| {
+            // A change takes under 2 s, eight ticks at 250 ms.
+            let mut snapshot = tree.tick(state, rate, &config);
+            for _ in 0..10 {
+                snapshot = tree.tick(state, rate, &config);
+            }
+            assert!(snapshot.scale_down.style.is_empty());
+            snapshot.down_scale_labels()
+        };
+        for (peak, labels) in [
+            (0, ["1 MiB/s", "0.5 MiB/s", "0 B/s"]),
+            (2_720_000, ["10 MiB/s", "5 MiB/s", "0 B/s"]),
+            (17_000_000, ["100 MiB/s", "50 MiB/s", "0 B/s"]),
+            (200_000_000, ["1 GiB/s", "0.5 GiB/s", "0 B/s"]),
+        ] {
+            assert_eq!(settled(&mut tree, &mut state, peak), labels, "peak {peak}");
+        }
+    }
+
+    /// ACC-GRAPH-96: with `net_auto` the shown axis never goes below the decade
+    /// of `net_floor`; btop's ceiling keeps its own rule.
+    #[test]
+    fn the_shown_axis_never_goes_below_the_floor() {
+        const FLOOR: u64 = 1 << 20;
+        let mut tree = Tree::new("floor", 250);
+        let mut state = NetState::default();
+        let mut config = default_config();
+        config.net_fall = 1; // four ticks at 250 ms
         let mut snapshot = tree.tick(&mut state, 0, &config);
         assert_eq!(state.graph_max[DOWN], GRAPH_MIN);
         assert_eq!(snapshot.scale_down.label_max, Some(FLOOR));
-        // Traffic under the floor keeps the axis at it.
-        for _ in 0..4 {
+        // Traffic under the floor keeps the axis at it, past the fall window.
+        for _ in 0..8 {
             snapshot = tree.tick(&mut state, 10_000, &config);
             assert_eq!(snapshot.scale_down.label_max, Some(FLOOR));
         }
-        // A 2 MB/s burst passes the floor: the axis moves to the next tenfold
-        // step above the peak and animates there over about 1.8 s.
-        snapshot = tree.tick(&mut state, 2_000_000, &config);
-        assert_eq!(state.step[DOWN], 12_500_000);
-        assert_eq!(snapshot.scale_down.label_max, Some(FLOOR));
-        for _ in 0..8 {
-            snapshot = tree.tick(&mut state, 2_000_000, &config);
-        }
-        assert_eq!(snapshot.scale_down.label_max, Some(12_500_000));
-        // The decay to 10 kB/s leaves the axis at 12.5 MB/s.
-        for _ in 0..40 {
-            snapshot = tree.tick(&mut state, 10_000, &config);
-        }
-        assert_eq!(state.step[DOWN], 12_500_000);
-        assert_eq!(snapshot.scale_down.label_max, Some(12_500_000));
+        assert_eq!(state.axis[DOWN], FLOOR);
         assert!(snapshot.scale_down.style.is_empty());
     }
 
-    /// ACC-GRAPH-164-NET-SCALE: the axis is a latched tenfold ladder. A peak
-    /// above the step moves it to the next tenfold step, a peak under it does
-    /// not, a decay never lowers it, and a page load re-anchors it at the
-    /// measured peak.
+    /// ACC-GRAPH-164-NET-SCALE: a sample above the ceiling raises it at once, the
+    /// ceiling holds after a drop for any length of time while btop's `graph_max`
+    /// keeps its own fall, and only `reset_scale` lowers it, to the next decade
+    /// above the measured peak.
     #[test]
-    fn the_axis_step_rises_by_ten_only_and_a_page_load_reanchors_it() {
-        let mut tree = Tree::new("ladder", 250);
+    fn the_axis_rises_at_once_holds_after_a_drop_and_a_page_load_resets_it() {
+        const BURST: u64 = 100 << 20;
+        let mut tree = Tree::new("latch", 250);
         let mut state = NetState::default();
-        let config = default_config();
-        // No traffic yet: the axis anchors at the floor (1 Mbit/s).
+        let mut config = default_config();
+        config.net_fall = 1; // four ticks at 250 ms: graph_max falls, the axis holds
         tree.tick(&mut state, 0, &config);
-        assert_eq!(state.step[DOWN], 125_000);
-        // A peak under the step leaves it where it is.
-        tree.tick(&mut state, 100_000, &config);
-        assert_eq!(state.step[DOWN], 125_000);
-        // 2 MB/s passes 125 kB/s: the next tenfold step above the peak is
-        // 12.5 MB/s, not 2.6 MB/s (btop's 1.3 x the five-tick mean).
-        tree.tick(&mut state, 2_000_000, &config);
-        assert_eq!(state.step[DOWN], 12_500_000);
-        // 20 MB/s passes 12.5 MB/s: one step to 125 MB/s.
+        assert_eq!(state.axis[DOWN], 1 << 20);
+        // One sample of 20 MB/s is enough; btop's ceiling needs five.
         tree.tick(&mut state, 20_000_000, &config);
-        assert_eq!(state.step[DOWN], 125_000_000);
-        // Let the change settle; the new one started mid-flight, so it runs
-        // longer than 1 s.
-        for _ in 0..16 {
+        assert_eq!(state.axis[DOWN], BURST);
+        assert_eq!(state.graph_max[DOWN], GRAPH_MIN);
+        for _ in 0..5 {
             tree.tick(&mut state, 20_000_000, &config);
         }
-        // Traffic decays to 10 kB/s: the step holds and the settled label
-        // still reads the step.
-        let snapshot = tree.tick(&mut state, 10_000, &config);
-        assert_eq!(state.step[DOWN], 125_000_000);
-        assert_eq!(snapshot.scale_down.label_max, Some(125_000_000));
-        // A page load re-anchors the step at the measured peak, 20 MB/s here,
-        // instead of holding the latched 125 MB/s; the label starts there.
-        state.page_load();
-        let snapshot = tree.tick(&mut state, 10_000, &config);
-        assert_eq!(state.step[DOWN], 20_000_000);
-        assert_eq!(snapshot.scale_down.label_max, Some(20_000_000));
+        let risen = state.graph_max[DOWN];
+        assert!(risen > 20_000_000, "graph_max rose to {risen}");
+        // A drop for 300 s, 300 fall windows: the axis and its label do not move.
+        let mut snapshot = tree.tick(&mut state, 10_000, &config);
+        for _ in 0..1200 {
+            snapshot = tree.tick(&mut state, 10_000, &config);
+            assert_eq!(state.axis[DOWN], BURST);
+            assert_eq!(state.axis[UP], BURST, "net_sync shares the ceiling");
+        }
+        assert!(state.graph_max[DOWN] < risen, "graph_max keeps its fall");
+        assert_eq!(snapshot.scale_down.label_max, Some(BURST));
         assert!(snapshot.scale_down.style.is_empty());
+        // A reduced floor lowers nothing until a page load.
+        config.net_floor = 8000;
+        tree.tick(&mut state, 10_000, &config);
+        assert_eq!(state.axis[DOWN], 1 << 30, "the floor's decade raises it");
+        config.net_floor = 1;
+        for _ in 0..12 {
+            tree.tick(&mut state, 10_000, &config);
+        }
+        assert_eq!(state.axis[DOWN], 1 << 30);
+        // A page load sets it to the decade above the 20 MB/s peak, not the
+        // decade of the 10 kB/s sample, with no change to animate.
+        let peak = tree.tick(&mut state, 10_000, &config).interfaces[0].top_down;
+        assert_eq!(peak, Some(20_000_000.0));
+        LAST.lock()
+            .expect("states")
+            .insert(tree.root.clone(), state);
+        reset_scale(&tree.root);
+        let mut state = LAST
+            .lock()
+            .expect("states")
+            .remove(&tree.root)
+            .expect("state");
+        assert_eq!(state.axis, [0; 2]);
+        let snapshot = tree.tick(&mut state, 10_000, &config);
+        assert_eq!(state.axis[DOWN], BURST);
+        assert_eq!(snapshot.scale_down.label_max, Some(BURST));
+        assert!(snapshot.scale_down.style.is_empty());
+    }
+
+    /// ACC-GRAPH-164-NET-SCALE: `net_sync` feeds both lanes with the faster
+    /// direction, so upload shows the ceiling download's burst set.
+    #[test]
+    fn net_sync_shows_one_ceiling_on_both_lanes() {
+        let mut tree = Tree::new("sync", 250);
+        let mut state = NetState::default();
+        let config = default_config();
+        assert!(config.net_sync);
+        tree.tick(&mut state, 0, &config);
+        tree.tick(&mut state, 20_000_000, &config);
+        assert_eq!(state.axis[UP], 100 << 20);
+    }
+
+    /// ACC-VIEW-174-NET-STRIP: the link line reads the kernel's words, leaves an
+    /// unknown fact out and shows a fault count only when it is not zero.
+    #[test]
+    fn the_link_facts_read_sysfs_and_leave_out_the_unknown() {
+        let link = read_link(&fixture("sys").join("class/net/eth0"));
+        assert_eq!(link.label(), "10 Gb/s · full · up");
+        assert!(link.faults().is_empty());
+
+        let tree = Tree::new("link", 250);
+        let base = tree.root.join("sys/class/net/eth0");
+        assert_eq!(read_link(&base).label(), "unavailable", "no facts recorded");
+        std::fs::write(base.join("speed"), "-1\n").expect("speed");
+        std::fs::write(base.join("duplex"), "unknown\n").expect("duplex");
+        std::fs::write(base.join("operstate"), "down\n").expect("operstate");
+        std::fs::write(base.join("statistics/rx_errors"), "3\n").expect("errors");
+        std::fs::write(base.join("statistics/rx_dropped"), "7\n").expect("drops");
+        std::fs::write(base.join("statistics/tx_dropped"), "2\n").expect("drops");
+        let link = read_link(&base);
+        assert_eq!(link.label(), "down");
+        assert_eq!(
+            link.faults(),
+            [("err", "3".to_string()), ("drop", "9".to_string())]
+        );
+        std::fs::write(base.join("statistics/rx_dropped"), "12345\n").expect("drops");
+        assert_eq!(read_link(&base).faults()[1], ("drop", "12K".to_string()));
+        std::fs::write(base.join("speed"), "2500\n").expect("speed");
+        assert_eq!(read_link(&base).label(), "2.5 Gb/s · down");
+        std::fs::write(base.join("speed"), "100\n").expect("speed");
+        assert_eq!(read_link(&base).label(), "100 Mb/s · down");
     }
 
     /// A temporary sysfs tree whose `eth0` download counter advances by

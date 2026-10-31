@@ -1,0 +1,44 @@
+<div class="pd-live" data-slow-seq="{{ detail.slow_seq }}">
+  <div class="pd-facts">
+    <div class="pd-fact" data-tip="Owner of the process&#10;source: /proc/&lt;pid&gt;/status Uid, /etc/passwd&#10;btop's user"><span>owner</span><b>{% if let Some(user) = entry.user %}{{ user }}{% else %}unavailable{% endif %}</b></div>
+    <div class="pd-fact" data-tip="Process state&#10;source: /proc/&lt;pid&gt;/stat field 3&#10;btop's status words"><span>state</span><b>{% if let Some(state) = entry.state %}{{ state }}{% else %}unavailable{% endif %}</b></div>
+    <div class="pd-fact" data-tip="This process's own threads, unit count&#10;source: /proc/&lt;pid&gt;/stat field 20&#10;btop's thread count&#10;a collapsed row in the table sums its subtree"><span>threads</span><b>{{ entry.threads_label() }}</b></div>
+    <div class="pd-fact" data-tip="This process's own RSS, unit KiB, MiB or GiB&#10;source: /proc/&lt;pid&gt;/stat field 24 × page size&#10;btop's MemB; statm is the fallback&#10;a collapsed row in the table sums its subtree"><span>memory</span><b>{{ memory }}</b></div>
+    <div class="pd-fact" data-tip="This process's own CPU use, unit percent&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta&#10;a collapsed row in the table sums its subtree"><span>cpu</span><b>{% if entry.cpu_pct.is_some() %}{{ entry.cpu_label() }}%{% else %}unavailable{% endif %}</b></div>
+    <div class="pd-fact" data-tip="Bytes read from storage, unit KiB, MiB or GiB&#10;source: /proc/&lt;pid&gt;/io read_bytes&#10;btop's detailed io_read"><span>io read</span><b>{{ io_read }}</b></div>
+    <div class="pd-fact" data-tip="Bytes written to storage, unit KiB, MiB or GiB&#10;source: /proc/&lt;pid&gt;/io write_bytes&#10;btop's detailed io_write"><span>io write</span><b>{{ io_write }}</b></div>
+    <div class="pd-fact pd-wide" data-tip="GPU nodes the process holds open&#10;source: /proc/&lt;pid&gt;/fd link targets&#10;the GPU panel's holder rule"><span>gpu</span><b>{% if let Some(nodes) = detail.gpu_nodes %}{% if nodes.is_empty() %}none{% else %}{{ nodes.join(" ") }}{% endif %}{% else %}unavailable{% endif %}</b></div>
+  </div>
+  <div class="pd-plots">
+    <div class="pd-plot">
+      <div class="pd-plot-head" data-tip="CPU use of the process, unit percent&#10;plot: the 1 s EMA since the server first saw it&#10;left: the plot's scale"><span class="pd-label">CPU</span><b data-w="100.0%">{% if entry.cpu_pct.is_some() %}{{ entry.cpu_label() }}%{% else %}unavailable{% endif %}</b></div>
+      <div class="net-plot-row">
+        <div class="plot-scale" aria-hidden="true"><span class="scale-total">{{ cpu_scale[0] }}</span><span class="scale-mid" style="--at:50">{{ cpu_scale[1] }}</span><span class="scale-zero">{{ cpu_scale[2] }}</span></div>
+        <div class="net-plot" data-chart="proc-detail-cpu" role="img" aria-label="CPU history of process {{ entry.pid }}">{% if !detail.cpu.chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !detail.cpu.scale.style.is_empty() %} rescale" style="{{ detail.cpu.scale.style }}" data-rescale="{{ detail.cpu.scale.rescale }}{% endif %}"><path class="area" d="{{ detail.cpu.chart.area }}"></path><path class="line" d="{{ detail.cpu.chart.line }}"></path></g></svg>{% endif %}</div>
+      </div>
+      <div class="xaxis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>
+    </div>
+    <div class="pd-plot">
+      <div class="pd-plot-head" data-tip="Resident memory of the process&#10;plot: the 1 s EMA since the server first saw it&#10;left: the plot's scale"><span class="pd-label">Memory</span><b data-w="1023.9 MiB">{{ memory }}</b></div>
+      <div class="net-plot-row">
+        <div class="plot-scale" aria-hidden="true"><span class="scale-total">{{ mem_scale[0] }}</span><span class="scale-mid" style="--at:50">{{ mem_scale[1] }}</span><span class="scale-zero">{{ mem_scale[2] }}</span></div>
+        <div class="net-plot" data-chart="proc-detail-mem" role="img" aria-label="Memory history of process {{ entry.pid }}">{% if !detail.mem.chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::NET_PLOT.width }} {{ crate::chart::NET_PLOT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !detail.mem.scale.style.is_empty() %} rescale" style="{{ detail.mem.scale.style }}" data-rescale="{{ detail.mem.scale.rescale }}{% endif %}"><path class="area" d="{{ detail.mem.chart.area }}"></path><path class="line" d="{{ detail.mem.chart.line }}"></path></g></svg>{% endif %}</div>
+      </div>
+      <div class="xaxis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>
+    </div>
+    {%- for (index, device) in gpus %}
+    <div class="pd-plot">
+      <div class="pd-plot-head" data-tip="GPU {{ index }} {{ device.name }} load, unit percent of the device&#10;the whole device, not this process's share&#10;source: the GPU panel's plot"><span class="pd-label">GPU {{ index }}</span><b data-w="100%">{% if let Some(pct) = device.utilization_pct %}{{ pct|fmt("{:.0}") }}%{% else %}unavailable{% endif %}</b><span class="pd-scale">device load</span></div>
+      <div class="net-plot-row">
+        <div class="plot-scale" aria-hidden="true"><span class="scale-total">100%</span><span class="scale-mid" style="--at:50">50%</span><span class="scale-zero">0%</span></div>
+        <div class="net-plot" data-chart="proc-detail-gpu" data-slow-seq="{{ snapshot.slow_seq }}" role="img" aria-label="Load history of GPU {{ index }}, which process {{ entry.pid }} holds open"><svg class="chart" viewBox="0 0 {{ lane.width }} {{ lane.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="gpu-series g{{ index % 3 }}">{% if !device.chart.line.is_empty() %}<path class="area" d="{{ device.chart.area }}"></path><path class="line" d="{{ device.chart.line }}"></path>{% endif %}</g></svg></div>
+      </div>
+      <div class="xaxis" aria-hidden="true">{% for label in snapshot.axis_labels() %}<span>{{ label }}</span>{% endfor %}<span>now</span></div>
+    </div>
+    {%- endfor %}
+  </div>
+</div>
+<div class="pd-command">
+  <div class="pd-command-head"><span class="pd-label">command</span><button type="button" class="chip chip-copy pd-copy up">copy</button></div>
+  <code class="pd-cmd">{% if let Some(command) = detail.command %}{{ command }}{% else %}unavailable{% endif %}</code>
+</div>

@@ -3,7 +3,9 @@
 pub mod agents;
 pub mod dashboard;
 pub mod events;
+pub mod process;
 pub mod settings;
+pub mod telemetry;
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write as _;
@@ -27,38 +29,34 @@ pub const READ_ONLY_REFUSAL: &str = "read-only mode: mutating requests are refus
 #[folder = "assets/"]
 struct Assets;
 
-/// DEF-VIEW-98-ASSET-STALE: every asset URL the page loads carries the build
-/// stamp, so a reload after a deploy fetches one matching set. The stamp
-/// covers these files: the scripts and the stylesheet decide behaviour and
-/// markup together, and the icon is named by URL from the same page.
-pub const STAMPED_ASSETS: [&str; 6] = [
-    "icon.svg",
-    "app.css",
-    "app.js",
-    "theme.js",
-    "htmx.min.js",
-    "htmx-sse.min.js",
-];
+/// DEF-VIEW-119-STALE-TAB: the templates are compiled in, so nothing else in
+/// the binary holds their source; embedding the folder gives each file the
+/// build-time sha256 the stamp hashes, and no dependency.
+#[derive(RustEmbed)]
+#[folder = "templates/"]
+struct Templates;
 
-/// The build stamp: the crate version and every stamped file's embedded
-/// sha256, hashed together. A changed asset or a version bump makes a new
-/// stamp and a new URL; an unchanged build keeps its stamp, so the browser
-/// cache still helps. `DefaultHasher` is deterministic within a build, which
-/// is all the page and its asset responses need.
+/// The build stamp: the crate version and the embedded sha256 of every asset
+/// and template, hashed together. A changed file or a version bump makes a new
+/// stamp and a new URL (DEF-VIEW-98-ASSET-STALE); an unchanged build keeps its
+/// stamp, so the browser cache still helps and a restart of the same binary
+/// reloads no open page (DEF-VIEW-119-STALE-TAB). `DefaultHasher` is
+/// deterministic within a build, which is all the page and its asset responses
+/// need.
 pub fn asset_stamp() -> String {
-    let files: Vec<(&str, Option<[u8; 32]>)> = STAMPED_ASSETS
-        .iter()
-        .map(|name| {
-            (
-                *name,
-                Assets::get(name).map(|file| file.metadata.sha256_hash()),
-            )
-        })
-        .collect();
+    let assets = Assets::iter().map(|name| {
+        let hash = Assets::get(&name).map(|file| file.metadata.sha256_hash());
+        (name, hash)
+    });
+    let templates = Templates::iter().map(|name| {
+        let hash = Templates::get(&name).map(|file| file.metadata.sha256_hash());
+        (name, hash)
+    });
+    let files: Vec<_> = assets.chain(templates).collect();
     stamp(env!("CARGO_PKG_VERSION"), &files)
 }
 
-fn stamp(version: &str, files: &[(&str, Option<[u8; 32]>)]) -> String {
+fn stamp(version: &str, files: &[(impl Hash, Option<[u8; 32]>)]) -> String {
     let mut hasher = DefaultHasher::new();
     version.hash(&mut hasher);
     for (name, hash) in files {
@@ -72,7 +70,11 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(dashboard::index))
         .route("/events", get(events::events))
+        // ACC-NET-181-JSON-STREAM: the same frames as newline-delimited JSON.
+        .route("/events.json", get(telemetry::events_json))
         .route("/agents", get(agents::agents))
+        // ACC-VIEW-176-PROC-POPUP: one process's popup body.
+        .route("/proc/{pid}", get(process::detail))
         .route("/config", post(settings::update))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -95,6 +97,8 @@ pub fn router(state: AppState) -> Router {
 pub fn agent_router(state: AppState) -> Router {
     Router::new()
         .route("/events", get(events::events))
+        .route("/events.json", get(telemetry::events_json))
+        .route("/proc/{pid}", get(process::detail))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .layer(middleware::from_fn_with_state(state.clone(), access_guard))
@@ -246,13 +250,13 @@ mod tests {
         assert_eq!(visited, 3, "the scan stopped before every byte was read");
     }
 
-    /// A missing file would leave its URL with a stamp that ignores it, so
-    /// every stamped name must exist in the embedded folder.
+    /// DEF-VIEW-119-STALE-TAB: the stamp's input holds the templates as well
+    /// as the assets, so a template-only build has a new stamp.
     #[test]
-    fn every_stamped_asset_is_embedded() {
-        for name in STAMPED_ASSETS {
-            assert!(Assets::get(name).is_some(), "{name} is not embedded");
-        }
+    fn the_stamp_reads_the_assets_and_the_templates() {
+        assert!(Assets::get("app.css").is_some());
+        assert!(Templates::get("index.html").is_some());
+        assert!(Templates::get("partials/mem_gauge.html").is_some());
     }
 
     /// DEF-VIEW-98-ASSET-STALE: a changed asset or a changed version makes a

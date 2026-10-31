@@ -1,4 +1,4 @@
-.PHONY: help increment_version_number build build-static fmt-check clippy test deny coverage sbom ci run docker clean env tools version upgrade release doctor
+.PHONY: help increment_version_number build build-static fmt-check clippy test test-client test-python deny coverage sbom ci run docker clean env tools version upgrade release doctor
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -22,6 +22,9 @@ STATIC ?= 0
 STRIP ?= 0
 # Set SKIP_VERSION_INCREMENT=1 to skip the patch version increment in build, build-static, run and docker
 SKIP_VERSION_INCREMENT ?= 0
+PYTHON ?= python3
+PYTHON_VENV = target/python-venv
+PYTHON_DIST = target/python-dist
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -57,6 +60,19 @@ clippy:
 ## Run the test suite
 test:
 	$(CARGO) test --locked --workspace --all-targets $(FEATURES_FLAG)
+
+## Run the browser tests; needs python3 with Playwright and its chromium, so make ci leaves them out
+test-client:
+	$(CARGO) test --locked --test e2e $(FEATURES_FLAG) -- --ignored --exact proc_popup_opens_with_the_pid_and_closes_on_escape frames_patch_the_panels_in_place live_status_shows_on_dimmed_and_off
+
+## Build the companion Python client and test its wheel against this build's server, in a venv under target/; needs PyPI, so make ci leaves it out
+test-python:
+	$(CARGO) build --locked --release $(FEATURES_FLAG)
+	$(PYTHON) -m venv $(PYTHON_VENV)
+	$(PYTHON_VENV)/bin/pip install --quiet build pytest
+	$(PYTHON_VENV)/bin/python -m build --outdir $(PYTHON_DIST)
+	$(PYTHON_VENV)/bin/pip install --quiet --force-reinstall --no-index --find-links $(PYTHON_DIST) btop-web-client
+	$(PYTHON_VENV)/bin/python -m pytest
 
 ## Check advisories, licences, bans and sources with cargo-deny
 deny:

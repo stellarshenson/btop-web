@@ -468,6 +468,131 @@ What the panels render and how an unavailable value is drawn
   - root-cause: 2026-10-29T18:35:56Z @kj GAUGE_SCALE_BOX.per_char 5.82 and chart.rs 0.7275 em bound the advance plus tracking, but the drawn ink is wider, so the fit rejects 8 px
   - log: 2026-10-29T18:35:56Z @kj added
   - log: 2026-10-29T18:58:12Z @kj closed
+- [x] `DEF-VIEW-101-MEM-BREAKDOWN` **Memory bar and available row disagree with the host** - MAJOR; the bar counts the host's reclaimable cache inside outside (host) 329 GiB, and the available row says free + cache = 100 GiB, while MemAvailable reads 453 GiB of 503 GiB; the panel shows 6 percent free and 20 percent available at once
+  - evidence: b4 verifier: five rows sum to MemTotal, difference 0 B; arc segments match rows at 1440x900 within 0.001 points; make ci 379 passed. verify/b4.
+  - repro: memory panel: outside (host) 329 GiB, host free 31.4 GiB, available 100 GiB; free -b on the host reports 486 GB available
+  - test-tags: UNIT
+  - root-cause: 2026-10-30T15:32:16Z @kj The bar and rows mixed host and container scopes and counted reclaimable memory as used, so the rows could not sum to MemTotal.
+  - root-cause: 2026-10-30T08:35:10Z @kj the segments mix scopes: outside = MemTotal - memory.current - MemFree swallows the host cache, and available adds the container's inactive_file to the host's MemFree instead of reading MemAvailable
+  - log: 2026-10-30T08:35:10Z @kj added
+  - log: 2026-10-30T15:32:16Z @kj closed
+- [x] `DEF-VIEW-103-CHEVRON` **Tree chevron reads as a lowercase v** - MINOR; the tree toggle is an 8 by 8 px SVG chevron, and at row size the two strokes read as the letter v rather than an icon; the owner says it looks bad
+  - evidence: wf_5acea51f-fef: the toggle is a filled path, painted area 15.01 to 15.06 CSS px squared, screenshots at scale 1, 2 and 3 show a triangle; replaced the two strokes; deployed on port 40290
+  - repro: process tree view: the chevron left of a parent name reads as text v at 100 percent zoom
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-30T10:54:13Z @kj the chevron is drawn as a thin 8 px stroke pair with no fill, at the same weight as body text
+  - log: 2026-10-30T10:54:13Z @kj added
+  - log: 2026-10-30T13:21:59Z @kj closed
+- [x] `DEF-VIEW-105-TOGGLE-GONE` **Tree toggle disappears when a node is collapsed** - MAJOR; collapsing a process hides its subtree and the chevron button on the parent row goes with it, so the node cannot be expanded again without reloading the page
+  - evidence: wf_5acea51f-fef: pids at depth 1 and depth 2 through two collapse and expand cycles at scale 1, 2 and 3: triangle drawn in every state, painted area 15.01 to 15.06 CSS px squared; deployed on port 40290
+  - repro: process tree view: click the toggle on a parent row; the row's button disappears with the children
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-30T10:58:52Z @kj cause unknown; reproduce first, likely the collapse re-render drops the button on the collapsed row
+  - log: 2026-10-30T10:58:52Z @kj added
+  - log: 2026-10-30T13:21:59Z @kj closed
+- [x] `DEF-VIEW-106-SWAP-UNITS` **Swap row prints a misleading KiB figure** - MEDIUM; the memory panel's swap row prints 284 KiB / 128 GiB; the owner says the KiB figure is misleading and should not be printed. Show the row in the panel's GiB unit so a tiny usage reads 0, and keep the percent consistent with the printed figure
+  - evidence: b4 verifier: live swap prints 0 / 128 GiB at 0%; test swap_row_prints_gib_and_a_percent_of_that_figure; make ci 379 passed.
+  - root-cause: 2026-10-30T15:32:16Z @kj The swap row chose its unit per value, so a near-zero figure printed KiB beside a GiB total.
+  - repro: open the page; the memory panel's swap row prints 284 KiB / 128 GiB
+  - log: 2026-10-30T11:10:44Z @kj added
+  - log: 2026-10-30T15:32:16Z @kj closed
+- [x] `DEF-VIEW-108-FILTER-FRAME` **Process filter draws a second frame and an uppercase hint** - MEDIUM; the Processes filter draws its own bordered box inside the panel bar, tinted in the accent colour, with the hint FILTER in uppercase bright text; the owner wants a plain section of the bar
+  - evidence: ACC-VIEW-187 and ACC-VIEW-188 closed on the same run; zoomed screenshots at rest, focused and holding text in dark and light show no second frame and a lowercase dimmed hint; deployed on 40290 as pid 186703
+  - related: ACC-VIEW-187-FILTER-SEGMENT
+  - overrides: ACC-VIEW-177-FILTER-INPUT
+  - repro: open the page, look at the right end of the Processes header bar
+  - root-cause: 2026-10-30T13:06:21Z @kj ACC-VIEW-177-FILTER-INPUT specified a house input: app.css .opt gives the border and radius, .cfg-in.filter paints the 12 percent accent tint and --chip-fg on the placeholder, index.html writes placeholder FILTER
+  - log: 2026-10-30T13:06:21Z @kj added
+  - log: 2026-10-30T13:38:18Z @kj closed
+- [x] `DEF-VIEW-110-FILTER-RED` **Filter's left line turns red** - MEDIUM; the Processes filter's left line turns red when the filter is focused or holds text; the owner asked for one plain line and no colour change
+  - evidence: wf_68caebc5-456: the left line equals the bar's bottom rule in 80 of 80 measurements, 20 theme variants in 4 states, 0 accent pixels; the same script reads red on the old stylesheet; deployed on port 40290
+  - related: ACC-VIEW-187-FILTER-SEGMENT
+  - repro: Default theme, click the filter or type in it
+  - root-cause: 2026-10-30T13:42:26Z @kj the mechanism recorded for ACC-VIEW-187 kept the accent state from the rejected ACC-VIEW-177; nobody asked for it. The Default theme's --accent is red, rgb(188, 82, 82) dark and rgb(191, 74, 74) light, derived from btop's hi_fg in theme.rs
+  - log: 2026-10-30T13:42:26Z @kj added
+  - log: 2026-10-30T13:59:35Z @kj closed
+- [x] `DEF-VIEW-112-WIDE-ARC` **Wide gauge shape draws segment lengths unlike their shares** - MEDIUM; At window heights of 640 px and under the gauge is a squircle stretched by preserveAspectRatio none, so percent runs by direction and the drawn lengths do not match the shares. Other used looks larger than container used, and the rows that would contradict it are hidden there.
+  - evidence: wf_4b1bcfdd-fab verifier: wide fills within 0.37 points of their percents at 1440x640, 1280x600, 1024x600, both gauges, against a 1.5 point bar; make ci 386 passed; landed.
+  - root-cause: 2026-10-30T16:38:29Z @kj The wide gauge stretches a squircle with preserveAspectRatio none and its percent runs by direction, so drawn length follows the angle and not the percent.
+  - repro: 1440x640, memory panel: container used draws 9.17 percent of the track length for an 18.81 percent share, other used 12.79 for 6.09; verify/b4/shots/wide-shape-1440x640.png
+  - log: 2026-10-30T15:32:16Z @kj added
+  - log: 2026-10-30T16:38:29Z @kj closed
+- [x] `DEF-VIEW-114-CPU-TEMP` **CPU temperature no longer shows on the page** - MAJOR; Batch b5 removed temperature from the CPU gauge column for the four facts of ACC-VIEW-178. On a host with sensors it now shows nowhere on the page, though btop shows it. The owner asked for more CPU facts and did not ask for this removal.
+  - evidence: wf_4b1bcfdd-fab verifier: CPU stat header shows temperature on a recorded tree with sensors; a tree without sensors is unchanged; hidden with the other stat facts at 390x844 and 1280x600; make ci 386 passed.
+  - root-cause: 2026-10-30T16:38:29Z @kj Batch b5 replaced the gauge column with four facts and removed the temperature label without giving it another place.
+  - repro: Serve a recorded tree with CPU sensors on the current tree: no temperature in the CPU stat header or the gauge column
+  - log: 2026-10-30T15:32:32Z @kj added
+  - log: 2026-10-30T16:38:29Z @kj closed
+- [x] `DEF-VIEW-115-MEM-TIP` **MEM header tooltip names the wrong source** - MINOR; The MEM header tooltip states /proc/<pid>/statm as the source, while the value comes from /proc/<pid>/stat field 24 and statm is only the fallback.
+  - evidence: tmp/workflows/btop-web-text-fixes/checkpoints/verify.json gate 2: MEM and popup memory tooltips name stat field 24 and statm as the fallback; proc.rs reads them in that order
+  - repro: Hover the MEM header: source reads statm; recorded tree pid 715 shows 140709888 B, the stat value, and statm gives 129605632
+  - log: 2026-10-30T15:53:39Z @kj added
+  - log: 2026-10-30T17:45:32Z @kj b6-verify finding 6: the popup's memory fact tooltip carries the same statm wording, so the fix covers both tooltips.
+  - log: 2026-10-30T18:29:19Z @kj closed
+- [x] `DEF-VIEW-117-CPU-CHIPS` **CPU facts are drawn inside chips** - CRITICAL; The CPU panel's load, user, system and pressure labels sit inside bordered chips that fill the column, with the values on the line below. The owner wants plain text.
+  - evidence: tmp/workflows/btop-web-critical/checkpoints/verify.json gate 2 and deploy/fresh-owner.png: CPU facts are plain rows, no border, tint or transform, labels on one left edge, values on one right edge, first row level with the memory table
+  - repro: tmp/workflows/btop-web-critical/owner-cpu.png, CPU panel
+  - root-cause: 2026-10-30T16:41:51Z @kj The b5 batch prompt in the campaign script asked for the house chip style; ACC-VIEW-178-CPU-FACTS and the owner never did.
+  - log: 2026-10-30T16:41:51Z @kj added
+  - log: 2026-10-30T16:46:05Z @kj Owner on a freshly loaded page, tmp/workflows/btop-web-critical/owner-cpu-2.png, markers 1 to 4: no chips, just nice text, align well.
+  - log: 2026-10-30T18:03:10Z @kj closed
+- [x] `DEF-VIEW-118-MEM-ARC` **Memory gauge reads as full while it says 103 GiB used** - CRITICAL; The arc draws about 98 percent in one colour under the readout 103 GiB used, so it reads as 100 percent used. Used and reclaimable are not told apart, other reclaimable has no colour in the bar or its key, and free is coloured.
+  - evidence: deploy/fresh-owner.png at 1040x760 scale 1.75: arc reads 42 percent for 107 GiB used plus 105 GiB reclaimable; the full ring came from a stale tab and the four-segment arc, removed by DEF-VIEW-119 and DEF-VIEW-120
+  - related: DEF-VIEW-119-STALE-TAB
+  - root-cause: 2026-10-30T16:43:55Z @kj A tab holding app.css from before the memory batch, DEF-VIEW-119-STALE-TAB: one-colour arc, no colour on other reclaimable and a coloured free reproduce with before/b4 app.css; the current CSS draws the four-part arc.
+  - repro: tmp/workflows/btop-web-critical/owner-mem.png, Memory panel
+  - log: 2026-10-30T16:41:51Z @kj added
+  - log: 2026-10-30T18:03:11Z @kj closed
+- [x] `DEF-VIEW-119-STALE-TAB` **A tab open across a redeploy mixes old CSS with new fragments** - CRITICAL; The page loads app.css and app.js once and never reloads. After a redeploy the SSE stream reconnects and swaps in new markup under the old stylesheet, so the page draws wrongly until a manual reload.
+  - evidence: tmp/workflows/btop-web-critical/checkpoints/verify.json gate 1: an open page reloaded itself once about 3 s after each redeploy with a different stamp, template-only change included; no loop; 1 stamp event per connection, 0 in frames
+  - repro: Open the page, replace the server with a build whose assets changed, do not reload; current markup with before/b4 app.css draws stretched chips, a one-colour arc and cut network labels
+  - root-cause: 2026-10-30T16:42:46Z @kj Nothing tells the page that the server's assets changed: asset_stamp is read only when the page first loads.
+  - log: 2026-10-30T16:42:46Z @kj added
+  - log: 2026-10-30T18:03:10Z @kj closed
+- [x] `DEF-VIEW-120-ARC-SCOPE` **Memory gauge arc draws memory outside the container** - CRITICAL; The arc draws other used and other reclaimable as well as the container's two parts, so at 104 GiB used it fills to about 97 percent. The owner wants only the container on the gauge, used and reclaimable.
+  - evidence: tmp/workflows/btop-web-critical/checkpoints/verify.json gate 3 and deploy/fresh-owner.png: each arc variant has exactly 2 fills, container used and reclaimable, in 20 of 20 theme and mode pairs; the rest is bare track
+  - related: DEF-VIEW-118-MEM-ARC
+  - repro: tmp/workflows/btop-web-critical/owner-cpu-2.png, marker 5, Memory gauge on a freshly loaded page
+  - root-cause: 2026-10-30T16:46:38Z @kj ACC-VIEW-190-MEM-RECLAIM specified four segments in table order, which I wrote; the owner asked to see used against reclaimable, not memory outside the container.
+  - log: 2026-10-30T16:46:38Z @kj added
+  - log: 2026-10-30T18:03:10Z @kj closed
+- [x] `DEF-VIEW-122-POPUP-COPY` **The popup's copy chip stays copied until the popup closes** - MINOR; after a click on the process popup's copy chip, the chip keeps its copied state until the popup closes, while the top bar's copy chip returns to rest after 1.5 s
+  - evidence: tmp/workflows/btop-web-text-fixes/checkpoints/verify.json gate 3: the popup's copy chip copies the command and returns to rest after 1.50 s, the top bar's time, on both clicks
+  - repro: open a process popup, click its copy chip, wait 5 s: it still reads copied
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-30T17:45:12Z @kj added
+  - log: 2026-10-30T18:29:19Z @kj closed
+- [x] `DEF-VIEW-123-POPUP-TIP` **The popup's CPU tooltip calls its figure the table's Cpu%** - MINOR; the popup's CPU fact shows the process's own counter, and its tooltip calls that figure the table's Cpu%, but a collapsed tree row shows the subtree total, so the two differ: kthreadd row 25.0, popup 0.0%
+  - evidence: tmp/workflows/btop-web-text-fixes/checkpoints/verify.json gate 4: collapsed row 9 threads, 148M, 2.9%; popup 1 thread, 7.03 MiB, 1.5%, equal to /proc; the three tooltips state the own-figure rule
+  - repro: collapse a tree row with busy children, open its popup, compare the row's Cpu% with the popup's CPU figure and read the tooltip
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-30T17:45:32Z @kj added
+  - log: 2026-10-30T18:03:11Z @kj Own screenshot, deploy/fresh-owner-popup.png: row 525 reads 2443 threads and 17G as a collapsed subtree total while the popup reads 1 thread and 17.7 MiB. The same trap holds for threads and memory, so the fix states the process's own figure on all three.
+  - log: 2026-10-30T18:29:19Z @kj closed
+- [x] `DEF-VIEW-124-POPUP-CHIPS` **The popup's section labels are chips** - MEDIUM; the process popup draws its CPU, MEMORY, GPU and COMMAND section labels as chips; they label a section and control nothing, and the owner's rule for such labels is plain text; the CLOSE and COPY controls stay chips
+  - evidence: tmp/workflows/btop-web-text-fixes/checkpoints/verify.json gate 5 and text-fixes/fresh-owner-popup.png: section labels are plain lower-case text, worst contrast 4.51:1 over 10 theme pairs; CLOSE and COPY stay chips; no page scroll at 4 sizes
+  - repro: click a process row: the labels above the plots and the command line are bordered chips
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-30T18:03:11Z @kj added
+  - log: 2026-10-30T18:29:19Z @kj closed
+- [ ] `DEF-VIEW-131-PROC-ENDED` **Details of a process that ended look stuck** - MAJOR; When a process ends, its details stop with no word that it ended: the plots freeze, state still reads Sleeping, every figure stays, and the only change is a chip reading UNAVAILABLE. The owner's image paste-20261031-002259.png, reported as stuck after about 15 s, shows this on PID 3973276, a test browser
+  - related: ACC-VIEW-204-PROC-ENDED
+  - repro: Open the details of a process, end that process: from the next slow pass the server answers 404, the chip reads UNAVAILABLE and the plots and figures freeze
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-30T23:27:46Z @kj askDetail in app.js treats every missing body the same way: showDetail(null) keeps the last figures and shows the unavailable chip, so a 404 for a process that ended looks the same as a failed request
+  - log: 2026-10-30T23:27:46Z @kj added; reason: Measured through the lab proxy on the live build: a probe killed at 6.1 s gets 404 from 6.2 s with the same picture as the owner's image; a live process ran 45 s with 46 bodies, all 200.
+- [x] `DEF-VIEW-132-DIGIT-SHIFT` **A digit of a big number moves sideways as the value changes** - MEDIUM; A digit that does not change, such as the 1 or 2 in the CPU total, moves back and forth by 1 to 2 px as the number changes. The owner's image paste-20261031-003659.png shows the CPU strip reading 18 percent
+  - evidence: Live pid 286679 in spring: leading digit x 34.67 and 52.05 at rest and inside num-tween over 721 frames; wf_c17d0d1b-c1c verify: spread 0.000 px over 13497 readings in 5 effects, unchanged build 0.78 px; spring crops identical in every pixel; make ci 408 passed
+  - root-cause: 2026-10-30T23:41:17Z @kj The spring's .num-tween span takes the face's letter-spacing, 0.765 px, from the galaxatron rule, while its host .stat-value has 0.368 px, so a two-digit number's leading digit sits 0.78 CSS px further left, 1.37 device px at scale 1.75, whenever a spring runs, and returns when it ends
+  - repro: Watch the CPU total in the top strip on the live page while the load changes: the leading digit moves sideways by 1 to 2 px
+  - test-tags: FUNCTIONAL, MANUAL
+  - log: 2026-10-30T23:38:50Z @kj added
+  - log: 2026-10-30T23:41:17Z @kj root-cause recorded; reason: Measured on the live build at 1040x760 scale 1.75: leading digit left 34.67 in none and at rest, 33.89 inside num-tween; computed letter-spacing 0.367595 px against 0.764809 px.
+  - log: 2026-10-31T00:23:04Z @kj closed; reason: Deployed and measured
+- [ ] `DEF-VIEW-136-ODO-DROP` **A rolled odometer digit stops above its rest position** - MINOR; A rolled odometer digit at its final stop sits 1 to 2 device px above its rest position, so it drops when the resting text returns
+  - repro: With the odometer effect, compare a crop of a rolled digit at its final stop with the same digit at rest, in the owner's window
+  - test-tags: FUNCTIONAL, MANUAL
+  - log: 2026-10-31T00:23:04Z @kj added
 
 ## Process collection `PROC`
 
@@ -521,6 +646,19 @@ Recorded fixtures that stand in for the host
   - root-cause: 2026-10-28T12:52:52Z @kj net.rs reads interface names from getifaddrs, not from the fixture's sys/class/net, when BTOP_WEB_PROC_ROOT points at a recorded tree
   - log: 2026-10-28T12:52:52Z @kj added
   - log: 2026-10-28T18:03:54Z @kj closed
+- [x] `DEF-TEST-107-FLAKY-CI` **make ci aborts intermittently in the lib tests** - MAJOR; 2 of 5 make ci runs on 2026-10-30 aborted in the 250-test lib binary with fatal runtime error: IO Safety violation: owned file descriptor already closed, aborting, then SIGABRT; not reproducible on demand and not from an uncommitted patch; find the double close and make the suite reliably green
+  - evidence: wf_3acfe839-016: lib binary 0 failures in 120 default-thread runs (old code 5 in 120, 2 aborts); make ci 2 of 2, 373 passed; rewritten test fails on a copy where read_descriptor leaks; production code unchanged
+  - repro: run make ci repeatedly; the lib test binary aborts after an owned file descriptor is closed twice, killing the remaining tests
+  - log: 2026-10-30T12:13:20Z @kj added
+  - log: 2026-10-30T13:33:38Z @kj verifier gate no-assertion-deleted failed as written: the 3 deleted lines act on the second read, which is the cause, so they cannot stay; accepted, because the peer read fails on a leaking read_descriptor where the old lines passed
+  - log: 2026-10-30T13:33:38Z @kj closed
+- [x] `DEF-TEST-109-AGENT-FLAKY` **agent_and_client_modes fails intermittently in make ci** - MAJOR; the e2e test fails at crates/btop-web/tests/e2e.rs:861 with 'the strip shows no two sample ages': the beta agent's chip reads unavailable until the 20 s deadline; 1 of 3 runs at load average 11 to 14, on code with no Rust change; make ci stops there
+  - evidence: wf_715319f2-252: servers bind port 0; 1300 of 1300 e2e runs passed where old code failed 2.67 percent at default pool; cause put back fails 8 of 8; make ci 374 passed; landed.
+  - repro: run the e2e test binary repeatedly while other builds run on the host; log tmp/workflows/btop-web-filter-bar/verify/make-ci-1.log
+  - root-cause: 2026-10-30T16:02:23Z @kj The test released the port it picked about 36 ms before the agent bound it, so another server of the same test binary could take it, and the test discarded the agent's error. The original run's cause is inferred from a matching failure text.
+  - root-cause: 2026-10-30T13:36:46Z @kj cause under investigation
+  - log: 2026-10-30T13:36:46Z @kj added
+  - log: 2026-10-30T16:02:23Z @kj closed
 
 ## Libraries `LIB`
 
@@ -611,6 +749,43 @@ Page fit, density and use of space
   - test-tags: FUNCTIONAL
   - log: 2026-10-29T17:38:53Z @kj added
   - log: 2026-10-29T18:11:21Z @kj closed
+- [x] `DEF-LAYOUT-104-WIDE-TEXT` **Adaptive fields overlap at a wide width** - MEDIUM; the owner reports that on a wide screen the adaptive design adds text for another grid and the text overlaps; a sweep at 1920, 2304, 2560, 3200 and 3840 found no overlapping text, so the width and the panel are still unknown
+  - evidence: b8 and b8-verify on fresh pages: GPU scale labels overlapped in 168 cases before and 0 of 116 after; the owner's words, text for another horizontal grid, name these labels; deployed in pid 3755379
+  - repro: freshly loaded page at 900 px tall on a 3-GPU host, measure the GPU lane's scale labels for overlap
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-30T22:14:24Z @kj the GPU lane's scale labels are fixed text placed by lane height; a 50 px lane drew 100 and 75 percent, and 25 and 0 percent, over each other in 56 of 84 cases at all 7 widths; the owner's image shows only the tree toggle he reported in the same message
+  - log: 2026-10-30T10:54:13Z @kj added
+  - log: 2026-10-30T16:43:56Z @kj May share DEF-VIEW-119-STALE-TAB: the owner's report followed a redeploy with no reload. Reproduce on a freshly loaded page before changing code.
+  - log: 2026-10-30T22:14:24Z @kj root-cause updated "2026-10-30T10:54:13Z @kj unknown until the width is known" -> "the GPU lane's scale labels are fixed text placed by lane height; a 50 px lane drew 100 and 75 percent, and 25 and 0 percent, over each other in 56 of 84 cases at all 7 widths; the owner's image shows only the tree toggle he reported in the same message"; reason: batch b8 reproduced it on fresh pages
+  - log: 2026-10-30T22:14:24Z @kj edited repro "not reproduced yet: the owner's screenshot is a crop of the tree row; his full width and the panel are needed" -> "freshly loaded page at 900 px tall on a 3-GPU host, measure the GPU lane's scale labels for overlap"; reason: the old line named the wrong panel
+  - log: 2026-10-30T22:39:15Z @kj closed; reason: states why the fix matches the owner's words
+- [x] `DEF-LAYOUT-113-ROW-OVERLAP` **Four-digit value overlaps the longest memory row label** - MINOR; A four-digit MiB value in the container reclaimable row overlaps its label in the narrow face, and they read reclaimable1011 MiB with no gap.
+  - evidence: wf_4b1bcfdd-fab verifier: narrowest label to value gap 3 px from 1024 to 1536 px wide in both faces; gauge box 185 px at 1280x1024 and 1280x1440, was 218.5 px; make ci 386 passed.
+  - root-cause: 2026-10-30T16:38:29Z @kj The value column did not reserve the width of a four-digit MiB value, and the gauge box took that width at 1100 to 1280 px.
+  - repro: Narrow face, container reclaimable at 1010 MiB: overlap 1.89 px at 1100x768, 0.89 px at 1150x768; verify/b4/shots/wide-after-1100x768-galaxatron-side.png
+  - log: 2026-10-30T15:32:32Z @kj added
+  - log: 2026-10-30T16:38:29Z @kj closed
+- [x] `DEF-LAYOUT-121-MEM-TABLE` **Memory table is crammed against the panel edges** - CRITICAL; At the owner's scale the table's 150 px fill the 157 px body, so the bar sits 3.4 px below the header rule and ends 5 px from the panel edge while the header keeps 8 px. The owner also reports cropped text at the panel's top.
+  - evidence: tmp/workflows/btop-web-critical/checkpoints/verify.json gate 5a: header rule to bar 9.0 px, was 3.42; last row to body bottom 9.0 px; bar right edge on the header text's right edge; row pitch 18.41 px, was 20; gauge boxes unchanged. Gate 5b, a font floor, overruled because the font did not change
+  - repro: Window 1040x760 at device scale 1.75, narrow face, dark; tmp/workflows/btop-web-critical/owner-top.png
+  - root-cause: 2026-10-30T16:51:29Z @kj Row pitch is fixed at 20 px, so the block has no slack at this tier, and the body pads 5 px against the header's 8 px.
+  - log: 2026-10-30T16:51:29Z @kj added
+  - log: 2026-10-30T16:52:29Z @kj Owner, tmp/workflows/btop-web-critical/owner-rows.png: can reduce a little vertical spacing between text and lines and texts. The run in progress takes the room from the row pitch; checked against this when it lands.
+  - log: 2026-10-30T18:03:11Z @kj closed
+- [x] `DEF-LAYOUT-127-GAUGE-GAP` **Almost no space between the Memory gauge and table** - MEDIUM; the Memory gauge's 80 label nearly meets the table's colour keys, with 3.56 CSS px between the gauge and the table in the owner's window
+  - evidence: deployed build pid 3755379, measured from the 80 label to the table: 28.73 CSS px at 1040 wide and 34.61 at 1100, scale 1.75, narrow face; was 5.32 at 1040
+  - related: ACC-VIEW-194-MEM-WORDS
+  - related: ACC-VIEW-197-MEM-FONT
+  - repro: 1040x760 at device scale 1.75, data-font galaxatron, data-mode dark: measure from the gauge's right edge to the table's left edge
+  - test-tags: MANUAL
+  - root-cause: 2026-10-30T22:05:07Z @kj the table takes its natural width, and the label container reclaimable sets it at 173.27 CSS px
+  - log: 2026-10-30T22:05:07Z @kj added
+  - log: 2026-10-30T22:39:15Z @kj closed
+- [ ] `DEF-LAYOUT-133-GPU-LATE` **GPU panel appears late and resizes the Network plots on page load** - MEDIUM; A page load that wakes a parked sampler has no GPU panel for about 700 ms, so the Network panel fills the band and its plots shrink from 816 px to 243 px when the first sweep brings the GPU panel back
+  - repro: Close every viewer until the sampler parks, then open the page: the Network plots fill the band and then resize
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-31T00:09:32Z @kj The sampler drops gpu_latest when it parks, so the page's first frames carry no GPU device
+  - log: 2026-10-31T00:09:32Z @kj added
 
 ## Graphs and sparklines `GRAPH`
 
@@ -676,6 +851,72 @@ Line graphs, sparklines and history charts: interpolation, marks, scale and obst
   - test-tags: FUNCTIONAL
   - log: 2026-10-28T19:24:04Z @kj added
   - log: 2026-10-28T22:02:43Z @kj closed
+- [x] `DEF-GRAPH-102-NET-SCALE` **Network axis labels carry no unit and the ladder is not decades** - MEDIUM; the network gutter reads 17M, 8.6M and 0B, a latched peak times ten rather than a power of ten, and no label says whether M is bytes or bits; the legend beside it reads now 0.02 Mibps, so the two numbers on screen use different units
+  - evidence: b3-verify 7 of 7 gates: gutter reads 100 MiB/s, 50 MiB/s, 0 B/s with units, decade ceiling above the peak in 35 of 35 checks, holds at 30 s and 305 s after a drop, make ci 391 passed
+  - repro: network panel at 1440x900: gutter 17M / 8.6M / 0B and legend now 0.02 Mibps; no label names the unit
+  - test-tags: UNIT
+  - root-cause: 2026-10-30T10:19:00Z @kj scale_labels returns bytes_short of the ceiling and its half, and the ceiling is the measured peak times ten, not the next decade
+  - log: 2026-10-30T10:19:00Z @kj added
+  - log: 2026-10-30T16:26:38Z @kj b3 verify failed its fall gate. The fall came from my batch instruction, not from the owner, who said the next scale is 10x more and stays. Fall removed, latch and reload restored in the b3 fix stage.
+  - log: 2026-10-30T17:45:01Z @kj closed
+- [x] `DEF-GRAPH-116-GUTTER-CLIP` **Network axis labels run past the panel's left edge** - CRITICAL; With units on the labels, the network gutter is too narrow in the narrow face: 10 MiB/s reads 0 MiB/s because its first digit is cut at the panel's left edge, and 5 MiB/s touches it.
+  - evidence: tmp/workflows/btop-web-critical/checkpoints/verify.json gate 4: 1152 labels at 8 sizes and 2 faces, 0 under 2 px, smallest left gap 9.09 px; cause was a stale tab, b3-verify reproduced it with the old app.css
+  - related: DEF-VIEW-119-STALE-TAB
+  - repro: Owner's screenshot /tmp/paste-files/paste-20261030-173828.png, network panel 795 px wide, narrow face, both lanes
+  - root-cause: 2026-10-30T16:43:55Z @kj A tab holding app.css from before the network batch, DEF-VIEW-119-STALE-TAB. Current markup with that CSS puts 100 MiB/s 14.3 px left of the panel; with current CSS it starts 12.7 px inside, at 1820x980, narrow face, dark.
+  - root-cause: 2026-10-30T16:39:15Z @kj Batch b3 made the labels longer without measuring their left end; its verifier measured only the right end against the plot.
+  - log: 2026-10-30T16:39:15Z @kj added
+  - log: 2026-10-30T16:43:55Z @kj edited severity "MAJOR" -> "CRITICAL"
+  - log: 2026-10-30T18:03:11Z @kj closed
+- [x] `DEF-GRAPH-125-TAIL-GAP` **Chart curve stops short of the right edge** - MINOR; in 7 of 8 charts the curve's end falls short of the plot box's right edge by up to 2 px for about 72 percent of frames; the Processes count plot shows none
+  - evidence: Live pid 286679: 0 charts short of the right edge over 721 frames, largest reading -39.1 px past it; wf_fb03f3ca-163 verify: 0 frames over 0.1 px at 5 windows, unchanged up to 6.22 px; make ci 409 passed, make test-client 3 passed
+  - root-cause: 2026-10-31T00:09:32Z @kj The tail was width / slots, and CPU, Memory, Network and GPU take one sample per tick, so at 250 ms it was width / 720 while the page scrolls one slow pass, width / 180; the curve fell short of the plot's right edge by up to 2.06 px at 180 s and 39.38 px at 60 s with a 5 s process refresh
+  - repro: 1440x900, compare the curve's end with the plot's right edge per frame; the tail is width/720 and the scroll travels width/180
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-30T21:36:20Z @kj added
+  - log: 2026-10-31T00:09:32Z @kj root-cause recorded; reason: Reproduced per frame on every chart at 5 window values by wf_fb03f3ca-163.
+  - log: 2026-10-31T00:23:04Z @kj closed; reason: Deployed and measured
+- [x] `DEF-GRAPH-126-GPU-HISTORY` **GPU lines cover only the time the page is open** - MEDIUM; GPU lines covered about the last 65 s of the 180 s axis on pages open for 65 s, on servers running 270 s and 540 s, while the CPU, Memory and Network plots covered the whole axis; read from two screenshots and not yet measured
+  - evidence: wf_fb03f3ca-163 verify: after the sampler parks a fresh page reads GPU 179.0 s against CPU 179.75 s at +3 s and 179.5 against 180.0 at +65 s, unchanged build 2.0 s and 64.09 s; deployed as live pid 286679; a live park was not run because the owner's tab keeps the sampler awake
+  - root-cause: 2026-10-31T00:09:32Z @kj At park the sampler resets gpu_latest, so until the wake's first sweep lands the device list is empty and attach_charts truncates every GPU history to zero; CPU, Memory and Network keep theirs across the sleep. A page opened after all viewers closed read GPU 2.0 s against CPU 180.0 s
+  - repro: run the server over 180 s with a viewer, open a fresh page, compare the GPU line's start with the CPU line's start; evidence verify/b9/shots/tab-B5.png
+  - test-tags: FUNCTIONAL
+  - log: 2026-10-30T21:36:20Z @kj added
+  - log: 2026-10-31T00:09:32Z @kj root-cause recorded; reason: Reproduced only after the sampler parks, by wf_fb03f3ca-163; a viewer that stays open does not lose it.
+  - log: 2026-10-31T00:23:04Z @kj closed; reason: Deployed; a full live reproduction is not possible while a viewer is open
+- [x] `DEF-GRAPH-128-PLOT-JUMP` **Process details plots go back and forth** - MAJOR; the owner sees the memory and cpu graphs move back and forth while a process's details are open; a chart must only scroll one way
+  - evidence: Live pid 3870146, owner's window, PID 525, 15 s, 900 frames per plot: 0 moves right at fetch delays 0 and 300 ms, largest left step 0.13 px; unchanged binary moved right 22 times in 22 s; a gone process holds; make ci 404 passed
+  - root-cause: 2026-10-30T22:12:22Z @kj syncMotion restarts every running chart's scroll on each slow pass, the popup's plots included, but their new data arrives later by their own fetch; so each second the plot jumps right one slot (2.39 px) and then left one slot when the body arrives, 13 to 22 ms later on loopback and longer through the proxy; a process that has gone gets no body and only snaps back
+  - repro: 1040x760 at scale 1.75, click a process row, watch the cpu and memory plots for 10 s and sample each plot's position per frame
+  - test-tags: FUNCTIONAL, MANUAL
+  - log: 2026-10-30T22:10:10Z @kj added
+  - log: 2026-10-30T22:12:22Z @kj root-cause recorded; reason: states the measured mechanism
+  - log: 2026-10-30T22:57:35Z @kj closed
+- [x] `DEF-GRAPH-129-PROC-PLOT` **Process details plots are broken** - MAJOR; a process's details open on an empty axis with a short stub at the right edge; the owner: little cpu plot, memory does not even show
+  - evidence: Live pid 226265 through the lab proxy, server 205 s, PID 618: curve's left end 1.1 px from the axis on both plots 700 ms after the click; screenshot looked at, full curves; wf_6a0805fd-711 verify: 0.11 to 0.99 slot, unchanged 179 slots; probe truth check; resident rise 236 to 449 KiB; combined make ci 414 passed
+  - root-cause: 2026-10-30T23:01:44Z @kj a process's CPU and memory rings exist only from the moment its details open (Detailed in collector/proc.rs, after btop's Proc::detailed), so a new popup always draws an empty 180 s axis with a stub at the right edge; owner's image paste-20261030-235855.png shows this
+  - repro: 1040x760 at scale 1.75, server up over 180 s, click a process row: the curve covers only the seconds since the click; the owner gave no image, so other faults stay to be measured
+  - test-tags: FUNCTIONAL, MANUAL
+  - log: 2026-10-30T22:59:15Z @kj added; reason: owner's report, with the first measurement
+  - log: 2026-10-30T23:06:33Z @kj amended text "the owner reports the plot in a process's details is broken; measured so far: on opening, the 180 s axis is empty apart from a stub at the right edge, because the rings fill only while the details are open" -> "MAJOR; a process's details open on an empty axis with a short stub at the right edge; the owner: little cpu plot, memory does not even show"; reason: owner's description of his image
+  - log: 2026-10-31T14:15:51Z @kj closed; reason: Deployed and measured
+- [x] `DEF-GRAPH-130-PLOT-STEPS` **Process details plot does not move continuously** - MAJOR; the owner: it moves a little, stops, then after 10 s moves in steps of about 1 to 2 s, not continuous
+  - evidence: Live pid 226265 through the lab proxy, 30 s, 1799 frames: longest still 1 frame, largest left step 0.08 px. wf_6a0805fd-711 verify: 0 moves right, 0 still frames, 1.00 to 1.016 slots per s under delays and a 10 s stall, real pixels within 0.34 device px; the owner's own browser path was not measured
+  - repro: open a process's details through the lab proxy at /user/konrad.jelen/proxy/40290/ and read the curve per frame for 25 s; measured: body gaps 1547, 1301 and 166 ms, 26 still frames, one left step of 2.15 px
+  - test-tags: FUNCTIONAL, MANUAL
+  - root-cause: 2026-10-30T23:06:36Z @kj the scroll follows the arrival of each body: a late body leaves the curve held at its slot's end, and the next body starts at phase zero, so proxy jitter shows as stops and steps
+  - log: 2026-10-30T23:06:36Z @kj added; reason: owner's report, measured through the lab proxy
+  - log: 2026-10-31T14:15:51Z @kj closed; reason: Deployed and measured; reopen if the owner's tab still stops
+- [ ] `DEF-GRAPH-134-TOGGLE-STEP` **Turning motion on moves the panel charts right** - MINOR; Turning the motion setting back on moves every panel chart right by up to 1.29 px at 180 s and 3.83 px at 60 s, in 22 of 48 toggles
+  - repro: Toggle motion off and on with the charts running and read each chart's left edge per frame
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-31T00:09:33Z @kj syncMotion restarts a panel chart at minus the time since the last slow pass, whatever phase the chart was frozen at, so a smaller elapsed time moves it right
+  - log: 2026-10-31T00:09:33Z @kj added
+- [ ] `DEF-GRAPH-135-GPU-STEP` **Each GPU line moves right once after a server start** - MINOR; After a server start each GPU line moves right once, by about 1.1 px at 180 s and 3.4 px at 60 s
+  - repro: Start the server, open the page and read each GPU line per frame until the first slow pass after the first sweep
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-31T00:09:38Z @kj SlowPass::apply lets a device with no held chart keep the chart its tick built, so the next slow pass's path is one tick further left while the svg's phase restarts
+  - log: 2026-10-31T00:09:38Z @kj added
 
 ## Theme `THEME`
 
@@ -795,4 +1036,12 @@ CPU, memory and wire cost of the server and the page against their recorded base
   - log: 2026-10-29T01:12:33Z @kj cause: at 1440x900 the tab uses 26.34 s renderer CPU per 60 s; chart scroll from a 60 fps style loop 13.26 s, event stream 11.45 s with the process panel 6.35, stale page 1.63; number effects off, spring blur adds 28.33
   - log: 2026-10-29T01:47:39Z @kj deep pass 2026-10-29: software raster of the single document layer is 7.3 s of the 27.4 s per 60 s; the chart scroll is 13.3 s of which raster and compositing 10.6, style 0.6, layout 0.2; process-row paint is 0.02-0.70 s, not the 4.82 of the first pass
   - log: 2026-10-30T03:34:49Z @kj closed
+- [x] `DEF-PERF-111-TAB-COST` **Browser tab cost is back above the ACC-PERF-133 bars** - MAJOR; one 1440x900 tab costs 32.28 to 34.06 percent of one core, 58.65 to 59.16 fps, with long tasks of 51, 54 and 60 ms in 3 of 5 windows; ACC-PERF-133 closed on 22.83 percent, 60.02 fps and 0 long tasks
+  - evidence: b9-verify: 15 windows, renderer 10.55 to 14.26 s per 60 s (17.58 to 23.76 percent), 0 tasks over 50 ms, only /events; fps 59.94 to 60.01, two windows short by 2 and 3 frames of 3600, cause not established, accepted to the whole number; start tree lost 66 to 68 frames
+  - related: ACC-PERF-133-PAGE-COST
+  - repro: 60 s renderer CPU windows at 1440x900; scripts under tmp/workflows/btop-web-open-items/verify/b0b/
+  - root-cause: 2026-10-30T21:36:20Z @kj panel replacement on every frame was 66 percent of the tab and a chart scroll that never reached the compositor was 32 percent; forced layout in fitGauge added layouts at 76.6 per s; the batch attributes 94 percent of the rise since the closure to host load, which its verifier did not re-measure
+  - log: 2026-10-30T14:16:39Z @kj added
+  - log: 2026-10-30T21:36:20Z @kj root-cause updated "2026-10-30T14:16:39Z @kj cause under investigation" -> "panel replacement on every frame was 66 percent of the tab and a chart scroll that never reached the compositor was 32 percent; forced layout in fitGauge added layouts at 76.6 per s; the batch attributes 94 percent of the rise since the closure to host load, which its verifier did not re-measure"; reason: states the measured shares of batch b9
+  - log: 2026-10-30T21:36:20Z @kj closed; reason: states the accepted frame-rate verdict
 

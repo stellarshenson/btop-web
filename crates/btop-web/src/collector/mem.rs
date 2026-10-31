@@ -43,14 +43,19 @@
 //!   reclaimable file cache. `active_file` and `slab_reclaimable` are part of
 //!   the container's use and are not subtracted
 //! - T = MemTotal when `memory.max` is `max`, missing or at least MemTotal:
-//!   total, free and other are the host's, free = MemFree, and
-//!   other = T - `memory.current` - MemFree is the host's memory outside this
-//!   container; the bar is used | cache | other | free = T
+//!   total, free and the other rows are the host's (DEF-VIEW-101-MEM-BREAKDOWN).
+//!   free = MemFree; available = MemAvailable. other reclaimable =
+//!   MemAvailable - MemFree - (`inactive_file` + `active_file` +
+//!   `slab_reclaimable`): MemAvailable counts all three of this container's as
+//!   reclaimable, though docker's working set keeps the last two in used.
+//!   other used is the remainder, T - the other four rows, so the bar is
+//!   used | cache | other used | other reclaimable | free = T exactly
 //! - when `memory.max` is below MemTotal the limit binds: T = `memory.max`,
-//!   free = T - U - cache, this container's room under its limit, and other
-//!   is dropped; the bar is used | cache | free = T
-//! - available = free + cache; percentages round(x * 100 / T). The ZFS ARC
-//!   is not charged to a cgroup and is not added
+//!   free = T - U - cache, this container's room under its limit, and both
+//!   other rows are dropped; the bar is used | cache | free = T; available =
+//!   free + cache
+//! - percentages round(x * 100 / T). The ZFS ARC is not charged to a cgroup
+//!   and is not added
 //! - swap used = `memory.swap.current`; swap total = min(`memory.swap.max`,
 //!   SwapTotal), SwapTotal when `max`; free = total - used. A missing
 //!   `memory.swap.current` leaves swap unavailable
@@ -66,7 +71,7 @@ use std::time::SystemTime;
 use nix::sys::statvfs::statvfs;
 
 use super::{DiskUsage, MemSnapshot, sys_root};
-use crate::chart::{History, MEM_HISTORY};
+use crate::chart::{History, MEM_HISTORY, smooth};
 use crate::config::Config;
 
 /// State btop keeps in `Mem::` statics between samples.
@@ -79,6 +84,9 @@ pub struct MemCollector {
     old_uptime: f64,
     /// btop's used-memory graph history, one sample per tick.
     used_history: History,
+    /// The 1 s EMA of each Memory bar segment's share, in bar order
+    /// (ACC-GRAPH-47-GAUGE-SMOOTH, ACC-VIEW-190-MEM-RECLAIM).
+    segment_ema: Vec<f64>,
 }
 
 #[derive(Debug, Default)]
@@ -210,6 +218,29 @@ impl MemCollector {
         self.used_history
             .push(snapshot.ram_percent, config.update_ms);
         snapshot.gauge_pct = snapshot.ram_percent.and(self.used_history.ema());
+        // ACC-VIEW-192-GAUGE-CONTAINER: the arc draws used and cache, the
+        // container's own in a container. A part turning unknown empties the
+        // list, so the average starts over.
+        let segments: Vec<_> = snapshot
+            .ram_segments()
+            .into_iter()
+            .filter(|(name, _)| matches!(*name, "used" | "cache"))
+            .collect();
+        if self.segment_ema.len() != segments.len() {
+            self.segment_ema.clear();
+        }
+        self.segment_ema = segments
+            .iter()
+            .enumerate()
+            .map(|(at, (_, share))| {
+                smooth(self.segment_ema.get(at).copied(), *share, config.update_ms)
+            })
+            .collect();
+        snapshot.gauge_segments = segments
+            .iter()
+            .zip(&self.segment_ema)
+            .map(|((name, _), share)| (*name, *share))
+            .collect();
         snapshot.used_chart = self.used_history.chart(MEM_HISTORY, 0.0, 100.0);
         snapshot
     }
@@ -523,25 +554,33 @@ fn container_memory(
             let used = current.saturating_sub(inactive_file);
             if let Some(limit) = limit {
                 let ([used, cache], free) = split(limit, [used, inactive_file]);
-                return Some((limit, used, cache, free, None));
+                return Some((limit, used, cache, free, None, free + cache));
             }
-            let ([used, cache, free], other) = split(
-                mem_total,
-                [used, inactive_file, meminfo.get("MemFree").copied()?],
-            );
-            Some((mem_total, used, cache, free, Some(other)))
+            let mem_free = meminfo.get("MemFree").copied()?;
+            let mem_available = meminfo.get("MemAvailable").copied()?;
+            let stat = |name: &str| memory_stat.get(name).copied().unwrap_or(0);
+            let other_cache = mem_available
+                .saturating_sub(mem_free)
+                .saturating_sub(inactive_file + stat("active_file") + stat("slab_reclaimable"));
+            let ([used, cache, free, other_cache], other) =
+                split(mem_total, [used, inactive_file, mem_free, other_cache]);
+            let others = Some((other, other_cache));
+            Some((mem_total, used, cache, free, others, mem_available))
         });
-    if let Some((total, used, cache, free, other)) = bar {
-        let available = free + cache;
+    if let Some((total, used, cache, free, others, available)) = bar {
         snapshot.ram_total = Some(total);
         snapshot.ram_used = Some(used);
         snapshot.ram_cache = Some(cache);
-        snapshot.ram_other = other;
+        snapshot.ram_other = others.map(|(other, _)| other);
+        snapshot.ram_other_cache = others.map(|(_, other_cache)| other_cache);
         snapshot.ram_free = Some(free);
         snapshot.ram_available = Some(available);
         snapshot.ram_percent = Some(percent(used, total));
         snapshot.ram_cache_percent = Some(percent(cache, total));
-        snapshot.ram_other_percent = other.map(|other| percent(other, total));
+        snapshot.ram_other_percent = snapshot.ram_other.map(|other| percent(other, total));
+        snapshot.ram_other_cache_percent = snapshot
+            .ram_other_cache
+            .map(|other_cache| percent(other_cache, total));
         snapshot.ram_free_percent = Some(percent(free, total));
         snapshot.ram_available_percent = Some(percent(available, total));
     }
@@ -980,8 +1019,8 @@ mod tests {
         );
     }
 
-    /// The used, cache, other and free bytes and their bar widths both add up
-    /// to the total.
+    /// The used, cache, other used, other reclaimable and free bytes and their
+    /// bar widths both add up to the total.
     fn bar_sum(snapshot: &MemSnapshot) -> u64 {
         let width: f64 = snapshot.ram_segments().iter().map(|(_, width)| width).sum();
         assert!((width - 100.0).abs() < 1e-9, "widths sum to {width}");
@@ -989,6 +1028,7 @@ mod tests {
             snapshot.ram_used,
             snapshot.ram_cache,
             snapshot.ram_other.or(Some(0)),
+            snapshot.ram_other_cache.or(Some(0)),
             snapshot.ram_free,
         ]
         .into_iter()
@@ -1275,6 +1315,7 @@ mod tests {
         // 8 GiB memory.max - 4 GiB memory.current, the room under the limit.
         assert_eq!(snapshot.ram_free, Some(4 * GIB));
         assert_eq!(snapshot.ram_other, None);
+        assert_eq!(snapshot.ram_other_cache, None);
         assert_eq!(snapshot.ram_available, Some(5 * GIB));
         assert_eq!(bar_sum(&snapshot), 8 * GIB);
         assert_eq!(snapshot.ram_percent, Some(38.0));
@@ -1284,13 +1325,84 @@ mod tests {
         assert_eq!(snapshot.ram_available_percent, Some(63.0));
     }
 
+    /// DEF-VIEW-101-MEM-BREAKDOWN, recorded /proc/meminfo and cgroup: the five
+    /// rows each read the source the row names and sum to MemTotal exactly,
+    /// available is MemAvailable, and the gauge draws the first two rows' shares
+    /// alone, the rest being the bare track (ACC-VIEW-192-GAUGE-CONTAINER).
+    #[test]
+    fn container_rows_sum_to_mem_total() {
+        let (total, free, available): (u64, u64, u64) =
+            (527_649_328 * 1024, 172_308_644 * 1024, 490_578_592 * 1024);
+        let (current, inactive_file) = (4 * GIB, GIB);
+        // The recorded active_file (1 GiB) and slab_reclaimable (256 MiB) of
+        // this container, which MemAvailable counts as reclaimable.
+        let container_reclaimable = inactive_file + GIB + (256 << 20);
+        let cgroup = cgroup_variant("cg-rows", "memory.max", Some("max\n"));
+        let snapshot = container_snapshot(&cgroup);
+        let other_cache = available - free - container_reclaimable;
+        let other = total - (current - inactive_file) - inactive_file - other_cache - free;
+        assert_eq!(snapshot.ram_used, Some(current - inactive_file));
+        assert_eq!(snapshot.ram_cache, Some(inactive_file));
+        assert_eq!(snapshot.ram_other_cache, Some(other_cache));
+        assert_eq!(snapshot.ram_other, Some(other));
+        assert_eq!(snapshot.ram_free, Some(free));
+        assert_eq!(snapshot.ram_available, Some(available));
+        assert_eq!(snapshot.ram_available_percent, Some(93.0));
+        assert_eq!(bar_sum(&snapshot), total);
+        let share = |value: u64| value as f64 * 100.0 / total as f64;
+        let expected = [
+            ("used", share(current - inactive_file)),
+            ("cache", share(inactive_file)),
+        ];
+        assert_eq!(snapshot.gauge_segments.len(), expected.len());
+        for ((name, drawn), (want, value)) in snapshot.gauge_segments.iter().zip(expected) {
+            assert_eq!(*name, want);
+            assert!((drawn - value).abs() < 1e-9, "{name}: {drawn} vs {value}");
+        }
+        let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
+    }
+
+    /// A memory.current read ahead of MemFree overshoots MemTotal: the
+    /// clamps in [`split`] still sum to it, and other used is the row that
+    /// states the difference.
+    #[test]
+    fn container_rows_clamp_to_mem_total_when_reads_overshoot() {
+        let cgroup = cgroup_variant("cg-over", "memory.max", Some("max\n"));
+        write(&cgroup.join("memory.current"), "600000000000\n");
+        let snapshot = container_snapshot(&cgroup);
+        assert_eq!(snapshot.ram_other, Some(0));
+        assert_eq!(bar_sum(&snapshot), 527_649_328 * 1024);
+        let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
+    }
+
+    /// ACC-GRAPH-47-GAUGE-SMOOTH, ACC-VIEW-192-GAUGE-CONTAINER: the container's
+    /// two segments draw, and each moves by the 1 s average.
+    #[test]
+    fn gauge_segments_draw_the_smoothed_shares_of_the_container_under_a_limit() {
+        let config = in_container(&fixture("container/sys/fs/cgroup"));
+        let mut collector = MemCollector {
+            segment_ema: vec![0.0; 2],
+            ..MemCollector::default()
+        };
+        let snapshot = collector.collect(&fixture("container/proc"), &config);
+        let alpha = 1.0 - (-(config.update_ms as f64) / 1000.0).exp();
+        assert_eq!(snapshot.gauge_segments.len(), 2);
+        let (name, used) = snapshot.gauge_segments[0];
+        assert_eq!(name, "used");
+        assert!((used - alpha * 37.5).abs() < 1e-9, "{used}");
+        let (name, cache) = snapshot.gauge_segments[1];
+        assert_eq!(name, "cache");
+        assert!((cache - alpha * 12.5).abs() < 1e-9, "{cache}");
+    }
+
     /// DEF-VIEW-95-SCOPE-MIX: with memory.max `max` or above MemTotal the
-    /// header total and free are the host's and other is the host's memory
-    /// outside this container; used and cache stay this container's.
+    /// header total and free are the host's and the other rows are the host's
+    /// memory outside this container; used and cache stay this container's.
     #[test]
     fn container_memory_without_a_limit_reads_the_host_total_and_free() {
         let total = 527_649_328 * 1024;
         let free = 172_308_644 * 1024;
+        let available = 490_578_592 * 1024;
         for (name, limit) in [("cg-max", "max\n"), ("cg-above", "1000000000000000\n")] {
             let cgroup = cgroup_variant(name, "memory.max", Some(limit));
             let snapshot = container_snapshot(&cgroup);
@@ -1299,11 +1411,17 @@ mod tests {
             assert_eq!(snapshot.ram_used, Some(3 * GIB));
             assert_eq!(snapshot.ram_cache, Some(GIB));
             assert_eq!(snapshot.ram_free, Some(free));
-            assert_eq!(snapshot.ram_other, Some(total - 4 * GIB - free));
-            assert_eq!(snapshot.ram_available, Some(free + GIB));
+            let other_cache = available - free - GIB - GIB - (256 << 20);
+            assert_eq!(snapshot.ram_other_cache, Some(other_cache));
+            assert_eq!(
+                snapshot.ram_other,
+                Some(total - 4 * GIB - free - other_cache)
+            );
+            assert_eq!(snapshot.ram_available, Some(available));
             assert_eq!(bar_sum(&snapshot), total);
             assert_eq!(snapshot.ram_percent, Some(1.0));
-            assert_eq!(snapshot.ram_other_percent, Some(67.0));
+            assert_eq!(snapshot.ram_other_percent, Some(7.0));
+            assert_eq!(snapshot.ram_other_cache_percent, Some(60.0));
             let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
         }
     }

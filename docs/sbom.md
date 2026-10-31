@@ -12,26 +12,31 @@
 
 ## Component counts
 
-- 180 components: 1 application, 168 library, 11 file
-- 169 crates in `Cargo.lock`, each appears exactly once: `btop-web` is the application, the other 168 are libraries
+- 250 components: 1 application, 238 library, 11 file
+- 239 crates in `Cargo.lock`, each appears exactly once: `btop-web` is the application, the other 238 are libraries
 - Each crate component carries the name and version from `Cargo.lock`, the purl `pkg:cargo/<name>@<version>`, and the licence read from that crate's own manifest `license` field
-- `btop-web 0.6.30` is MIT, inherited from `[workspace.package].license` in the root `Cargo.toml`
+- `btop-web 1.0.2` is MIT, inherited from `[workspace.package].license` in the root `Cargo.toml`
 
 ## Licence syntax
 
-Cargo's legacy `/` separator in a licence field means the SPDX `OR` disjunction. Ten crates use it; the SBOM carries the SPDX form:
+Cargo's legacy `/` separator in a licence field means the SPDX `OR` disjunction. Fifteen crates use it; the SBOM carries the SPDX form:
 
 | Crate | Manifest value | SBOM expression |
 |---|---|---|
+| asn1-rs-impl 0.2.0 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | cexpr 0.6.0 | Apache-2.0/MIT | Apache-2.0 OR MIT |
 | fnv 1.0.7 | Apache-2.0 / MIT | Apache-2.0 OR MIT |
 | ident_case 1.0.1 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | lazycell 1.3.0 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | minimal-lexical 0.2.1 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | rustc-hash 1.1.0 | Apache-2.0/MIT | Apache-2.0 OR MIT |
+| rusticata-macros 4.1.0 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | same-file 1.0.6 | Unlicense/MIT | Unlicense OR MIT |
 | serde_urlencoded 0.7.1 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | walkdir 2.5.0 | Unlicense/MIT | Unlicense OR MIT |
+| winapi 0.3.9 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
+| winapi-i686-pc-windows-gnu 0.4.0 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
+| winapi-x86_64-pc-windows-gnu 0.4.0 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 | wrapcenum-derive 0.4.1 | MIT/Apache-2.0 | MIT OR Apache-2.0 |
 
 Every other value is copied from the manifest unchanged, as a single SPDX id (`MIT`, `Apache-2.0`, `BSD-3-Clause`, `ISC`, `Zlib`) or an SPDX expression.

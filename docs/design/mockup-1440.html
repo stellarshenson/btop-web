@@ -33,8 +33,8 @@
       wide. Their gauges are 147.61 x 150.23 and
       147.61 x 150.23 px, with tops both
       190.59: equal size, on one line.
-    - Memory legend at its natural width 178.86 px against the
-      181.00 px --gauge-side-w; free gauge-to-legend gap 120.86 px.
+    - Memory legend at its natural width 184.33 px against the
+      181.00 px --gauge-side-w; free gauge-to-legend gap 115.39 px.
     - Cores shortened to the third: 4 columns x 16 rows, row 108.33 px,
       meter 65.67 px, value box 22.89 px.
     - No empty block: every panel body fills its content box, panel-level
@@ -303,7 +303,7 @@ body{
 <body>
 <header class="utility">
   <span class="brand">btop<span>-web</span></span>
-  <span class="u-meta">0.6.30</span>
+  <span class="u-meta">1.0.2</span>
   <span class="u-meta">9db478eb1afe</span>
   <span class="u-meta u-int">250 ms</span>
   <span class="utility-right">
@@ -409,10 +409,10 @@ body{
           <div class="gauge"><svg viewBox="0 0 112 114" aria-hidden="true"><path class="g-track" d="M25.72 94.28 A40 40 0 1 1 82.28 94.28"></path><path class="g-fill ok" d="M25.72 94.28 A40 40 0 0 1 20.40 87.70"></path><path class="g-tick" d="M10.25 80.21L6.45 81.45M8.57 58.80L4.62 58.18M16.79 38.96L13.55 36.61M33.12 25.01L31.30 21.45M74.88 25.01L76.70 21.45M91.21 38.96L94.45 36.61M99.43 58.80L103.38 58.18M97.75 80.21L101.55 81.45"></path><path class="g-tick major" d="M21.47 98.53L16.52 103.48M54.00 20.00L54.00 13.00M86.53 98.53L91.48 103.48"></path><text class="g-scale" x="10.87" y="109.13">0</text><text class="g-scale" x="54.00" y="5.00">50</text><text class="g-scale" x="97.13" y="109.13">100</text><text class="g-value" x="54" y="66">22.6<tspan class="g-unit" dx="2.65">GiB</tspan></text><text class="g-label" x="54" y="78">used</text></svg></div>
           <div class="gauge-side mem-rows"><div class="mem-bar" aria-hidden="true"><span class="mem-seg" data-seg="used" style="width:4%"></span><span class="mem-seg" data-seg="cache" style="width:22%"></span><span class="mem-seg" data-seg="other" style="width:59%"></span><span class="mem-seg" data-seg="free" style="width:15%"></span></div>
           <div class="mem-row"><span><i class="mem-key" data-seg="used"></i>used</span><b>22.5 GiB</b><span class="pct" data-w="100%">4%</span></div>
-          <div class="mem-row"><span><i class="mem-key" data-seg="cache"></i>cache</span><b>108 GiB</b><span class="pct" data-w="100%">22%</span></div>
+          <div class="mem-row"><span><i class="mem-key" data-seg="cache"></i>reclaimable</span><b>108 GiB</b><span class="pct" data-w="100%">22%</span></div>
           <div class="mem-row"><span><i class="mem-key" data-seg="other"></i>other</span><b>295 GiB</b><span class="pct" data-w="100%">59%</span></div>
           <div class="mem-row"><span><i class="mem-key" data-seg="free"></i>free</span><b>77.5 GiB</b><span class="pct" data-w="100%">15%</span></div>
-          <div class="mem-row"><span>available = free + cache</span><b data-w="0000 MiB">185 GiB</b></div>
+          <div class="mem-row"><span>free + reclaimable</span><b data-w="0000 MiB">185 GiB</b><span class="pct" data-w="100%">37%</span></div>
           <div class="mem-row swap"><span>swap</span><b>0 Byte / 128 GiB</b><span class="pct" data-w="100%">0%</span></div></div>
         </div>
       </section>

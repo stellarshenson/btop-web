@@ -450,7 +450,7 @@ pub const SERVER_OPTIONS: [ServerOption; 41] = [
             min: 1,
             max: 86_400,
         },
-        "Seconds below a tenth of the ceiling before the auto scale falls.",
+        "Seconds below a tenth of btop's graph_max before it falls; the plots ignore it.",
     ),
     flag("net", "net_sync", "Network scale sync."),
     option(
@@ -652,7 +652,7 @@ pub struct Config {
     /// The shipped theme number; index 0 is the built-in Default.
     pub theme: usize,
     /// ACC-SAFE-12-READONLY: refuse every request method that can change
-    /// state. Set by the `--readonly` / `--no-readonly` flags, on by default.
+    /// state. Set by the `--readonly` flag, off by default.
     pub readonly: bool,
     /// btop `show_swap`: swap values and rows.
     pub show_swap: bool,
@@ -715,8 +715,9 @@ pub struct Config {
     /// btop-web `net_floor`: the lowest auto-scaled ceiling in Mbit/s
     /// (ACC-GRAPH-96-NET-AUTOSCALE).
     pub net_floor: i32,
-    /// btop-web `net_fall`: seconds below a tenth of the ceiling before the
-    /// auto scale falls, 300 by default (ACC-GRAPH-96-NET-AUTOSCALE).
+    /// btop-web `net_fall`: seconds below a tenth of `graph_max` before it falls,
+    /// 300 by default (ACC-GRAPH-96-NET-AUTOSCALE). The plotted axis ignores it
+    /// (ACC-GRAPH-164-NET-SCALE).
     pub net_fall: i32,
     /// btop `net_download`: fixed download ceiling in Mebibits.
     pub net_download: i32,
@@ -887,7 +888,7 @@ impl Config {
             cpu_load: LoadScale::Normalised,
             proc_root: PathBuf::from("/proc"),
             theme: 0,
-            readonly: true,
+            readonly: false,
             show_swap: true,
             swap_disk: true,
             show_disks: true,
@@ -1413,7 +1414,7 @@ mod tests {
         assert_eq!(config.proc_root, PathBuf::from("/proc"));
         assert_eq!(config.theme, 0);
         assert_eq!(config.theme_id(), "default");
-        assert!(config.readonly);
+        assert!(!config.readonly);
         assert!(config.show_swap);
         assert!(config.swap_disk);
         assert!(config.show_disks);

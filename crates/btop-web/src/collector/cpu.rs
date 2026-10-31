@@ -9,8 +9,8 @@
 //! `<proc_root>/cpuinfo` (`model name` and the first `cpu MHz` line),
 //! `<sys_root>/devices/system/cpu/cpufreq/policy0/scaling_cur_freq` (kHz),
 //! `<sys_root>/class/hwmon/*`, `<sys_root>/devices/platform/coretemp.0/hwmon/*`
-//! and `<sys_root>/class/thermal/*` (millidegrees), and
-//! `<sys_root>/class/power_supply/*`.
+//! and `<sys_root>/class/thermal/*` (millidegrees),
+//! `<sys_root>/class/power_supply/*`, and `<proc_root>/pressure/cpu`.
 //!
 //! Formula (btop): totals = max(0, sum of the line's fields - the fields from
 //! guest onward); idles = idle + iowait; the aggregate deltas are
@@ -36,6 +36,12 @@
 //! the model name.
 //!
 //! Period: every sample, `update_ms` (250 ms by default; btop's 2000).
+//!
+//! CPU pressure (ACC-VIEW-178-CPU-FACTS) is a btop-web addition on the owner's
+//! order (2026-10-30); btop 1.3.0 has no such field. It is the `avg10` value of
+//! the `some` line of `<proc_root>/pressure/cpu`, the percent of the last 10 s
+//! in which a task waited for a CPU, read every sample and shown as the kernel
+//! prints it, two decimals. A kernel without PSI has no file: unavailable.
 //!
 //! Container (ACC-SCOPE-64-CONTAINER): inside a container this collector
 //! departs from btop on the owner's order (2026-10-27) and reads the
@@ -75,6 +81,9 @@
 //!   is not the container's. No cgroup v2 directory leaves load unavailable;
 //!   frequency and temperatures are hardware sensors, not read; the battery
 //!   is not read
+//! - CPU pressure is `some avg10` of `<cgroup>/cpu.pressure`, every sample; the
+//!   host's `<proc_root>/pressure/cpu` is never read here, and no cgroup v2
+//!   directory or no such file leaves it unavailable
 //! - the CPU name stays `/proc/cpuinfo`'s model name, the processor's static
 //!   identity
 
@@ -138,6 +147,7 @@ pub fn collect(proc_root: &Path, config: &Config) -> CpuSnapshot {
     let mut snapshot = CpuSnapshot {
         name: model_name(proc_root, &sys, config),
         load_avg: load_average(proc_root),
+        pressure_pct: pressure_some_avg10(&proc_root.join("pressure/cpu")),
         temperature_c: sensors
             .as_ref()
             .and_then(|sensors| sensors.temperature(&config.cpu_sensor)),
@@ -226,6 +236,7 @@ fn collect_container(
     if let Some(cgroup) = &container.cgroup {
         let effective = container::effective_cpus(cgroup);
         snapshot.effective_cpus = Some(effective);
+        snapshot.pressure_pct = pressure_some_avg10(&cgroup.join("cpu.pressure"));
         let now = Instant::now();
         let reading = cgroup_cpu_stat(cgroup);
         if let Some((then, previous)) = state.usage {
@@ -511,6 +522,17 @@ fn load_average(proc_root: &Path) -> Option<[f64; 3]> {
     let five = fields.next()?.parse().ok()?;
     let fifteen = fields.next()?.parse().ok()?;
     Some([one, five, fifteen])
+}
+
+/// `avg10` of the `some` line of a PSI file, as `psi_show` in
+/// `kernel/sched/psi.c` prints it: `some avg10=0.02 avg60=0.13 ...`.
+fn pressure_some_avg10(path: &Path) -> Option<f64> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let line = text.lines().find_map(|line| line.strip_prefix("some "))?;
+    line.split_whitespace()
+        .find_map(|field| field.strip_prefix("avg10="))?
+        .parse()
+        .ok()
 }
 
 struct CpuFrequency {
@@ -1677,20 +1699,47 @@ mod tests {
     }
 
     #[test]
-    fn container_cores_busy_uses_effective_cpus() {
+    fn container_core_count_is_the_effective_cpus() {
         let snapshot = CpuSnapshot {
-            total_pct: Some(50.0),
             effective_cpus: Some(2.0),
             ..CpuSnapshot::default()
         };
-        assert_eq!(snapshot.cores_busy(), Some(1.0));
         assert_eq!(snapshot.cores_label().as_deref(), Some("2"));
         let fraction = CpuSnapshot {
-            total_pct: Some(50.0),
             effective_cpus: Some(1.5),
             ..CpuSnapshot::default()
         };
-        assert_eq!(fraction.cores_busy(), Some(0.75));
         assert_eq!(fraction.cores_label().as_deref(), Some("1.5"));
+    }
+
+    /// ACC-VIEW-178-CPU-FACTS: the `full` line is another measure, and a line
+    /// without `avg10` is no value.
+    #[test]
+    fn pressure_takes_the_some_line_only() {
+        let proc_root = temp_proc("pressure");
+        let file = proc_root.join("cpu");
+        std::fs::write(
+            &file,
+            "full avg10=9.00 avg60=0.00 avg300=0.00 total=0
+",
+        )
+        .expect("psi");
+        assert_eq!(pressure_some_avg10(&file), None);
+        std::fs::write(
+            &file,
+            "some avg60=0.13 total=1
+",
+        )
+        .expect("psi");
+        assert_eq!(pressure_some_avg10(&file), None);
+        std::fs::write(
+            &file,
+            "some avg10=2.71 avg60=0.13 avg300=0.05 total=1
+full avg10=9.00 avg60=0.00 avg300=0.00 total=0
+",
+        )
+        .expect("psi");
+        assert_eq!(pressure_some_avg10(&file), Some(2.71));
+        remove_temp_proc(&proc_root);
     }
 }

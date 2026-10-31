@@ -64,6 +64,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # ACC-NET-145-TLS-PINNING: the certificate fingerprint is SHA-256 over the
 # DER; sha2 is the maintained implementation (MIT OR Apache-2.0).
 sha2 = "0.11"
+# ACC-NET-181-JSON-STREAM: the standard maintained JSON writer for the
+# telemetry document, so string escaping and float formatting are not ours;
+# axum already links it, so this adds no compile work.
+serde_json = "1"
 spline1d = { version = "0.1.1", default-features = false, features = ["alloc"] }
 thiserror.workspace = true
 tokio.workspace = true

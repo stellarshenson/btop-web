@@ -8,7 +8,9 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use btop_web::AppState;
-use btop_web::chart::{ChartPath, PROC_GRAPH, gauge_arc, gauge_arc_circle, gpu_lane};
+use btop_web::chart::{
+    ChartPath, PROC_GRAPH, gauge_arc, gauge_arc_circle, gauge_span, gauge_span_circle, gpu_lane,
+};
 use btop_web::collector::frame::{Frame, fragments};
 use btop_web::collector::{
     CoreUsage, CpuSnapshot, GpuDevice, MemSnapshot, Snapshot, cpu, gpu, mem, net, proc,
@@ -425,9 +427,13 @@ async fn unavailable_meters_render_their_unknown_state() {
         "the unavailable swap row does not say so"
     );
     // data-w="100%" is the reserved width of a percent cell, not a value
-    // (ACC-LAYOUT-74-RESERVED-WIDTH).
+    // (ACC-LAYOUT-74-RESERVED-WIDTH), and the gauge scale's 100% label is a
+    // scale (ACC-VIEW-171), not a value either.
+    let page = page
+        .replace(r#" data-w="100%""#, "")
+        .replace(">100%</text>", "");
     assert!(
-        !page.replace(r#" data-w="100%""#, "").contains("0%"),
+        !page.contains("0%"),
         "an unavailable value rendered as zero"
     );
     assert!(
@@ -460,7 +466,8 @@ fn assert_mem_bar(html: &str, parts: &[(&str, &str)]) {
         );
     }
     assert_eq!(html.matches(r#"class="mem-key""#).count(), parts.len());
-    assert_eq!(html.matches("available = free + cache").count(), 1);
+    assert_eq!(html.matches("<span>free + reclaimable</span>").count(), 1);
+    assert!(!html.contains("<span>available</span>"));
     assert!(!html.contains(">cached<"), "the cached row is still drawn");
 }
 
@@ -473,7 +480,7 @@ async fn host_memory_bar_has_three_segments() {
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
         assert_mem_bar(
             html,
-            &[("used", "used"), ("cache", "cache"), ("free", "free")],
+            &[("used", "used"), ("cache", "reclaimable"), ("free", "free")],
         );
     }
 }
@@ -759,12 +766,13 @@ async fn stat_tips_sit_on_every_tip_anchor() {
     for anchor in [
         r#"id="tier-chip" data-tip="Priority tiers on screen"#,
         r#"id="live-chip" data-tip="Sampler state"#,
+        r#"data-tip="Copy telemetry as JSON"#,
         r#"data-tip="Server mode, no unit"#,
         r#"class="stat-tile" data-tip="CPU total"#,
         r#"class="stat-tile" data-tip="Memory used"#,
         r#"class="stat-tile" data-tip="Process total"#,
         r#"data-gauge="cpu" data-tip="CPU total"#,
-        r#"data-gauge="mem" data-tip="Memory used"#,
+        r#"data-gauge="mem" data-tip="Memory shares"#,
         r#"class="mem-bar" data-tip="Memory bar"#,
         r#"class="mem-row" data-tip="Memory used"#,
         r#"class="mem-row" data-tip="Reclaimable cache"#,
@@ -804,12 +812,12 @@ async fn network_plots_draw_in_a_series_group() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     // ACC-GRAPH-164-NET-SCALE: the axis label prints each direction's shown
-    // step.
-    let down = btop_web::collector::bytes_short(snapshot.net.scale_down.label_max);
-    let up = btop_web::collector::bytes_short(snapshot.net.scale_up.label_max);
+    // ceiling with its unit.
+    let down = btop_web::collector::axis_rate(snapshot.net.scale_down.label_max);
+    let up = btop_web::collector::axis_rate(snapshot.net.scale_up.label_max);
     assert!(
         page.contains(&format!(
-            "scale ▼ <span data-w=\"999M\">{down}</span> ▲ <span data-w=\"999M\">{up}</span>"
+            "scale ▼ <span data-w=\"9.99 MiB/s\">{down}</span> ▲ <span data-w=\"9.99 MiB/s\">{up}</span>"
         )),
         "the axis label does not print the shown ceilings"
     );
@@ -925,6 +933,29 @@ async fn sparklines_carry_seconds_axis_labels() {
     }
 }
 
+/// ACC-VIEW-174-NET-STRIP: the legend ends in the link line, with a fault chip
+/// only for a count above zero. DEF-GRAPH-102-NET-SCALE: no rate in bits.
+#[tokio::test]
+async fn network_legend_states_the_link_and_no_rate_in_bits() {
+    let mut snapshot = fixture_snapshot();
+    let page = |snapshot: &Snapshot| {
+        let html = fragments(snapshot);
+        html.iter()
+            .find(|(name, _)| *name == "net")
+            .expect("net fragment")
+            .1
+            .clone()
+    };
+    let clean = page(&snapshot);
+    assert!(clean.contains(r#"<span class="legend-meta">link 10 Gb/s · full · up</span></div>"#));
+    assert!(!clean.contains("Mibps"), "a rate in bits");
+    snapshot.net.link.errors = Some(3);
+    snapshot.net.link.drops = Some(9);
+    assert!(page(&snapshot).contains(
+        r#"up</span><span class="chip up">err 3</span><span class="chip up">drop 9</span></div>"#
+    ));
+}
+
 /// DEF-GRAPH-63-GRID-UNITS: every plot labels its grid lines with their value
 /// and unit and states the total scale at its top corner, in a gutter outside
 /// the [data-chart] box (ACC-GRAPH-24): percent levels for the GPU lanes, the
@@ -934,14 +965,13 @@ async fn plots_label_their_grid_lines_and_total_scale() {
     let snapshot = fixture_snapshot();
     let down = snapshot.net.down_scale_labels();
     let up = snapshot.net.up_scale_labels();
-    // The rendered labels carry their unit: percent, or btop's B/K/M/G suffix.
+    // DEF-GRAPH-102-NET-SCALE: every rendered label names bytes per second.
     for label in down.iter().chain(up.iter()) {
-        let unit = label.chars().last().expect("a label");
-        assert!("BKMGT".contains(unit), "{label} has no unit");
+        assert!(label.ends_with("B/s"), "{label} has no unit");
     }
     let gutter = |ceiling: &str, half: &str| {
         format!(
-            r#"<div class="plot-scale" aria-hidden="true"><span class="scale-total">{ceiling}</span><span class="scale-mid" style="--at:50">{half}</span><span class="scale-zero">0B</span></div>"#
+            r#"<div class="plot-scale" aria-hidden="true"><span class="scale-total">{ceiling}</span><span class="scale-mid" style="--at:50">{half}</span><span class="scale-zero">0 B/s</span></div>"#
         )
     };
     let (down_gutter, up_gutter) = (gutter(&down[0], &down[1]), gutter(&up[0], &up[1]));
@@ -1052,7 +1082,7 @@ async fn process_rows_draw_a_graph_left_of_cpu() {
     parent.graph_tone = "cpu-ok";
     let entries = &snapshot.proc.entries;
     for html in proc_documents(&snapshot).await {
-        assert_eq!(html.matches(">Cpu%</button></th>").count(), 1);
+        assert_eq!(html.matches(">CPU%</button></th>").count(), 1);
         let rows: Vec<&str> = html.split("<tr").skip(2).collect();
         assert_eq!(rows.len(), entries.len());
         let (mut own, mut summed) = (0, 0);
@@ -1095,7 +1125,7 @@ async fn process_headers_are_sort_buttons() {
         let cells: Vec<&str> = head.split("<th ").skip(1).collect();
         assert_eq!(cells.len(), 7);
         for (cell, name) in cells.iter().zip([
-            "Pid", "Program", "Command", "Threads", "User", "MemB", "Cpu%",
+            "PID", "PROGRAM", "COMMAND", "THREADS", "USER", "MEM", "CPU%",
         ]) {
             assert_eq!(cell.matches("<button").count(), 1, "{cell}");
             assert!(
@@ -1150,6 +1180,117 @@ async fn process_rows_carry_tree_data() {
                 None => assert!(entry.sum.is_none(), "{row}"),
             }
         }
+    }
+}
+
+/// ACC-VIEW-180-PROC-TREE, DEF-VIEW-103-CHEVRON, DEF-VIEW-105-TOGGLE-GONE:
+/// the tree is drawn as elements at one fixed px step, not typed as box
+/// glyphs, so its alignment does not depend on the current face; the Program
+/// column's reserved width reads that step and the toggle is a filled-triangle
+/// button carrying aria-expanded, whose path points right when collapsed and
+/// down when expanded, so no transform can clip it.
+#[tokio::test]
+async fn process_tree_draws_rules_at_a_fixed_px_step() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let css = std::fs::read_to_string(base.join("assets/app.css")).expect("app.css");
+    let js = std::fs::read_to_string(base.join("assets/app.js")).expect("app.js");
+    assert!(
+        css.contains("--tree-step: 12px;"),
+        "the tree step is not one 12 px value"
+    );
+    assert_eq!(
+        css.matches("(var(--tree-level, 3) + 2) * var(--tree-step)")
+            .count(),
+        2,
+        "a reserved width does not read the px step"
+    );
+    for line in [
+        "border-left: 1px solid currentColor",
+        "border-top: 1px solid currentColor",
+    ] {
+        assert!(
+            css.contains(line),
+            "a connector is not a 1 px border: {line}"
+        );
+    }
+    for glyph in [
+        "\\u2502", "\\u251c", "\\u2514", "\\u250c", "\\u25be", "\\u25b8",
+    ] {
+        assert!(!js.contains(glyph), "app.js still types the glyph {glyph}");
+    }
+    assert!(js.contains("tstep tbranch"), "app.js builds no branch step");
+    assert!(
+        js.contains("aria-expanded"),
+        "the toggle carries no aria-expanded"
+    );
+    assert!(
+        js.contains(r#"svg.setAttribute("viewBox", "0 0 4 5")"#)
+            && js.contains(r#"path.setAttribute("d", "M0 0L4 2.5L0 5Z")"#),
+        "the toggle icon is not a closed 4 by 5 triangle"
+    );
+    let rule = |selector: &str| {
+        css.split(selector)
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .unwrap_or_default()
+    };
+    let icon = rule(".ptable .twisty svg path {");
+    assert!(
+        icon.contains("fill: currentColor") && !icon.contains("stroke"),
+        "the toggle icon is not a filled path in the cell's text colour: {icon}"
+    );
+    let size = rule(".ptable .twisty svg {");
+    assert!(
+        size.contains("width: 4px") && size.contains("height: 5px"),
+        "the triangle is not 4 by 5 px: {size}"
+    );
+    let turned = rule(r#".ptable .twisty[aria-expanded="true"] svg {"#);
+    assert!(
+        turned.is_empty() && !css.contains("rotate(90deg)"),
+        "the toggle still turns by a transform, which clips the triangle at the svg's origin: {turned}"
+    );
+    assert!(
+        !css.contains(r#".ptable tr[data-collapsed="deep"] svg {"#)
+            && css.contains(r#".ptable tr[data-collapsed="deep"] svg[data-chart="proc"] {"#),
+        "the deep collapsed row's graph rule hides every svg in the row, the toggle's icon included"
+    );
+    assert!(
+        js.contains(
+            r#"p.twisty.firstChild.firstChild.setAttribute("d", p.collapsed ? "M0 0L4 2.5L0 5Z" : "M0 0L4 0L2 5Z")"#
+        ),
+        "the toggle path does not swap between a right and a down triangle with aria-expanded"
+    );
+}
+
+/// ACC-VIEW-198-ROW-HOVER: the hovered row paints the row-hover background and
+/// nothing else, and a hovered cell the row-hover token of its own colour.
+#[test]
+fn hovered_row_cells_paint_the_row_hover_tokens() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let css = std::fs::read_to_string(base.join("assets/app.css")).expect("app.css");
+    let rule = |selector: &str| {
+        css.split(selector)
+            .nth(1)
+            .and_then(|rest| rest.split('}').next())
+            .unwrap_or_default()
+    };
+    let layers = rule(".ptable tbody tr:hover,\n.ptable tbody tr:hover td {");
+    assert_eq!(
+        layers.trim(),
+        "background: var(--row-hover);",
+        "the hovered row and its cells do not paint the background alone"
+    );
+    for (selector, token) in [
+        (".ptable tbody tr:hover {", "--row-hover-text"),
+        (".ptable tbody tr:hover .cpu-ok {", "--row-hover-ok"),
+        (".ptable tbody tr:hover .cpu-warn {", "--row-hover-warn"),
+        (".ptable tbody tr:hover .cpu-crit {", "--row-hover-crit"),
+        (".ptable tbody tr:hover .cpu-zero {", "--row-hover-muted"),
+    ] {
+        assert!(
+            rule(selector).contains(&format!("color: var({token});")),
+            "{selector} does not paint {token}"
+        );
     }
 }
 
@@ -1447,12 +1588,12 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
     snapshot.cpu.total_pct = Some(80.0);
     snapshot.cpu.gauge_pct = Some(50.0);
     snapshot.mem.ram_percent = Some(70.0);
-    snapshot.mem.gauge_pct = Some(40.0);
+    snapshot.mem.gauge_segments = vec![("used", 25.0), ("cache", 15.0)];
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let events = fragments(&snapshot);
     let cpu_docs = page_and_event(&page, &events, "cpu");
-    for (index, html) in cpu_docs.into_iter().enumerate() {
+    for html in cpu_docs {
         for marker in [
             format!(
                 r#"<path class="g-fill warn" d="{}">"#,
@@ -1462,11 +1603,11 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
                 r#"<path class="g-fill warn" d="{}">"#,
                 gauge_arc_circle(Some(50.0))
             ),
-            r#"<svg class="g-circle" viewBox="0 0 112 114""#.to_string(),
-            r#"<svg class="g-squircle" viewBox="0 0 112 122""#.to_string(),
+            r#"<svg class="g-circle" viewBox="-12 0 132 114""#.to_string(),
+            r#"<svg class="g-squircle" viewBox="-12 0 132 122""#.to_string(),
             r#"<svg class="g-wide" viewBox="13 19.7 82 86.3" preserveAspectRatio="none""#
                 .to_string(),
-            r#"<text class="g-value" x="54" y="66">80<tspan class="g-unit" dx="2.65">%</tspan>"#
+            r#"<text class="g-value" x="54" y="66">80<tspan class="g-unit" dx="2.5">%</tspan>"#
                 .to_string(),
             r#"aria-label="CPU total 80 percent""#.to_string(),
             r#"<span class="stat-value crit" data-w="100" data-range="100" id="cpu-total">80</span>"#.to_string(),
@@ -1479,31 +1620,53 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
             assert!(html.contains(&marker), "lacks {marker}");
         }
         // DEF-LAYOUT-90-LOAD-SHIFT, DEF-LAYOUT-94-SHORT-VIEW: the three
-        // shapes each carry the fill and the stylesheet picks one; the page
-        // draws both gauges, the fragment one.
-        let fills = if index == 0 { 6 } else { 3 };
-        assert_eq!(html.matches(r#"<path class="g-fill warn""#).count(), fills);
+        // shapes each carry the fill and the stylesheet picks one. Only the
+        // CPU gauge takes a band colour (ACC-VIEW-175-MEM-SHARE).
+        // DEF-VIEW-112-WIDE-ARC: the wide shape's fill is a dash of its band.
+        assert_eq!(html.matches(r#"<path class="g-fill warn""#).count(), 2);
+        assert_eq!(
+            html.matches(r##"<use class="g-fill warn" href="#g-wide-arc" style="--from:0;--to:50.00"></use>"##)
+                .count(),
+            1
+        );
     }
+    // DEF-VIEW-112-WIDE-ARC: the page holds the wide band once; a frame carries
+    // no copy of its path.
+    let band = format!(
+        r#"<path id="g-wide-arc" vector-effect="non-scaling-stroke" d="{}">"#,
+        gauge_arc(Some(100.0))
+    );
+    assert_eq!(page.matches(&band).count(), 1);
+    assert!(
+        events
+            .iter()
+            .all(|(_, html)| !html.contains(r#"id="g-wide-arc""#))
+    );
     let mem_docs = page_and_event(&page, &events, "mem");
-    for (index, html) in mem_docs.into_iter().enumerate() {
-        let arc = format!(
-            r#"<path class="g-fill warn" d="{}">"#,
-            gauge_arc(Some(40.0))
-        );
-        assert!(html.contains(&arc), "the memory arc is not the EMA");
-        let circle = format!(
-            r#"<path class="g-fill warn" d="{}">"#,
-            gauge_arc_circle(Some(40.0))
-        );
-        assert!(
-            html.contains(&circle),
-            "the memory circle arc is not the EMA"
-        );
-        let fills = if index == 0 { 6 } else { 3 };
-        assert_eq!(html.matches(r#"<path class="g-fill warn""#).count(), fills);
+    for html in mem_docs {
+        // ACC-VIEW-190-MEM-RECLAIM: one fill per segment in each of the three
+        // shapes, each running from where the last one ended. DEF-VIEW-112:
+        // the wide shape's is a dash of its band, so it carries the percents.
+        for (seg, from, to) in [("used", 0.0, 25.0), ("cache", 25.0, 40.0)] {
+            let squircle = format!(
+                r#"<path class="g-fill" data-seg="{seg}" d="{}">"#,
+                gauge_span(from, to)
+            );
+            assert_eq!(html.matches(&squircle).count(), 1, "{seg}");
+            let circle = format!(
+                r#"<path class="g-fill" data-seg="{seg}" d="{}">"#,
+                gauge_span_circle(from, to)
+            );
+            assert_eq!(html.matches(&circle).count(), 1, "{seg}");
+            let wide = format!(
+                r##"<use class="g-fill" data-seg="{seg}" href="#g-wide-arc" style="--from:{from:.2};--to:{to:.2}"></use>"##
+            );
+            assert_eq!(html.matches(&wide).count(), 1, "{seg}");
+        }
+        assert_eq!(html.matches(r#"<path class="g-fill" data-seg"#).count(), 4);
         let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
         let readout = format!(
-            r#"<text class="g-value" x="54" y="66">{}<tspan class="g-unit" dx="2.65">{}</tspan>"#,
+            r#"<text class="g-value" x="54" y="66">{}<tspan class="g-unit" dx="2.5">{}</tspan>"#,
             value, unit
         );
         assert!(
@@ -1528,9 +1691,8 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
 /// ACC-LAYOUT-74-RESERVED-WIDTH: the memory numbers batch 3 re-aligned keep
 /// their widest form, so a change of digits moves no unit or following word:
 /// the tile's value, the used and available percents, the gauge's percent
-/// cells and the available value. The CPU tile, gauge readout, cores busy,
-/// load, GPU legend, network scale and process counts are pinned by their own
-/// tests.
+/// cells and the available value. The CPU tile, gauge readout, load, GPU
+/// legend, network scale and process counts are pinned by their own tests.
 #[tokio::test]
 async fn reserved_widths_sit_on_the_memory_values() {
     let snapshot = fixture_snapshot();
@@ -1551,8 +1713,12 @@ async fn reserved_widths_sit_on_the_memory_values() {
             format!(r#"<b data-w="100%">{used:.0}%</b> used"#),
             format!(r#"<b data-w="100%">{available:.0}%</b> available"#),
             format!(
-                r#"<b data-w="0000 MiB">{}</b>"#,
-                snapshot.mem.ram_available_label()
+                r#"<span>free + reclaimable</span><b data-w="0000 MiB">{}</b><span class="pct" data-w="100%">{:.0}%</span>"#,
+                snapshot.mem.ram_free_reclaimable_label(),
+                snapshot
+                    .mem
+                    .ram_free_reclaimable_percent()
+                    .expect("sum percent")
             ),
         ] {
             assert!(html.contains(&marker), "lacks {marker}");
@@ -1629,10 +1795,10 @@ async fn cores_name_every_row_with_two_digits() {
 
 /// ACC-VIEW-49-TOTAL-LABEL, ACC-VIEW-129-LOAD-LABELS, ACC-VIEW-130-LOAD-SCALE
 /// and ACC-VIEW-131-LOAD-WIDTH: the CPU gauge reads TOTAL, and beside it each
-/// load average as a whole percent of all cores with its window, the busy
-/// cores, and both load figures reserving normalised 100%.
+/// load average as a whole percent of all cores with its window, both load
+/// figures reserving normalised 100%.
 #[tokio::test]
-async fn cpu_gauge_says_total_and_shows_the_load_triple_and_cores_busy() {
+async fn cpu_gauge_says_total_and_shows_the_load_triple() {
     let mut snapshot = fixture_snapshot();
     assert_eq!(snapshot.cpu.cores.len(), 64);
     snapshot.cpu.total_pct = Some(25.0);
@@ -1647,9 +1813,6 @@ async fn cpu_gauge_says_total_and_shows_the_load_triple_and_cores_busy() {
             r#"load <b data-w="100%" data-num>50%</b>/1m <b data-w="100%" data-num>25%</b>/5m <b data-w="100%" data-num>15%</b>/15m"#,
             "Load average, unit percent of all cores",
             "1, 5 and 15 minute averages divided by 64 cores",
-            // ACC-LAYOUT-74-RESERVED-WIDTH: the busy cores reserve the core
-            // count in their format, so "of 64" keeps its place.
-            r#"<span>cores busy</span><b><span data-w="64.0">16.0</span> <small>of 64</small></b>"#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
         }
@@ -1658,7 +1821,174 @@ async fn cpu_gauge_says_total_and_shows_the_load_triple_and_cores_busy() {
     {
         assert!(!html.contains("BUSY"), "{name} says BUSY");
         assert!(!html.contains(">busy<"), "{name} labels a readout busy");
+        assert!(!html.contains("cores busy"), "{name} shows cores busy");
         assert!(!html.contains("percent busy"), "{name} reads busy aloud");
+    }
+}
+
+/// ACC-VIEW-178-CPU-FACTS, DEF-VIEW-117-CPU-CHIPS: beside the gauge a plain
+/// label names each of four facts in order, no chip, and each value comes from
+/// the recorded tree: load from
+/// loadavg over 64 cores, user and system from the /proc/stat delta, pressure
+/// from pressure/cpu. Cores busy, frequency and temperature left the column.
+#[tokio::test]
+async fn cpu_facts_name_four_values_from_the_recorded_tree() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proc");
+    let root = std::env::temp_dir().join(format!("btop-web-facts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let tree = root.join("proc");
+    std::fs::create_dir_all(tree.join("pressure")).expect("tree");
+    for file in ["loadavg", "pressure/cpu"] {
+        std::fs::copy(fixtures.join(file), tree.join(file)).expect("copy");
+    }
+    let config = Config::load(None).expect("config");
+    std::fs::write(tree.join("stat"), "cpu  100 0 100 800 0 0 0 0 0 0\n").expect("stat");
+    cpu::collect(&tree, &config);
+    std::fs::write(tree.join("stat"), "cpu  300 0 200 1500 0 0 0 0 0 0\n").expect("stat");
+    let mut snapshot = fixture_snapshot();
+    snapshot.cpu = cpu::collect(&tree, &config);
+    std::fs::remove_dir_all(&root).expect("cleanup");
+    // This stat has no cpuN lines; the load divides by the recorded 64 cores.
+    snapshot.cpu.effective_cpus = Some(64.0);
+
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let events = fragments(&snapshot);
+    for html in page_and_event(&page, &events, "cpu") {
+        let side = &html[html.find(r#"data-field="cpu-gauge-facts""#).expect("facts")..];
+        let side = &side[..side.find("</div>\n</div>").expect("facts end")];
+        let labels: Vec<&str> = side
+            .split(r#"<span>"#)
+            .skip(1)
+            .map(|rest| &rest[..rest.find('<').expect("label end")])
+            .collect();
+        assert_eq!(labels, ["load", "user", "system", "pressure"]);
+        assert!(!side.contains("chip"), "a fact is still a chip: {side}");
+        for marker in [
+            r#">139%</span>/1m"#,
+            r#">144%</span>/5m"#,
+            r#">142%</span>/15m"#,
+            r#"<span>user</span><b data-w="100%">20%</b>"#,
+            r#"<span>system</span><b data-w="100%">10%</b>"#,
+            r#"<span>pressure</span><b data-w="100.00%">1.25%</b>"#,
+        ] {
+            assert!(side.contains(marker), "lacks {marker} in {side}");
+        }
+        for gone in ["cores busy", "frequency", "temperature", "GHz", "°C"] {
+            assert!(!side.contains(gone), "the column still shows {gone}");
+        }
+    }
+}
+
+/// The CPU stat header's facts, from the page or a cpu event.
+fn cpu_stat_facts(html: &str) -> &str {
+    let facts = &html[html.find(r#"data-field="cpu-stat-facts""#).expect("facts")..];
+    &facts[..facts.find("</header>").expect("header end")]
+}
+
+/// DEF-VIEW-114-CPU-TEMP: on the recorded tree with sensors the CPU stat header
+/// shows the temperature beside the frequency, in the frequency's form plus a
+/// reserved width. The gauge column's test above keeps it out of the four facts.
+#[tokio::test]
+async fn cpu_stat_header_shows_the_temperature_where_a_sensor_reads() {
+    let snapshot = recorded_snapshot("tests/fixtures/proc", 1);
+    assert_eq!(snapshot.cpu.temperature_c, Some(45.0));
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let marker = format!(
+        r#"<b>{}</b></span><span class="cpu-temp" data-tip="CPU temperature, unit degrees Celsius&#10;source: hwmon and thermal sysfs, m°C / 1000&#10;whole degrees, btop's sensor choice"><b data-w="100°C">45°C</b></span>"#,
+        snapshot.cpu.frequency_label()
+    );
+    for html in page_and_event(&page, &fragments(&snapshot), "cpu") {
+        let facts = cpu_stat_facts(html);
+        assert!(facts.contains(&marker), "lacks {marker} in {facts}");
+    }
+}
+
+/// DEF-VIEW-114-CPU-TEMP: the recorded tree with no hwmon or thermal class has
+/// a frequency and no sensor, so the header shows no temperature at all.
+#[tokio::test]
+async fn cpu_stat_header_has_no_temperature_without_a_sensor() {
+    let snapshot = recorded_snapshot("tests/fixtures/container/proc", 1);
+    assert_eq!(snapshot.cpu.temperature_c, None);
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    for html in page_and_event(&page, &fragments(&snapshot), "cpu") {
+        let facts = cpu_stat_facts(html);
+        assert!(facts.contains("CPU frequency"), "{facts}");
+        for absent in ["temperature", "°C", "unavailable"] {
+            assert!(!facts.contains(absent), "{absent} in {facts}");
+        }
+    }
+}
+
+/// ACC-VIEW-178-CPU-FACTS and INTENT's no invented data: on the empty tree each
+/// of the four facts keeps its chip and reads unavailable, never zero.
+#[tokio::test]
+async fn cpu_facts_read_unavailable_on_the_empty_tree() {
+    let snapshot = unavailable_snapshot();
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    let events = fragments(&snapshot);
+    for html in page_and_event(&page, &events, "cpu") {
+        for label in ["load", "user", "system", "pressure"] {
+            let marker = format!(r#"<span>{label}</span><span>unavailable</span>"#);
+            assert!(html.contains(&marker), "lacks {marker}");
+        }
+    }
+}
+
+/// ACC-VIEW-179-PROC-HEADERS: the sort menu and the column toggles read the
+/// table headers' uppercase words, in the headers' order, and MEM has replaced
+/// MemB. Each toggle keeps its key; [`process_headers_are_sort_buttons`] pins
+/// the headers themselves.
+#[tokio::test]
+async fn sort_menu_and_column_toggles_use_the_header_words() {
+    let page = page_of(&app(Some(fixture_snapshot()), true)).await;
+    let select = &page[page.find(r#"id="proc-sort""#).expect("sort menu")..];
+    let select = &select[..select.find("</select>").expect("sort menu end")];
+    let menu = &page[page.find(r#"id="proc-col-menu""#).expect("column menu")..];
+    let menu = &menu[..menu.find("</div>").expect("column menu end")];
+    for (key, word) in [
+        ("pid", "PID"),
+        ("name", "PROGRAM"),
+        ("command", "COMMAND"),
+        ("threads", "THREADS"),
+        ("user", "USER"),
+        ("mem", "MEM"),
+        ("cpu", "CPU%"),
+    ] {
+        assert!(
+            select.contains(&format!(r#"<option value="{key}""#))
+                && select.contains(&format!(">{word}</option>")),
+            "the sort menu lacks {key} as {word}"
+        );
+        let at = menu
+            .find(&format!(r#"data-col="{key}""#))
+            .unwrap_or_else(|| panic!("no {key} toggle"));
+        assert!(
+            menu[at..]
+                .split("</button>")
+                .next()
+                .expect("toggle")
+                .ends_with(&format!(">{word}")),
+            "the {key} toggle does not read {word}"
+        );
+    }
+    assert!(
+        select.contains(r#"<option value="mem" selected>MEM</option>"#),
+        "the default sort moved"
+    );
+    for old in [
+        ">MemB<",
+        ">Cpu%<",
+        ">Pid<",
+        ">Program<",
+        ">Command<",
+        ">Threads<",
+        ">User<",
+    ] {
+        assert!(!page.contains(old), "the page still reads {old}");
     }
 }
 
@@ -1740,16 +2070,22 @@ async fn container_page_shows_only_container_values() {
             // DEF-CPU-41: the cpuset 0-3 gives four core rows, named C00 to C03.
             r#"4 &middot; 0&ndash;100%</span>"#,
             r#"<span class="cl">C03</span>"#,
+            // ACC-VIEW-178-CPU-FACTS: the cgroup's cpu.pressure, not the
+            // tree's host /proc/pressure/cpu (7.77).
+            r#"<span>pressure</span><b data-w="100.00%">0.37%</b>"#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
         }
+        assert!(!html.contains(">7.77%<"), "the host pressure leaked");
         assert_eq!(html.matches(r#"class="core-row""#).count(), 4);
         assert!(
             !html.contains("load unavailable"),
             "the container load is withheld"
         );
         assert!(!html.contains("14 13 15"), "the host load leaked");
-        assert!(!html.contains("7.11"), "the host load per core leaked");
+        // The gauge scale coordinates can contain "7.11" inside a number; the
+        // host's per-core load renders as the text node itself.
+        assert!(!html.contains(">7.11<"), "the host load per core leaked");
         assert!(!html.contains("64 cores"), "the host core count leaked");
         assert!(!html.contains("of 64"), "the host core count leaked");
         assert!(!html.contains("GHz"), "the host frequency leaked");
@@ -1772,20 +2108,43 @@ async fn container_page_shows_only_container_values() {
         // DEF-VIEW-95-SCOPE-MIX: the recorded memory.max (8 GiB) binds, so
         // the header total is the container's limit, not MemTotal.
         // DEF-VIEW-97-MEM-UNITS: the tag also names whose limit it is.
-        assert!(
-            html.contains("of 8.00 GiB (container limit)"),
-            "memory total does not state it is the container's limit"
-        );
-        // DEF-VIEW-91-MEM-CONFUSE: every row states its scope and its kind:
-        // used and free are this container's, and cache says it is file
-        // cache, the answer to whether it is swap.
+        for header in [
+            ">of 8.00 GiB (container limit)</span>",
+            ">of total 8.00 GiB (container limit)</span>",
+        ] {
+            assert_eq!(
+                html.matches(header).count(),
+                1,
+                "memory total does not state it is the container's limit"
+            );
+        }
+        // ACC-VIEW-194-MEM-WORDS: the first two rows' words drop the scope and
+        // their tooltips keep it; DEF-VIEW-91-MEM-CONFUSE: the second says it
+        // is file cache, the answer to whether it is swap.
         assert_mem_bar(
             html,
             &[
-                ("used", "container used"),
-                ("cache", "file cache"),
+                ("used", "used"),
+                ("cache", "reclaimable"),
                 ("free", "container free"),
             ],
+        );
+        for tip in [
+            "this container's working set",
+            "this container's reclaimable file cache",
+        ] {
+            assert!(html.contains(tip), "a row's tooltip lost {tip}");
+        }
+        // ACC-VIEW-195-MEM-SUM: 4 GiB free + 1 GiB reclaimable, of 8 GiB.
+        assert!(
+            html.contains(
+                r#"<span>free + reclaimable</span><b data-w="0000 MiB">5.00 GiB</b><span class="pct" data-w="100%">63%</span>"#
+            ),
+            "the sum row is not free plus reclaimable with its percent"
+        );
+        assert!(
+            html.contains("the container free and reclaimable rows"),
+            "the sum row's tooltip does not name its source rows"
         );
         assert!(
             !html.contains(r#"data-seg="other""#),
@@ -1820,23 +2179,92 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
     // as the total, and other for the host's memory outside this container.
     snapshot.mem.ram_limit = None;
     snapshot.mem.ram_total = Some(527_649_328 * 1024);
-    snapshot.mem.ram_other = Some(300 * 1024 * 1024 * 1024);
-    snapshot.mem.ram_other_percent = Some(60.0);
+    snapshot.mem.ram_other = Some(50 * 1024 * 1024 * 1024);
+    snapshot.mem.ram_other_percent = Some(10.0);
+    snapshot.mem.ram_other_cache = Some(250 * 1024 * 1024 * 1024);
+    snapshot.mem.ram_other_cache_percent = Some(50.0);
+    let spans = [("used", 0.0, 10.0), ("cache", 10.0, 30.0)];
+    snapshot.mem.gauge_segments = spans
+        .iter()
+        .map(|(name, from, to)| (*name, to - from))
+        .collect();
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
+        // ACC-VIEW-192-GAUGE-CONTAINER: every shape draws the container's two
+        // segments from zero and the rest is the bare track, while the bar
+        // below keeps all five rows; the tooltip names what the arc draws.
+        for (name, from, to) in spans {
+            for path in [gauge_span_circle(from, to), gauge_span(from, to)] {
+                let marker = format!(r#"<path class="g-fill" data-seg="{name}" d="{path}">"#);
+                assert!(html.contains(&marker), "lacks {name} {from} to {to}");
+            }
+        }
+        assert_eq!(html.matches(r#"<path class="g-fill" data-seg"#).count(), 4);
+        assert_eq!(html.matches(r#"<use class="g-fill" data-seg"#).count(), 2);
+        for gone in ["other", "other-cache", "free"] {
+            assert!(!html.contains(&format!(r#"class="g-fill" data-seg="{gone}""#)));
+        }
         assert!(
-            html.contains("of 503 GiB (host total)"),
-            "the header does not state the unit and whose total it is"
+            html.contains("arc: container used and reclaimable 30%, 1 s EMA"),
+            "the gauge tooltip does not name what the arc draws"
+        );
+        // DEF-VIEW-106-SWAP-UNITS: the recorded 512 MiB of 128 GiB, in GiB.
+        assert!(
+            html.contains(
+                r#"<span>swap</span><b>0.50 / 128 GiB</b><span class="pct" data-w="100%">0%</span>"#
+            ),
+            "the swap row is not in GiB with its percent"
+        );
+        // ACC-VIEW-193-MEM-TOTAL: both headers drop the words, the tooltip keeps
+        // the scope. ACC-VIEW-196-MEM-HEADER: the table panel's states the total.
+        for header in [">of 503 GiB</span>", ">of total 503 GiB</span>"] {
+            assert_eq!(
+                html.matches(header).count(),
+                1,
+                "a Memory header does not read {header}"
+            );
+        }
+        assert!(
+            !html.contains("host total"),
+            "the header names the host total"
+        );
+        assert_eq!(
+            html.matches("the host's total; memory.max is unlimited")
+                .count(),
+            2,
+            "a header tooltip lost whose total it is"
         );
         assert_mem_bar(
             html,
             &[
-                ("used", "container used"),
-                ("cache", "file cache"),
-                ("other", "outside (host)"),
-                ("free", "host free"),
+                ("used", "used"),
+                ("cache", "reclaimable"),
+                ("other", "other used"),
+                ("other-cache", "other reclaimable"),
+                ("free", "free"),
             ],
+        );
+        // ACC-VIEW-194-MEM-WORDS: the tooltips keep the scope the words drop.
+        for tip in [
+            "this container's working set",
+            "this container's reclaimable file cache",
+        ] {
+            assert!(html.contains(tip), "a row's tooltip lost {tip}");
+        }
+        // ACC-VIEW-195-MEM-SUM: the sum row adds other reclaimable here.
+        let sum_row = format!(
+            r#"<span>free + reclaimable</span><b data-w="0000 MiB">{}</b><span class="pct" data-w="100%">{:.0}%</span>"#,
+            snapshot.mem.ram_free_reclaimable_label(),
+            snapshot
+                .mem
+                .ram_free_reclaimable_percent()
+                .expect("sum percent")
+        );
+        assert!(html.contains(&sum_row), "lacks {sum_row}");
+        assert!(
+            html.contains("the free, reclaimable and other reclaimable rows"),
+            "the sum row's tooltip does not name its source rows"
         );
         assert!(
             html.contains("not swap; swap has its own row"),
@@ -1867,7 +2295,7 @@ async fn tier_markers_sit_on_single_elements() {
             .collect()
     };
     // (event, field, priority, count in that event)
-    let fields: [(&str, &str, u8, usize); 20] = [
+    let fields: [(&str, &str, u8, usize); 21] = [
         ("cpu", "cpu-stat-facts", 3, 1),
         ("cpu", "cpu-stat-axis", 3, 1),
         ("cpu", "cpu-name", 3, 1),
@@ -1882,6 +2310,7 @@ async fn tier_markers_sit_on_single_elements() {
         ("net", "net-interface", 3, 1),
         ("net", "net-axis-note", 3, 1),
         ("net", "net-x-axis", 3, 1),
+        ("net", "net-link", 3, 1),
         ("gpu", "gpu-count", 3, 1),
         ("gpu", "gpu-axis-note", 3, 1),
         ("gpu", "gpu-x-axis", 3, 1),
@@ -2007,8 +2436,7 @@ async fn top_bar_names_the_tiers_and_bands_1_3_share_a_wrapper() {
     let titles = &bar[chip..];
     for drop in [
         "Processes tile (count graph,",
-        "CPU facts (frequency, load, cores busy",
-        "cores busy",
+        "CPU facts (load, user, system, pressure)",
         "memory gauge",
         "GPU temperature and power",
     ] {
@@ -2231,6 +2659,36 @@ fn theme_list_follows_the_page_mode() {
     }
 }
 
+/// ACC-VIEW-187-FILTER-SEGMENT, ACC-VIEW-188-FILTER-HINT: the filter is a plain
+/// section of the Processes bar with a lowercase, dimmed hint.
+/// DEF-VIEW-110-FILTER-RED: no focus or text state recolours its left rule.
+#[tokio::test]
+async fn process_filter_is_a_plain_section_of_the_bar() {
+    let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
+        .expect("utf-8 page");
+    assert!(
+        page.contains(r#"id="filter" type="search" placeholder="filter""#),
+        "the filter's hint is not the lowercase word"
+    );
+    let css = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
+        .expect("app.css");
+    let compact: String = css.split_whitespace().collect();
+    for rule in [
+        "#p-proc.head-right{align-self:stretch;margin-right:-8px;}",
+        ".cfg-in.filter{align-self:stretch;width:var(--filter-w);height:auto;appearance:none;-webkit-appearance:none;border:0;border-left:1pxsolidvar(--border-subtle);border-radius:0;outline:none;background:var(--surface-raised);}",
+        ".cfg-in.filter::-webkit-search-decoration,.cfg-in.filter::-webkit-search-cancel-button{appearance:none;-webkit-appearance:none;}",
+        ".cfg-in.filter::placeholder{color:color-mix(insrgb,var(--text)20%,var(--muted));opacity:1;}",
+    ] {
+        assert!(compact.contains(rule), "app.css lacks {rule}");
+    }
+    for state in [".cfg-in.filter:focus", ".cfg-in.filter:not("] {
+        assert!(
+            !compact.contains(state),
+            "app.css gives the filter the state {state}"
+        );
+    }
+}
+
 /// Each event's out-of-band wrappers name a panel that exists once in the
 /// page, and together the five events reach every swapped region.
 #[tokio::test]
@@ -2316,6 +2774,170 @@ async fn healthz_and_readyz_report_the_listener() {
     }
 }
 
+/// ACC-NET-181-JSON-STREAM: `/events.json` streams the sampler's frames as
+/// one newline-terminated JSON document per published frame, carrying the
+/// five sections and the plot paths the page draws. The values come from the
+/// fixture tree, and a second published frame adds a second line at the same
+/// cadence `/events` uses.
+#[tokio::test]
+async fn the_json_stream_writes_one_document_per_frame() {
+    use http_body_util::BodyExt;
+
+    async fn next_line(body: &mut Body) -> String {
+        let chunk = tokio::time::timeout(std::time::Duration::from_secs(1), body.frame())
+            .await
+            .expect("a line within one second")
+            .expect("the stream is still open")
+            .expect("a data frame")
+            .into_data()
+            .expect("frame data");
+        String::from_utf8(chunk.to_vec()).expect("utf-8 line")
+    }
+
+    let snapshot = fixture_snapshot();
+    let (sender, receiver) = watch::channel(Some(Arc::new(Frame::new(snapshot.clone()))));
+    let app = btop_web::app(AppState::new(receiver, true));
+
+    let request = Request::builder()
+        .uri("/events.json")
+        .body(Body::empty())
+        .expect("request");
+    let response = app.clone().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let (parts, mut body) = response.into_parts();
+    assert_eq!(
+        content_type(&parts.headers),
+        btop_web::routes::telemetry::CONTENT_TYPE
+    );
+
+    let first_line = next_line(&mut body).await;
+    assert!(
+        first_line.ends_with('\n'),
+        "the document ends with a newline"
+    );
+    let document: serde_json::Value =
+        serde_json::from_str(&first_line).expect("one JSON document per line");
+    for key in [
+        "events",
+        "update_ms",
+        "window_ms",
+        "slow_ms",
+        "slow_seq",
+        "container",
+        "cpu",
+        "mem",
+        "net",
+        "proc",
+        "gpu",
+        "plots",
+    ] {
+        assert!(document.get(key).is_some(), "the document lacks {key}");
+    }
+    assert_eq!(
+        document["events"],
+        serde_json::json!(["cpu", "mem", "net", "proc", "gpu"])
+    );
+    assert_eq!(document["update_ms"], serde_json::json!(snapshot.update_ms));
+    assert_eq!(
+        document["cpu"]["total_pct"],
+        serde_json::json!(snapshot.cpu.total_pct)
+    );
+    assert_eq!(
+        document["mem"]["ram_total"],
+        serde_json::json!(snapshot.mem.ram_total)
+    );
+    assert_eq!(
+        document["net"]["selected_iface"],
+        serde_json::json!(snapshot.net.selected_iface)
+    );
+    assert_eq!(
+        document["proc"]["total"],
+        serde_json::json!(snapshot.proc.total)
+    );
+    assert_eq!(
+        document["gpu"]["devices"][0]["name"],
+        serde_json::json!("RTX PRO 4000 Blackwell")
+    );
+    // The plot series the page draws: one CPU, one memory, two network, one
+    // process and one GPU lane for the fixture's one device.
+    for plot in ["cpu", "mem", "proc"] {
+        assert_eq!(
+            document["plots"][plot].as_array().map(Vec::len),
+            Some(1),
+            "plots.{plot}"
+        );
+    }
+    assert_eq!(document["plots"]["net"].as_array().map(Vec::len), Some(2));
+    assert_eq!(document["plots"]["gpu"].as_array().map(Vec::len), Some(1));
+    for (plot, series) in [
+        ("cpu", &document["plots"]["cpu"][0]),
+        ("mem", &document["plots"]["mem"][0]),
+        ("net", &document["plots"]["net"][0]),
+        ("proc", &document["plots"]["proc"][0]),
+        ("gpu", &document["plots"]["gpu"][0]),
+    ] {
+        for key in ["line", "area", "width", "height", "max"] {
+            assert!(series.get(key).is_some(), "plots.{plot} lacks {key}");
+        }
+    }
+    assert!(
+        !first_line.trim_start().starts_with('<'),
+        "the stream carries no HTML"
+    );
+
+    let mut second = snapshot;
+    second.update_ms = 500;
+    sender
+        .send(Some(Arc::new(Frame::new(second))))
+        .expect("the stream holds a subscriber");
+    let second_line = next_line(&mut body).await;
+    let document: serde_json::Value =
+        serde_json::from_str(&second_line).expect("one JSON document per line");
+    assert_eq!(document["update_ms"], serde_json::json!(500));
+}
+
+/// ACC-VIEW-182-COPY-JSON: the top bar's button reads
+/// `/events.json?once=1`, and that document is the stream's own serialisation
+/// of the newest frame: the two are byte-identical, so the clipboard carries
+/// the stream's fields and plot paths, not a second shape. The page ships no
+/// serialiser of its own.
+#[tokio::test]
+async fn the_copied_document_equals_the_stream_document() {
+    let app = app(Some(fixture_snapshot()), true);
+    let (status, headers, body) = get(&app, "/events.json?once=1").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        content_type(&headers),
+        btop_web::routes::telemetry::CONTENT_TYPE
+    );
+    let copied = String::from_utf8(body).expect("utf-8 document");
+    assert_eq!(copied.matches('\n').count(), 1, "one document, one line");
+
+    let (status, _, streamed) = get(&app, "/events.json").await;
+    assert_eq!(status, StatusCode::OK);
+    let streamed = String::from_utf8(streamed).expect("utf-8 stream");
+    assert_eq!(copied, streamed, "the copy is not the stream's document");
+
+    let script = String::from_utf8(get(&app, "/assets/app.js").await.2).expect("utf-8 script");
+    assert!(
+        script.contains("events.json?once=1"),
+        "the button reads no once route"
+    );
+    assert!(
+        script.contains("navigator.clipboard.writeText"),
+        "the button writes no clipboard"
+    );
+    assert!(
+        script.contains("execCommand(\"copy\")"),
+        "the button has no selection fallback"
+    );
+    let page = String::from_utf8(get(&app, "/").await.2).expect("utf-8 page");
+    assert!(
+        page.contains(r#"id="copy-json""#),
+        "the top bar lacks the copy button"
+    );
+}
+
 /// ACC-NET-144-ACCESS-KEY: an agent listener with one key. `None` leaves the
 /// state without a key, which must fail closed.
 fn agent_app(key: Option<&str>) -> Router {
@@ -2333,7 +2955,15 @@ fn agent_app(key: Option<&str>) -> Router {
 #[tokio::test]
 async fn an_agent_refuses_every_request_without_its_key() {
     let app = agent_app(Some("the-right-key"));
-    for path in ["/events", "/healthz", "/readyz", "/agents", "/"] {
+    for path in [
+        "/events",
+        "/events.json",
+        "/proc/1",
+        "/healthz",
+        "/readyz",
+        "/agents",
+        "/",
+    ] {
         for key in [None, Some("the-wrong-key"), Some("short")] {
             let (status, headers, body) = request_with_key(&app, path, key).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} with {key:?}");
@@ -2361,6 +2991,10 @@ async fn an_agent_refuses_every_request_without_its_key() {
     );
     assert_eq!(
         status_with_key(&app, "/events", Some("the-right-key")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status_with_key(&app, "/events.json", Some("the-right-key")).await,
         StatusCode::OK
     );
     assert_eq!(
@@ -2599,16 +3233,18 @@ async fn narrow_face_is_the_only_galaxa_face_served_and_the_font_toggle_selects_
         ),
         "the GalaxaTron option does not point both text tokens at the narrow face"
     );
-    // The process list and the CONFIG popover are the only exceptions: each
-    // redeclares the UI token and its own family from the system stack, and
-    // ACC-THEME-169 returns the tracking to 0 for that system face.
+    // The process list, its popup and the CONFIG popover are the only
+    // exceptions: each redeclares the UI token and its own family from the
+    // system stack, and ACC-THEME-169 returns the tracking to 0 for that system
+    // face.
     assert!(
         flat.contains(
-            "[data-font=\"galaxatron\"] #p-proc, [data-font=\"galaxatron\"] .config \
+            "[data-font=\"galaxatron\"] #p-proc, [data-font=\"galaxatron\"] .proc-detail, \
+             [data-font=\"galaxatron\"] .config \
              { --font-ui: var(--ui); --track: 0px; font-family: var(--ui); \
              letter-spacing: var(--track); }"
         ),
-        "the process list and the CONFIG popover do not keep the system stack"
+        "the process list, its popup and the CONFIG popover do not keep the system stack"
     );
     assert_eq!(
         flat.matches("--font-ui:").count(),
@@ -2638,13 +3274,13 @@ async fn narrow_face_is_the_only_galaxa_face_served_and_the_font_toggle_selects_
         "the reserved width names a face instead of inheriting the selected one"
     );
     // The process list's Program and Command cells are the single exception:
-    // they keep the mono stack, and the Pid cell follows the UI face.
-    for selector in [".ptable .mono {", ".ptable .tree {"] {
-        assert!(
-            rule(selector).contains("font-family: var(--mono)"),
-            "{selector} does not keep the mono stack"
-        );
-    }
+    // they keep the mono stack, and the Pid cell follows the UI face. The
+    // tree prefix is drawn (ACC-VIEW-180-PROC-TREE), so no rule of its own
+    // names a face.
+    assert!(
+        rule(".ptable .mono {").contains("font-family: var(--mono)"),
+        ".ptable .mono does not keep the mono stack"
+    );
     let (_, _, page) = get(&app, "/").await;
     let page = String::from_utf8(page).expect("utf-8 page");
     assert!(
@@ -2805,6 +3441,37 @@ async fn events_route_answers_with_an_event_stream() {
     assert!(content_type(response.headers()).starts_with("text/event-stream"));
 }
 
+/// DEF-VIEW-119-STALE-TAB: a connection opens with this build's stamp and no
+/// frame repeats it.
+#[tokio::test]
+async fn events_state_the_stamp_once_per_connection() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app(Some(fixture_snapshot()), true))
+            .await
+            .expect("serve");
+    });
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect");
+    stream
+        .write_all(format!("GET /events HTTP/1.1\r\nHost: {address}\r\n\r\n").as_bytes())
+        .await
+        .expect("request");
+    let text = read_until(&mut stream, "event: cpu", std::time::Duration::from_secs(5)).await;
+    let stamp = format!(
+        "event: stamp\ndata: {}\n\n",
+        btop_web::routes::asset_stamp()
+    );
+    let at = text.find(&stamp).expect("no stamp in the stream");
+    assert!(at < text.find("event: cpu").expect("cpu"));
+    assert_eq!(text.matches("event: stamp").count(), 1);
+    server.abort();
+}
+
 #[tokio::test]
 async fn real_socket_serves_healthz() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -2942,6 +3609,17 @@ async fn client_mode_has_no_server_rows_and_refuses_config_posts() {
         !page.contains("server · all viewers"),
         "client menu offers server rows: {page}"
     );
+    // ACC-VIEW-182-COPY-JSON / ACC-NET-181-JSON-STREAM: the client samples
+    // nothing, so it has no frame to copy and no JSON stream to serve.
+    assert!(
+        !page.contains(r#"id="copy-json""#),
+        "client mode offers the copy button"
+    );
+    assert_eq!(
+        status(&app, Method::GET, "/events.json").await,
+        StatusCode::NOT_FOUND,
+        "client mode serves a local JSON stream"
+    );
 
     // The boundary refuses the write; the shared file is untouched.
     let (status, body) = post_config(&app, "key=update_ms&value=500", Some(ORIGIN)).await;
@@ -3047,8 +3725,7 @@ async fn config_menu_dims_the_page_behind_it() {
     let js = asset("app.js");
     for hook in [
         r#"var scrim = document.getElementById("config-scrim");"#,
-        "scrim.hidden = false;",
-        "scrim.hidden = true;",
+        "scrim.hidden = (!config || config.hidden) && detailPid === null;",
     ] {
         assert!(js.contains(hook), "app.js lacks {hook}");
     }
@@ -3158,7 +3835,7 @@ async fn config_offers_the_number_animation_effects() {
     );
     let options = [
         ("none", "none", "none - instant update", true),
-        ("spring", "spring up", "count up with an overshoot", false),
+        ("spring", "spring up", "count up gradually", false),
         (
             "blur",
             "motion blur",
@@ -3186,6 +3863,56 @@ async fn config_offers_the_number_animation_effects() {
         );
     }
     assert_eq!(inner.matches("class=\"opt on\"").count(), 1, "{inner}");
+}
+
+/// ACC-VIEW-200-LIVE-STATUS: the general config page offers the live status as
+/// house-chip radios, on by default; theme.js stores the choice and sets the
+/// root attribute app.css keys the dimmed and off forms on.
+#[tokio::test]
+async fn config_offers_the_live_status_choices() {
+    let page = String::from_utf8(get(&app(Some(Snapshot::default()), true), "/").await.2)
+        .expect("utf-8 page");
+    let start = page.find(r#"id="cfg-page-general""#).expect("general page");
+    let config = page[start..]
+        .split(r#"role="tabpanel""#)
+        .next()
+        .expect("general page");
+    let (tag, inner) = elements_with(config, "data-group")
+        .into_iter()
+        .find(|(tag, _)| attribute(tag, "data-group") == Some("live-status"))
+        .expect("live-status group");
+    assert_eq!(attribute(tag, "role"), Some("radiogroup"));
+    assert_eq!(
+        attribute(tag, "aria-labelledby"),
+        Some("cfg-live-status-label")
+    );
+    assert!(
+        config.contains(r#"<span class="cfg-label" id="cfg-live-status-label">live status</span>"#),
+        "the row is not named live status"
+    );
+    let options = [("on", true), ("dimmed", false), ("off", false)];
+    assert_eq!(inner.matches("<button").count(), options.len(), "{inner}");
+    for (value, on) in options {
+        let class = if on { "opt on" } else { "opt" };
+        let marker = format!(
+            r#"<button class="{class}" type="button" role="radio" aria-checked="{on}" data-value="{value}">{value}</button>"#
+        );
+        assert!(inner.contains(&marker), "the row lacks {value}: {inner}");
+    }
+    let asset = |name: &str| {
+        std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets")
+                .join(name),
+        )
+        .expect(name)
+    };
+    let theme = asset("theme.js");
+    assert!(theme.contains(r#"root.setAttribute("data-live-status", liveStatus);"#));
+    assert!(theme.contains(r#"write(LIVE_STATUS_KEY, liveStatus);"#));
+    let css = asset("app.css");
+    assert!(css.contains(r#"[data-live-status="dimmed"] .chip-live {"#));
+    assert!(css.contains(r#"[data-live-status="off"] .chip-live {"#));
 }
 
 /// ACC-VIEW-108-NUM-MOTION: a change of effect never interrupts a transition
@@ -3262,6 +3989,46 @@ async fn number_effects_retarget_continuous_motion_by_display_range() {
     );
 }
 
+/// ACC-VIEW-203-SPRING-GRADUAL: the spring effects are critically damped, k = 100
+/// and c = 20, and settle on their own 800 ms; their echoes and the discrete
+/// effects keep numDuration(), and the option's title no longer names an overshoot.
+#[tokio::test]
+async fn spring_number_effects_move_gradually() {
+    let page = page_of(&app(Some(fixture_snapshot()), true)).await;
+    assert!(
+        page.contains(r#"data-value="spring" title="count up gradually">spring up</button>"#),
+        "the spring up option does not read count up gradually"
+    );
+    assert!(
+        !page.contains("overshoot"),
+        "the page still names an overshoot"
+    );
+
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
+        .expect("app.js");
+    for marker in [
+        "k = 100 and c = 20",
+        "var NUM_SPRING_MS = 800;",
+        "var ms = NUM_SPRING_MS;",
+        "var omega = Math.sqrt(100);",
+        "var t = Math.max(0, now - started) / 1000;",
+        "var echoMs = numDuration();",
+        "now - echoAt >= echoMs / 8",
+        "Math.min(echoMs, ms - (now - started))",
+    ] {
+        assert!(js.contains(marker), "app.js lacks {marker}");
+    }
+    assert!(
+        !js.contains("Math.sqrt(1600)"),
+        "the old spring is still in app.js"
+    );
+    assert_eq!(
+        js.matches("var ms = numDuration();").count(),
+        2,
+        "the blur and the odometer do not both keep numDuration()"
+    );
+}
+
 /// DEF-VIEW-80-SEGMENT-FLIP: the segment effect is removed, so a browser that
 /// stored "segment" keeps numMode at its "none" default: a stored value
 /// applies only when NUM_MODES names it, and no effect layer is built.
@@ -3296,6 +4063,21 @@ fn number_effects_are_gated_to_the_large_stat_values() {
             r#"if (!el.classList.contains("stat-value") && !el.hasAttribute("data-num")) return;"#
         ),
         "playNumber has no stat-value or data-num gate"
+    );
+}
+
+/// DEF-VIEW-132-DIGIT-SHIFT: the number effect layers keep their host's
+/// letter-spacing, so a digit keeps its x while an effect runs.
+#[test]
+fn number_effect_layers_keep_the_host_letter_spacing() {
+    let css = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
+        .expect("app.css");
+    let compact: String = css.split_whitespace().collect();
+    assert!(
+        compact.contains(
+            ".num-tween,.num-base,.num-echo,.num-odo{font-variant-numeric:tabular-nums;white-space:pre;letter-spacing:inherit;}"
+        ),
+        "the number effect layers do not inherit the host's letter-spacing"
     );
 }
 
@@ -3374,7 +4156,7 @@ async fn read_only_config_shows_values_without_forms() {
     let page = page_of(&app).await;
     assert!(!page.contains("<form"));
     assert!(!page.contains("hx-post"));
-    assert!(page.contains("read-only: start with --no-readonly to change"));
+    assert!(page.contains("read-only: restart without --readonly to change"));
     for option in SERVER_OPTIONS {
         let (_, row) = elements_with(&page, "data-key")
             .into_iter()
@@ -3962,7 +4744,13 @@ async fn waking_from_sleep_sends_the_first_frame_fast() {
         .write_all(format!("GET /events HTTP/1.1\r\nHost: {address}\r\n\r\n").as_bytes())
         .await
         .expect("request");
-    let streamed = read_until(&mut stream, "AMD GPU", std::time::Duration::from_secs(5)).await;
+    // read_until returns at the first "AMD GPU", which can fall inside the
+    // values event; the next frame's gpu fragment opens only after this one
+    // closes, so a second read completes the first. The fragment order is
+    // cpu, mem, net, proc, gpu, so the slow pass's 999 row has arrived by the
+    // first match.
+    let mut streamed = read_until(&mut stream, "AMD GPU", std::time::Duration::from_secs(5)).await;
+    streamed.push_str(&read_until(&mut stream, "AMD GPU", std::time::Duration::from_secs(5)).await);
     let unavailable = streamed
         .find("GPU metrics unavailable")
         .unwrap_or_else(|| panic!("no first gpu event in {}", tail(&streamed)));
@@ -4009,6 +4797,165 @@ fn fixture(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(relative)
+}
+
+/// ACC-VIEW-176-PROC-POPUP: the popup body on a recorded tree. Pid 500 holds a
+/// render node and has a 1516-byte command line and an io file; pid 501 has
+/// none of those. A pid the frame does not list is a 404 and a pid that is not
+/// a number a 400. The rings fill on the collector's pass, not on the request.
+#[tokio::test]
+async fn proc_detail_serves_one_process_from_the_recorded_tree() {
+    const TREE: &str = "tests/fixtures/proc-gpu/proc";
+    let mut config = Config::load(None).expect("config");
+    config.proc_root = Path::new(env!("CARGO_MANIFEST_DIR")).join(TREE);
+    let snapshot = recorded_snapshot_with(TREE, 2, config.clone());
+    let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(snapshot))));
+    let mut state = AppState::new(receiver, true);
+    state.config = watch::Sender::new(config.clone());
+    let app = btop_web::app(state);
+
+    let (code, headers, body) = get(&app, "/proc/500").await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(content_type(&headers).starts_with("text/html"));
+    let first = String::from_utf8(body).expect("utf-8");
+    assert!(first.contains("process 500"), "{first}");
+    assert!(first.contains("5.00 MiB"), "io read: {first}");
+    assert!(first.contains("1.00 MiB"), "io write: {first}");
+    assert!(first.contains("/dev/dri/renderD128"), "{first}");
+    assert!(!first.contains("/tmp/not-a-gpu"), "{first}");
+    for chart in ["proc-detail-cpu", "proc-detail-mem", "proc-detail-gpu"] {
+        assert!(
+            first.contains(&format!(r#"data-chart="{chart}""#)),
+            "{chart}: {first}"
+        );
+    }
+    // DEF-GRAPH-129-PROC-PLOT: the first body draws the passes the sampler has
+    // already run, as the GPU plot draws the panel's series.
+    for chart in ["proc-detail-cpu", "proc-detail-mem"] {
+        let plot = &first[first.find(chart).expect("plot")..];
+        assert!(
+            plot[..plot.find("</svg>").expect("a first curve")].contains(r#"class="line" d="M"#),
+            "{chart}: {first}"
+        );
+    }
+    assert!(
+        first.contains(r#"class="gpu-series g0"><path class="area""#),
+        "{first}"
+    );
+    // ACC-VIEW-202-PLOT-LABELS: each plot has the Network panel's scale gutter
+    // in its grid, and the head has no range text left.
+    assert_eq!(
+        first.matches(r#"class="net-plot-row""#).count(),
+        3,
+        "{first}"
+    );
+    assert_eq!(first.matches(r#"class="plot-scale""#).count(), 3, "{first}");
+    assert!(
+        first.contains(r#"<span class="scale-total">1%</span><span class="scale-mid" style="--at:50">0.5%</span><span class="scale-zero">0%</span>"#),
+        "{first}"
+    );
+    assert!(
+        first.contains(r#"<span class="scale-zero">0 B</span>"#),
+        "{first}"
+    );
+    assert!(
+        first.contains(r#"<span class="scale-total">100%</span><span class="scale-mid" style="--at:50">50%</span>"#),
+        "{first}"
+    );
+    assert!(!first.contains("&ndash;"), "a range text: {first}");
+    assert!(!first.contains("since the popup opened"), "{first}");
+    assert!(
+        first.contains(r#"<span class="pd-scale">device load</span>"#),
+        "{first}"
+    );
+    // DEF-GRAPH-130-PLOT-STEPS: the body and the GPU plot, which comes from the
+    // frame, each say which slow pass they hold.
+    assert!(
+        first.contains(r#"class="pd-live" data-slow-seq=""#),
+        "{first}"
+    );
+    assert!(
+        first.contains(r#"data-chart="proc-detail-gpu" data-slow-seq="1""#),
+        "{first}"
+    );
+
+    // DEF-VIEW-115-MEM-TIP, DEF-VIEW-123-POPUP-TIP: the three facts state the
+    // process's own figure, and memory names stat before statm.
+    assert_eq!(
+        first
+            .matches("a collapsed row in the table sums its subtree")
+            .count(),
+        3,
+        "{first}"
+    );
+    assert!(first.contains("stat field 24 × page size"), "{first}");
+    assert!(!first.contains("the table's Cpu%"), "{first}");
+    // DEF-VIEW-124-POPUP-CHIPS: the section labels are plain text; COPY stays a
+    // chip.
+    assert!(!first.contains("chip-fact"), "{first}");
+    for label in ["CPU", "Memory", "GPU 0", "command"] {
+        assert!(
+            first.contains(&format!(r#"<span class="pd-label">{label}</span>"#)),
+            "{label}: {first}"
+        );
+    }
+    assert!(first.contains(r#"class="chip chip-copy pd-copy up">copy<"#));
+
+    // The whole command line, past btop's 1000 bytes, as text.
+    assert!(first.contains("tail-marker.usd"), "{first}");
+    assert!(!first.contains("<b>night"), "an unescaped command: {first}");
+
+    proc::collect(&config.proc_root, &config);
+    let next = String::from_utf8(get(&app, "/proc/500").await.2).expect("utf-8");
+    let line = |chart: &str| {
+        let plot = &next[next.find(chart).expect("plot")..];
+        plot[..plot.find("</svg>").expect("svg")].contains(r#"class="line" d="M"#)
+    };
+    assert!(line("proc-detail-cpu"), "{next}");
+    assert!(line("proc-detail-mem"), "{next}");
+    // Axis and the unchanged page words.
+    assert!(next.contains(">now</span>"), "{next}");
+
+    let plain = String::from_utf8(get(&app, "/proc/501").await.2).expect("utf-8");
+    assert!(plain.contains("plainproc --idle"), "{plain}");
+    assert!(!plain.contains("proc-detail-gpu"), "{plain}");
+    assert!(plain.contains("<span>gpu</span><b>none</b>"), "{plain}");
+    assert!(
+        plain.contains("<span>io read</span><b>unavailable</b>"),
+        "{plain}"
+    );
+
+    assert_eq!(
+        status(&app, Method::GET, "/proc/99999").await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        status(&app, Method::GET, "/proc/abc").await,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+/// ACC-VIEW-176-PROC-POPUP: the page carries the popup's frame, hidden, outside
+/// every swapped panel, and app.js and app.css carry its hooks.
+#[tokio::test]
+async fn the_page_carries_the_process_popup() {
+    let app = app(Some(fixture_snapshot()), true);
+    let page = String::from_utf8(get(&app, "/").await.2).expect("utf-8");
+    let main_end = page.find("</main>").expect("main");
+    let popup = page.find(r#"id="proc-detail""#).expect("the popup frame");
+    assert!(popup > main_end, "a swapped fragment could hold the popup");
+    assert!(page[popup..].contains(r#"role="dialog""#));
+    assert!(page[popup..].contains(r#"id="proc-detail-close""#));
+    let js = String::from_utf8(get(&app, "/assets/app.js").await.2).expect("utf-8");
+    assert!(
+        js.contains(r#""proc/" + pid + window.location.search"#),
+        "a relative route"
+    );
+    let css = String::from_utf8(get(&app, "/assets/app.css").await.2).expect("utf-8");
+    assert!(
+        css.contains(".proc-detail[hidden]"),
+        "a hidden popup would still show"
+    );
 }
 
 /// Copy a recorded tree into a private directory, so a test that changes its

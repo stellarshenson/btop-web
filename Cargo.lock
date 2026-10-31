@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "btop-web"
-version = "0.6.30"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "askama",
@@ -363,6 +363,7 @@ dependencies = [
  "rocm_smi_lib",
  "rust-embed",
  "rustls",
+ "serde_json",
  "sha2",
  "spline1d",
  "thiserror 2.0.21",

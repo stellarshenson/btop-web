@@ -59,8 +59,9 @@ count; read it before collector or UI work.
   ten panels in four bands with network shown once, a GPU load plot with one line and one legend
   entry per GPU in band 3 (then cores, then storage), server-built PCHIP charts over a 1 s EMA, and
   gauges with ticks. The config popover holds five numbered themes (0 Default, then Everforest
-  Medium, Flexoki, Gruvbox, Solarized) and removes, adds back and resizes panels; the read-only
-  guard is on by default. It serves on the derived port 40290, samples every 250 ms by default and
+  Medium, Flexoki, Gruvbox, Solarized) and removes, adds back and resizes panels; the server starts
+  read-write and `--readonly` turns the guard on.
+  It serves on the derived port 40290, samples every 250 ms by default and
   accepts btop's config, update, filter, debug and theme flags; btop's terminal-only flags exit 2
 - Every text token reaches 4.5:1 on the layers it sits on, composed (chip tints, zebra and hover rows
   included), and `tests/theme_contrast.rs` enforces it for all five pairs in dark and light
@@ -98,8 +99,11 @@ count; read it before collector or UI work.
   equivalent of the banned automatic `package.json` and `pyproject.toml` edits
 - **Fixtures, not the live host** - collector tests set `BTOP_WEB_PROC_ROOT` to a recorded tree;
   never assert against the kernel that runs the test
-- **No JSON API and no SPA** - the server renders Askama templates and htmx consumes the SSE
-  fragments; adding either is a design change, not an implementation detail
+- **No SPA; the JSON stream is the owner-authorised exception** - the server renders Askama
+  templates and htmx consumes the SSE fragments; the HTML page is the only UI. `/events.json`
+  streams the same sampler's frames as newline-delimited JSON for agents and the companion client,
+  authorised by the owner on 2026-10-30. Any other JSON API, or a SPA, is a design change, not an
+  implementation detail
 - **Libraries before own code** - standard functionality comes from a maintained crate or a
   vendored library: interpolation, colour maths and contrast, parsing, formatting, protocols.
   Write our own only when no appropriate solution exists, and record why beside the code

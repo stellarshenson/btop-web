@@ -1,7 +1,7 @@
 <div id="p-proc-stat" hx-swap-oob="innerHTML"><header class="ph"><h2 id="proc-stat-title">Processes</h2><span class="head-right stat-facts">
-    <span data-tip="Top process by CPU, unit percent&#10;pid 1, the highest Cpu% of the sample&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta">top <b>tini 0.0%</b></span>
-    <span data-tip="Processes reaching 80% of CPU, unit count&#10;source: this sample's Cpu% values, sorted&#10;the smallest count whose sum reaches 80%">80% cpu <b class="foot-count" data-w="000">0</b></span>
-    <span data-tip="Processes reaching 80% of memory, unit count&#10;source: this sample's MemB values, sorted&#10;the smallest count whose sum reaches 80%">80% mem <b class="foot-count" data-w="000">1</b></span>
+    <span data-tip="Top process by CPU, unit percent&#10;pid 1, the highest CPU% of the sample&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta">top <b>tini 0.0%</b></span>
+    <span data-tip="Processes reaching 80% of CPU, unit count&#10;source: this sample's CPU% values, sorted&#10;the smallest count whose sum reaches 80%">80% cpu <b class="foot-count" data-w="000">0</b></span>
+    <span data-tip="Processes reaching 80% of memory, unit count&#10;source: this sample's MEM values, sorted&#10;the smallest count whose sum reaches 80%">80% mem <b class="foot-count" data-w="000">1</b></span>
   </span></header>
 <div class="stat-body">
   <div class="stat-tile" data-tip="Process total, unit processes&#10;source: /proc/&lt;pid&gt; entries this sample&#10;in a container: pids in its cgroup tree"><span class="stat-value" data-w="000" data-range="10" id="proc-total">9</span><span class="proc-facts">
@@ -13,24 +13,24 @@
     
   </span></div>
   <div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to 10">
-    <svg class="chart" viewBox="0 0 30 28" preserveAspectRatio="none" aria-hidden="true"><g class="series"><path class="area" d="M29.92 3.60L30.00 3.60L30.04 3.60L30.04 28.00L29.92 28.00Z"></path><path class="line" d="M29.92 3.60L30.00 3.60L30.04 3.60"></path></g></svg>
+    <svg class="chart" viewBox="0 0 30 28" preserveAspectRatio="none" aria-hidden="true"><g class="series"><path class="area" d="M29.92 3.60L30.00 3.60L35.00 3.60L35.00 28.00L29.92 28.00Z"></path><path class="line" d="M29.92 3.60L30.00 3.60L35.00 3.60"></path></g></svg>
   </div>
   <div class="xaxis stat-axis" aria-hidden="true"><span>135 s</span><span>90 s</span><span>45 s</span><span>now</span></div>
 </div></div>
 <div id="proc-table-wrap" hx-swap-oob="innerHTML"><table class="ptable">
   <caption class="sr-only">Processes</caption>
   <colgroup>
-    <col style="width:76px"><col class="proc-program"><col data-p="3" data-field="proc-command"><col data-p="3" data-field="proc-threads" style="width:70px"><col data-p="3" data-field="proc-user" style="width:72px"><col style="width:72px"><col style="width:106px">
+    <col style="width:76px"><col class="proc-program"><col data-p="3" data-field="proc-command"><col data-p="3" data-field="proc-threads" style="width:74px"><col data-p="3" data-field="proc-user" style="width:72px"><col style="width:72px"><col style="width:106px">
   </colgroup>
   <thead>
     <tr>
-      <th class="num" scope="col" data-tip="Pid, unit process id&#10;source: /proc/&lt;pid&gt; directory name&#10;btop's numeric process id"><button type="button">Pid</button></th>
-      <th scope="col"><button type="button">Program</button></th>
-      <th data-p="3" data-field="proc-command" scope="col"><button type="button">Command</button></th>
-      <th class="num" data-p="3" data-field="proc-threads" scope="col" data-tip="Threads of the process, unit count&#10;source: /proc/&lt;pid&gt;/stat field 20&#10;btop's thread count"><button type="button">Threads</button></th>
-      <th data-p="3" data-field="proc-user" scope="col"><button type="button">User</button></th>
-      <th class="num" scope="col" data-tip="Resident memory, unit KiB, MiB or GiB&#10;source: /proc/&lt;pid&gt;/statm RSS × page size&#10;btop's MemB; statm is the fallback"><button type="button">MemB</button></th>
-      <th class="num" scope="col" data-tip="CPU use of the process, unit percent&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta&#10;per core; × cores when proc_per_core&#10;graph: btop's 20 s cpu_p plot"><button type="button">Cpu%</button></th>
+      <th class="num" scope="col" data-tip="Pid, unit process id&#10;source: /proc/&lt;pid&gt; directory name&#10;btop's numeric process id"><button type="button">PID</button></th>
+      <th scope="col"><button type="button">PROGRAM</button></th>
+      <th data-p="3" data-field="proc-command" scope="col"><button type="button">COMMAND</button></th>
+      <th class="num" data-p="3" data-field="proc-threads" scope="col" data-tip="Threads of the process, unit count&#10;source: /proc/&lt;pid&gt;/stat field 20&#10;btop's thread count"><button type="button">THREADS</button></th>
+      <th data-p="3" data-field="proc-user" scope="col"><button type="button">USER</button></th>
+      <th class="num" scope="col" data-tip="Resident memory, unit KiB, MiB or GiB&#10;source: /proc/&lt;pid&gt;/stat field 24 × page size&#10;btop's MemB; statm is the fallback"><button type="button">MEM</button></th>
+      <th class="num" scope="col" data-tip="CPU use of the process, unit percent&#10;source: /proc/&lt;pid&gt;/stat utime+stime delta&#10;per core; × cores when proc_per_core&#10;graph: btop's 20 s cpu_p plot"><button type="button">CPU%</button></th>
     </tr>
   </thead>
   <tbody id="proc-body">

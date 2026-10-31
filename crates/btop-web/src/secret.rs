@@ -128,7 +128,10 @@ pub fn passphrase(source: &PassphraseSource) -> Result<Zeroizing<Vec<u8>>> {
 mod tests {
     use super::*;
     use std::io::Write as _;
+    use std::net::Shutdown;
     use std::os::fd::IntoRawFd as _;
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
 
     /// A flag or file value is a path unless it is exactly `fd:N`.
     #[test]
@@ -144,19 +147,22 @@ mod tests {
     }
 
     /// ACC-NET-146-SECRET-INPUT: a descriptor carries the secret, is read to
-    /// its end, and is closed afterwards, so a second read cannot succeed.
+    /// its end, and is closed afterwards. The socket peer observes the close,
+    /// because the number is free after the read and a parallel test can own
+    /// it, so this test must not use the number again.
     #[test]
     fn a_descriptor_carries_the_secret_once() {
-        let (reader, mut writer) = std::io::pipe().unwrap();
-        writer.write_all(b"first-").unwrap();
-        writer.write_all(b"second").unwrap();
-        drop(writer);
+        let (reader, mut peer) = UnixStream::pair().unwrap();
+        peer.write_all(b"first-").unwrap();
+        peer.write_all(b"second").unwrap();
+        peer.shutdown(Shutdown::Write).unwrap();
         let fd = reader.into_raw_fd();
         let bytes = read(&Source::Fd(fd), "test secret").unwrap();
         assert_eq!(&*bytes, b"first-second");
-        let error = format!("{:#}", read(&Source::Fd(fd), "test secret").unwrap_err());
-        assert!(error.contains("test secret"), "{error}");
-        assert!(error.contains(&format!("descriptor {fd}")), "{error}");
+        // The timeout makes a descriptor left open a test failure, not a hang.
+        peer.set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
     }
 
     /// An empty descriptor stops the read with the secret and the descriptor
@@ -173,12 +179,14 @@ mod tests {
     }
 
     /// A closed descriptor is EBADF, and the error still names the secret and
-    /// the number that was given.
+    /// the number that was given. `i32::MAX` is above the kernel's descriptor
+    /// ceiling, so no parallel test can hold the number the read closes.
     #[test]
     fn a_closed_descriptor_names_the_secret_and_number() {
-        let error = format!("{:#}", read(&Source::Fd(99), "TLS key").unwrap_err());
+        let fd = i32::MAX;
+        let error = format!("{:#}", read(&Source::Fd(fd), "TLS key").unwrap_err());
         assert!(error.contains("TLS key"), "{error}");
-        assert!(error.contains("descriptor 99"), "{error}");
+        assert!(error.contains(&format!("descriptor {fd}")), "{error}");
     }
 
     /// A missing file names the secret and the path.

@@ -91,6 +91,12 @@
 //! filesystem. The `procfs` crate opens
 //! and stats every fd as well, for an open mode the count does not use:
 //! 7.5-8.2 against 4.6 us CPU per fd here.
+//!
+//! Process popup (ACC-VIEW-176-PROC-POPUP): a process "uses a GPU" when its fd
+//! table holds one of those nodes, for the one pid the popup asks about. The
+//! popup plots the load of the devices the node reaches, read from the frame's
+//! `GpuDevice::chart`, and says it is the device's load: on WSL2 and in a
+//! container NVML names no per-process share (see above).
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
@@ -202,37 +208,95 @@ fn gpu_holders(proc_root: &Path, cgroup: &Path, own_pid: i32) -> Holders {
         if pid == own_pid {
             continue;
         }
-        relative.clear();
-        let _ = write!(relative, "{pid}/fd");
-        match openat(&root, relative.as_str(), flags, Mode::empty()).and_then(Dir::from_fd) {
-            Ok(fds) => {
-                // The iterator owns the directory, so the targets are read
-                // through a duplicate of its fd.
-                let Ok(targets) = fds.as_fd().try_clone_to_owned() else {
-                    unreadable += 1;
-                    continue;
-                };
-                let mut holder = false;
-                for entry in fds.into_iter().flatten() {
-                    let name = entry.file_name();
-                    if matches!(name.to_bytes(), b"." | b"..") {
-                        continue;
-                    }
-                    if readlinkat(&targets, name)
-                        .is_ok_and(|target| is_gpu_node(Path::new(&target)))
-                    {
-                        holder = true;
-                        break;
-                    }
-                }
-                holders += usize::from(holder);
-            }
+        let mut holder = false;
+        let walked = each_gpu_node(&root, pid, &mut relative, |_| {
+            holder = true;
+            true
+        });
+        match walked {
+            Ok(()) => holders += usize::from(holder),
             // The process exited after `cgroup.procs` was read.
             Err(Errno::ENOENT | Errno::ESRCH) => {}
             Err(_) => unreadable += 1,
         }
     }
     Some((holders, unreadable))
+}
+
+/// Call `visit` with each GPU node in `<pid>/fd`, until it returns true.
+/// `relative` is the reusable path scratch. An error is the fd table's: another
+/// uid without CAP_SYS_PTRACE, or a process that exited.
+fn each_gpu_node(
+    root: impl AsFd,
+    pid: i32,
+    relative: &mut String,
+    mut visit: impl FnMut(&Path) -> bool,
+) -> nix::Result<()> {
+    relative.clear();
+    let _ = write!(relative, "{pid}/fd");
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC;
+    let fds = openat(root, relative.as_str(), flags, Mode::empty()).and_then(Dir::from_fd)?;
+    // The iterator owns the directory, so the targets are read through a
+    // duplicate of its fd.
+    let targets = fds
+        .as_fd()
+        .try_clone_to_owned()
+        .map_err(|_| Errno::EMFILE)?;
+    for entry in fds.into_iter().flatten() {
+        let name = entry.file_name();
+        if matches!(name.to_bytes(), b"." | b"..") {
+            continue;
+        }
+        if let Ok(target) = readlinkat(&targets, name)
+            && is_gpu_node(Path::new(&target))
+            && visit(Path::new(&target))
+        {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// ACC-VIEW-176-PROC-POPUP: the GPU nodes `pid` holds open, sorted and without
+/// repeats. `None` when its fd table cannot be read; a process that exited holds
+/// nothing.
+pub(super) fn held_nodes(root: impl AsFd, pid: i32) -> Option<Vec<String>> {
+    let mut nodes = Vec::new();
+    let walked = each_gpu_node(root, pid, &mut String::new(), |node| {
+        nodes.push(node.display().to_string());
+        false
+    });
+    match walked {
+        Ok(()) | Err(Errno::ENOENT | Errno::ESRCH) => {
+            nodes.sort_unstable();
+            nodes.dedup();
+            Some(nodes)
+        }
+        Err(_) => None,
+    }
+}
+
+/// ACC-VIEW-176-PROC-POPUP: the GPU panel's device indices a process holding
+/// `nodes` can reach. `/dev/nvidia<N>` names device N; `/dev/dxg`, `/dev/kfd` and
+/// a render node name no panel index, so they reach every device.
+// shortcut: N is the node's minor number, read as the NVML index; they differ
+// only when the driver's numbering leaves PCI order, upgrade with
+// nvmlDeviceGetMinorNumber if a host shows it.
+pub fn reached_devices(nodes: &[String], devices: usize) -> Vec<usize> {
+    let mut reached = Vec::new();
+    for node in nodes {
+        match node
+            .strip_prefix("/dev/nvidia")
+            .and_then(|index| index.parse().ok())
+        {
+            Some(index) if index < devices => reached.push(index),
+            Some(_) => {}
+            None => return (0..devices).collect(),
+        }
+    }
+    reached.sort_unstable();
+    reached.dedup();
+    reached
 }
 
 /// A GPU device node an fd can point to (see the module docs).
@@ -286,8 +350,14 @@ fn apply_custom_names(devices: &mut [GpuDevice], config: &Config) {
 }
 
 /// btop's GPU graph history: one utilization sample per device per tick. A
-/// device that disappears loses its history; a new device starts empty.
+/// device that disappears loses its history; a new device starts empty. An
+/// empty list is the time before a wake's first sweep lands: it says nothing of
+/// the devices, so the histories stay, as the other charts' do across a sleep
+/// (DEF-GRAPH-126-GPU-HISTORY).
 pub fn attach_charts(proc_root: &Path, devices: &mut [GpuDevice], update_ms: u64, window_ms: u64) {
+    if devices.is_empty() {
+        return;
+    }
     let mut states = HISTORY.lock().unwrap_or_else(|error| error.into_inner());
     let histories = states.entry(proc_root.to_path_buf()).or_default();
     histories.truncate(devices.len());
@@ -998,6 +1068,44 @@ fn read_trimmed(path: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// ACC-VIEW-176-PROC-POPUP: `/dev/nvidia<N>` reaches device N and a node
+    /// with no panel index reaches every device.
+    #[test]
+    fn gpu_nodes_reach_their_devices() {
+        let nodes =
+            |nodes: &[&str]| -> Vec<String> { nodes.iter().map(|node| node.to_string()).collect() };
+        assert_eq!(reached_devices(&nodes(&[]), 3), Vec::<usize>::new());
+        assert_eq!(reached_devices(&nodes(&["/dev/nvidia1"]), 3), [1]);
+        assert_eq!(
+            reached_devices(&nodes(&["/dev/nvidia2", "/dev/nvidia0"]), 3),
+            [0, 2]
+        );
+        assert_eq!(
+            reached_devices(&nodes(&["/dev/nvidia7"]), 3),
+            Vec::<usize>::new()
+        );
+        assert_eq!(reached_devices(&nodes(&["/dev/dxg"]), 3), [0, 1, 2]);
+        assert_eq!(reached_devices(&nodes(&["/dev/dri/renderD128"]), 2), [0, 1]);
+        assert_eq!(
+            reached_devices(&nodes(&["/dev/kfd"]), 0),
+            Vec::<usize>::new()
+        );
+    }
+
+    /// ACC-VIEW-176-PROC-POPUP: the recorded process holds one GPU node among
+    /// its other fds, a process with no fd table holds nothing.
+    #[test]
+    fn held_nodes_lists_the_gpu_nodes_only() {
+        let root = fixture("proc-gpu/proc");
+        let root = open(&root, OFlag::O_RDONLY | OFlag::O_DIRECTORY, Mode::empty()).unwrap();
+        assert_eq!(
+            held_nodes(&root, 500),
+            Some(vec!["/dev/dri/renderD128".to_string()])
+        );
+        assert_eq!(held_nodes(&root, 501), Some(Vec::new()));
+        assert_eq!(held_nodes(&root, 99999), Some(Vec::new()));
+    }
+
     fn fixture(relative: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures")
@@ -1500,6 +1608,39 @@ mod tests {
             "expected {start}, got {}",
             &devices[0].chart.line[..devices[0].chart.line.len().min(24)]
         );
+    }
+
+    /// DEF-GRAPH-126-GPU-HISTORY: the ticks before a wake's first sweep carry no
+    /// devices. The samples from before the sleep stay and the line goes on from
+    /// them; a device missing from a sweep's list still loses its history.
+    #[test]
+    fn a_sleep_keeps_the_utilization_history() {
+        let device = || GpuDevice {
+            utilization_pct: Some(37.0),
+            ..GpuDevice::default()
+        };
+        let key = Path::new("gpu-sleep-keeps-history-test");
+        let slots = crate::chart::capacity(crate::chart::WINDOW_MS, 250);
+        let start = |samples: usize, devices: usize| {
+            let first = (slots - samples) as f64 * gpu_lane(devices).width / (slots - 1) as f64;
+            format!("M{first:.2} ")
+        };
+        let mut devices = vec![device(), device()];
+        for _ in 0..3 {
+            attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
+        }
+        attach_charts(key, &mut [], 250, crate::chart::WINDOW_MS);
+        attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
+        assert!(
+            devices[1].chart.line.starts_with(&start(4, 2)),
+            "{}",
+            devices[1].chart.line
+        );
+        // The second device leaves, then comes back with no history.
+        attach_charts(key, &mut devices[..1], 250, crate::chart::WINDOW_MS);
+        attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
+        assert!(devices[0].chart.line.starts_with(&start(6, 2)));
+        assert!(devices[1].chart.line.is_empty());
     }
 
     /// An unreadable utilization is a gap, never a zero line.

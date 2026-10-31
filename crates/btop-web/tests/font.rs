@@ -5,11 +5,13 @@
 //! generated 85%-width face is the only Galaxa face served; it carries the
 //! renamed family, keeps the wght axis 400-900 and the OFL records, and its
 //! digits advance 0.6545 em. Its derivation source sits outside the embedded
-//! assets.
+//! assets. ACC-THEME-170-PLUS-GLYPH: the plus is grown 1.22 about its ink
+//! centre at every weight, with its bars centred and its 368 unit advance
+//! unchanged.
 
 use std::path::Path;
 
-use ttf_parser::{Face, name_id};
+use ttf_parser::{Face, Tag, name_id};
 
 /// The served face, read from the embedded asset folder.
 fn font(name: &str) -> Vec<u8> {
@@ -144,6 +146,30 @@ fn crossbar_flanks(contour: &Contour) -> (f64, f64) {
         distance(contour[0], contour[1], contour[3]),
         distance(contour[2], contour[3], contour[1]),
     )
+}
+
+/// The centre of the four corners nearest the ink centre, which bound the two
+/// bars of a plus whatever the weight does to its edges.
+fn bar_centre(polylines: &[Contour]) -> (f64, f64) {
+    let (x0, y0, x1, y1) = bounds(polylines);
+    let centre = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    let mut points: Vec<(f64, f64)> = polylines.iter().flatten().copied().collect();
+    points.sort_by(|a, b| {
+        let a = (a.0 - centre.0).powi(2) + (a.1 - centre.1).powi(2);
+        let b = (b.0 - centre.0).powi(2) + (b.1 - centre.1).powi(2);
+        a.partial_cmp(&b).expect("finite coordinates")
+    });
+    let (ix0, ix1) = points[..4]
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+            (lo.min(p.0), hi.max(p.0))
+        });
+    let (iy0, iy1) = points[..4]
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+            (lo.min(p.1), hi.max(p.1))
+        });
+    ((ix0 + ix1) / 2.0, (iy0 + iy1) / 2.0)
 }
 
 #[test]
@@ -336,4 +362,72 @@ fn narrow_face_zero_and_l_are_the_scaled_source() {
     assert_eq!(sy0 - fy1, 80.0, "the L gap survives the width scale");
     let id = narrow.glyph_index('L').expect("L is in the cmap");
     assert_eq!(narrow.glyph_hor_advance(id), Some(662));
+}
+
+/// ACC-THEME-170-PLUS-GLYPH: the plus is grown 1.22 about the centre of its
+/// scaled default ink box, so its 10 px arms reach a pixel and it reads as a
+/// plus; its bars stay centred and its advance is the untouched scaled source
+/// advance, so no string reflows.
+#[test]
+fn narrow_face_plus_glyph_reads_as_a_plus() {
+    let bytes = font("GalaxaLabsTronNarrow-VF.ttf");
+    let source_bytes = source_font("GalaxaLabsTron-VF.ttf");
+
+    for wght in [400.0, 900.0] {
+        let mut face = Face::parse(&bytes, 0).expect("the narrow font parses");
+        face.set_variation(Tag::from_bytes(b"wght"), wght)
+            .expect("wght is an axis");
+
+        let plus = contours(&face, '+');
+        assert_eq!(plus.len(), 1, "the plus is one contour at {wght}");
+        assert_eq!(plus[0].len(), 12, "the plus keeps 12 points at {wght}");
+
+        let (x0, y0, x1, y1) = bounds(&plus);
+        assert!(
+            x1 - x0 >= 390.0,
+            "the plus is {} units wide at {wght}, under 0.39 em",
+            x1 - x0
+        );
+        assert!(
+            y1 - y0 >= 460.0,
+            "the plus is {} units tall at {wght}, under 0.46 em",
+            y1 - y0
+        );
+
+        let centre = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let (bx, by) = bar_centre(&plus);
+        assert!(
+            (bx - centre.0).abs() <= 2.0,
+            "the bars sit {} units off the ink centre in x at {wght}",
+            bx - centre.0
+        );
+        assert!(
+            (by - centre.1).abs() <= 2.0,
+            "the bars sit {} units off the ink centre in y at {wght}",
+            by - centre.1
+        );
+
+        let mut source = Face::parse(&source_bytes, 0).expect("the source font parses");
+        source
+            .set_variation(Tag::from_bytes(b"wght"), wght)
+            .expect("wght is an axis");
+        let source_id = source.glyph_index('+').expect("+ is in the source cmap");
+        let source_advance = source
+            .glyph_hor_advance(source_id)
+            .expect("an hmtx advance");
+        let id = face.glyph_index('+').expect("+ is in the cmap");
+        let advance = face.glyph_hor_advance(id).expect("an hmtx advance");
+        // The plus rule leaves hmtx, HVAR and the phantom deltas alone, so the
+        // advance is the source's scaled by 0.85: 368 at 400 and 387 at 900,
+        // the 900 value carrying the source's own +19 HVAR delta. The page's
+        // 10 px rows use 400, so no string reflows.
+        assert_eq!(
+            advance,
+            (0.85 * f64::from(source_advance)).round() as u16,
+            "the plus advance at {wght} is not the untouched scaled source advance"
+        );
+        if wght == 400.0 {
+            assert_eq!(advance, 368, "the plus default advance is unchanged");
+        }
+    }
 }

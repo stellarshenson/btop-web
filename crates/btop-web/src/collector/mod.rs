@@ -148,6 +148,9 @@ pub struct CpuSnapshot {
     pub chart: ChartPath,
     /// The container's effective CPUs E (ACC-SCOPE-64); `None` on a host.
     pub effective_cpus: Option<f64>,
+    /// CPU pressure, the `some avg10` percent of the kernel's PSI file
+    /// (ACC-VIEW-178-CPU-FACTS); not a btop field.
+    pub pressure_pct: Option<f64>,
 }
 
 impl CpuSnapshot {
@@ -167,6 +170,10 @@ impl CpuSnapshot {
             || "unavailable".to_string(),
             |mhz| format!("{:.2} GHz", mhz as f64 / 1000.0),
         )
+    }
+
+    pub fn temperature_label(&self) -> String {
+        celsius(self.temperature_c)
     }
 
     pub fn load_label(&self) -> String {
@@ -258,10 +265,10 @@ impl CpuSnapshot {
         })
     }
 
-    /// The aggregate load of the cores: total usage times the core count /
-    /// 100, as busy cores out of [`Self::core_count`].
-    pub fn cores_busy(&self) -> Option<f64> {
-        Some(self.total_pct? * self.core_count()? / 100.0)
+    /// One of btop's ten time fields as a percent of the interval, `None`
+    /// until it is read (ACC-VIEW-178-CPU-FACTS).
+    pub fn field_pct(&self, name: &str) -> Option<f64> {
+        self.fields.get(name).copied().flatten()
     }
 
     /// The cores the total is a share of: the container's effective CPUs E,
@@ -274,10 +281,6 @@ impl CpuSnapshot {
     /// [`Self::core_count`] for the page: `64`, or `1.5` for a fractional E.
     pub fn cores_label(&self) -> Option<String> {
         self.core_count().map(container::cpus_label)
-    }
-
-    pub fn temperature_label(&self) -> String {
-        celsius(self.temperature_c)
     }
 
     pub fn battery_label(&self) -> String {
@@ -347,24 +350,34 @@ pub struct MemSnapshot {
     /// MemFree on a host, the cgroup's `inactive_file` in a container,
     /// docker's cache term (DEF-VIEW-96-MEM-WRONG).
     pub ram_cache: Option<u64>,
-    /// The memory used outside this container; `None` on a host and when a
-    /// container's `memory.max` binds, where the bar has no such segment.
+    /// Other used, the remainder row (DEF-VIEW-101-MEM-BREAKDOWN): MemTotal
+    /// less the other four rows, the host's use outside this container that
+    /// MemAvailable does not count. `None` on a host and when a container's
+    /// `memory.max` binds, where the bar has no such segment.
     pub ram_other: Option<u64>,
+    /// Other reclaimable: MemAvailable - MemFree less what the kernel can
+    /// reclaim from this container. `None` wherever [`Self::ram_other`] is.
+    pub ram_other_cache: Option<u64>,
     /// The container's `memory.max` when it is below MemTotal: the bar's total
     /// is this limit, free is the room under it, and the header total is the
     /// container's, not the host's. `None` on a host and when the limit is
     /// `max` or at least MemTotal.
     pub ram_limit: Option<u64>,
     pub ram_percent: Option<f64>,
-    /// The memory gauge arc's value: the used history's 1 s EMA, `None`
-    /// whenever this tick's raw value is unavailable (ACC-GRAPH-47).
+    /// The used history's 1 s EMA, `None` whenever this tick's raw value is
+    /// unavailable (ACC-GRAPH-47).
     pub gauge_pct: Option<f64>,
+    /// The memory gauge arc's two segments, used and cache, with the 1 s EMA of
+    /// each share in percent of the total; the rest is the bare track
+    /// (ACC-VIEW-192-GAUGE-CONTAINER). Empty when a part is unknown.
+    pub gauge_segments: Vec<(&'static str, f64)>,
     /// btop `mem.percent["free"]`.
     pub ram_free_percent: Option<f64>,
     /// btop `mem.percent["available"]`.
     pub ram_available_percent: Option<f64>,
     pub ram_cache_percent: Option<f64>,
     pub ram_other_percent: Option<f64>,
+    pub ram_other_cache_percent: Option<f64>,
     pub swap_total: Option<u64>,
     pub swap_used: Option<u64>,
     pub swap_free: Option<u64>,
@@ -420,16 +433,34 @@ impl MemSnapshot {
     }
 
     pub fn ram_free_label(&self) -> String {
-        bytes(self.ram_legend()[2])
+        bytes(self.ram_legend()[3])
     }
 
-    /// free + cache as the legend shows them, so the line adds up on screen;
-    /// in bytes available is free + cache in both modes.
-    pub fn ram_available_label(&self) -> String {
-        match self.ram_legend() {
-            [Some(cache), _, Some(free)] => human((shown(cache).0 + shown(free).0).ceil() as u64),
-            _ => bytes(self.ram_available),
-        }
+    /// ACC-VIEW-195-MEM-SUM: the free row plus every reclaimable row the table
+    /// shows, as the legend prints them, so the line adds up on screen; `None`
+    /// when a part is unreadable, never a partial sum. `ram_available` stays
+    /// MemAvailable, which with the other rows in the table also counts the
+    /// container's active_file and slab_reclaimable; used keeps those two
+    /// (DEF-VIEW-96-MEM-WRONG), so this figure falls below it there.
+    fn ram_free_reclaimable(&self) -> Option<u64> {
+        let printed = match self.ram_legend() {
+            [Some(cache), Some(_), Some(other_cache), Some(free)] => {
+                shown(cache).0 + shown(other_cache).0 + shown(free).0
+            }
+            [Some(cache), None, _, Some(free)] => shown(cache).0 + shown(free).0,
+            _ => return None,
+        };
+        // human truncates, so half its step first prints the nearer figure.
+        Some((printed + shown(printed.ceil() as u64).1 / 2.0).ceil() as u64)
+    }
+
+    pub fn ram_free_reclaimable_label(&self) -> String {
+        bytes(self.ram_free_reclaimable())
+    }
+
+    /// The share of the total of the figure the row prints.
+    pub fn ram_free_reclaimable_percent(&self) -> Option<f64> {
+        Some((shown(self.ram_free_reclaimable()?).0 * 100.0 / self.ram_total? as f64).round())
     }
 
     pub fn ram_cache_label(&self) -> String {
@@ -440,17 +471,27 @@ impl MemSnapshot {
         bytes(self.ram_legend()[1])
     }
 
-    /// The cache, other and free values the legend prints. btop's strings
-    /// truncate to their last digit, so four parts can print up to 2 GiB less
-    /// than the total. The bytes the truncations drop go back one step at a
-    /// time to the part that dropped the most (largest remainder) while half
-    /// that part's step is left, so the printed parts add up to the total
-    /// within one step and each part stays within one step of its value
-    /// (DEF-VIEW-50-MEM-TERMS). used keeps btop's string, as the gauge and the
-    /// Memory tile print it. Own code: apportionment crates split one integer
-    /// by weights, and these parts have floating_humanizer's mixed steps.
-    fn ram_legend(&self) -> [Option<u64>; 3] {
-        let parts = [self.ram_cache, self.ram_other, self.ram_free];
+    pub fn ram_other_cache_label(&self) -> String {
+        bytes(self.ram_legend()[2])
+    }
+
+    /// The cache, other used, other reclaimable and free values the legend
+    /// prints. btop's strings truncate to their last digit, so five parts can
+    /// print up to 2 GiB less than the total. The bytes the truncations drop
+    /// go back one step at a time to the part that dropped the most (largest
+    /// remainder) while half that part's step is left, so the printed parts
+    /// add up to the total within one step and each part stays within one
+    /// step of its value (DEF-VIEW-50-MEM-TERMS). used keeps btop's string, as
+    /// the gauge and the Memory tile print it. Own code: apportionment crates
+    /// split one integer by weights, and these parts have floating_humanizer's
+    /// mixed steps.
+    fn ram_legend(&self) -> [Option<u64>; 4] {
+        let parts = [
+            self.ram_cache,
+            self.ram_other,
+            self.ram_other_cache,
+            self.ram_free,
+        ];
         let (Some(total), Some(used), Some(_), Some(_)) =
             (self.ram_total, self.ram_used, self.ram_cache, self.ram_free)
         else {
@@ -486,15 +527,48 @@ impl MemSnapshot {
         };
         let share = |value: u64| value as f64 * 100.0 / total as f64;
         let mut segments = vec![("used", share(used)), ("cache", share(cache))];
-        if let Some(other) = self.ram_other {
+        if let (Some(other), Some(other_cache)) = (self.ram_other, self.ram_other_cache) {
             segments.push(("other", share(other)));
+            segments.push(("other-cache", share(other_cache)));
         }
         segments.push(("free", share(free)));
         segments
     }
 
+    /// The gauge arc's segments as `(name, from, to)` in percent, one running
+    /// after the other from 0.
+    pub fn gauge_spans(&self) -> Vec<(&'static str, f64, f64)> {
+        let mut at = 0.0;
+        self.gauge_segments
+            .iter()
+            .map(|(name, share)| {
+                let from = at;
+                at += share;
+                (*name, from, at)
+            })
+            .collect()
+    }
+
+    /// The gauge tooltip's share in whole percent: all the arc draws.
+    pub fn gauge_share(&self) -> f64 {
+        self.gauge_spans().last().map_or(0.0, |span| span.2).round()
+    }
+
+    /// The swap row in the panel's GiB (DEF-VIEW-106-SWAP-UNITS): a tiny
+    /// usage reads `0`, not a KiB figure, and both figures share one unit.
     pub fn swap_label(&self) -> String {
-        usage(self.swap_used, self.swap_total)
+        match (self.swap_used, self.swap_total) {
+            (Some(used), Some(total)) => format!("{} / {} GiB", gib(used).1, gib(total).1),
+            _ => "unavailable".to_string(),
+        }
+    }
+
+    /// The swap row's percent, of the figure the row prints, so a usage that
+    /// reads `0` reads 0 percent. `swap_percent` keeps btop's value.
+    pub fn swap_row_percent(&self) -> Option<f64> {
+        self.swap_percent?;
+        let total = self.swap_total.filter(|total| *total > 0)?;
+        Some((gib(self.swap_used?).0 * 100.0 / gib_exact(total)).round())
     }
 
     /// btop draws swap rows only when a swap key is on and swap exists; a
@@ -554,6 +628,8 @@ pub struct NetSnapshot {
     pub graph_max_down: Option<u64>,
     /// btop `graph_max["upload"]`, the graph ceiling in bytes per second.
     pub graph_max_up: Option<u64>,
+    /// The selected interface's link facts (ACC-VIEW-174-NET-STRIP).
+    pub link: NetLink,
     /// PCHIP history paths for the selected interface's download and upload.
     pub down_chart: ChartPath,
     pub up_chart: ChartPath,
@@ -583,18 +659,84 @@ impl NetSnapshot {
     }
 }
 
-/// The three labels of a plot's scale gutter for a shown ceiling, through
-/// btop's short humanizer: the ceiling, its half and zero. With no ceiling
-/// the gutter is empty, never the word "unavailable" over the plot.
+/// The three labels of a plot's scale gutter for a shown ceiling, in bytes per
+/// second with the unit named (DEF-GRAPH-102-NET-SCALE): the ceiling, its half
+/// in the ceiling's unit at [`human`]'s three significant digits, and zero. With
+/// no ceiling the gutter is empty, never the word "unavailable" over the plot.
 fn scale_labels(label_max: Option<u64>) -> [String; 3] {
     let Some(max) = label_max else {
         return Default::default();
     };
+    let label = human(max);
+    let (number, unit) = label.split_once(' ').unwrap_or_default();
+    let half = number.parse::<f64>().unwrap_or_default() / 2.0;
+    let digits = match half {
+        _ if half < 10.0 => 100.0,
+        _ if half < 100.0 => 10.0,
+        _ => 1.0,
+    };
     [
-        bytes_short(Some(max)),
-        bytes_short(Some(max / 2)),
-        bytes_short(Some(0)),
+        axis_rate(label_max),
+        format!("{} {unit}/s", (half * digits).round() / digits),
+        "0 B/s".to_string(),
     ]
+}
+
+/// The selected interface's link, a btop-web addition; `net` records the
+/// sources (ACC-VIEW-174-NET-STRIP).
+#[derive(Debug, Clone, Default)]
+pub struct NetLink {
+    /// `<iface>/speed`, Mbit/s.
+    pub speed_mbps: Option<u64>,
+    /// `<iface>/duplex`.
+    pub duplex: Option<String>,
+    /// `<iface>/operstate`.
+    pub operstate: Option<String>,
+    /// `rx_errors` plus `tx_errors`.
+    pub errors: Option<u64>,
+    /// `rx_dropped` plus `tx_dropped`.
+    pub drops: Option<u64>,
+}
+
+impl NetLink {
+    /// The known facts in one line, for example `10 Gb/s · full · up`.
+    pub fn label(&self) -> String {
+        let speed = self.speed_mbps.map(|mbps| {
+            if mbps >= 1000 {
+                format!("{} Gb/s", mbps as f64 / 1000.0)
+            } else {
+                format!("{mbps} Mb/s")
+            }
+        });
+        let facts: Vec<String> = [speed, self.duplex.clone(), self.operstate.clone()]
+            .into_iter()
+            .flatten()
+            .collect();
+        if facts.is_empty() {
+            "unavailable".to_string()
+        } else {
+            facts.join(" · ")
+        }
+    }
+
+    /// The fault counters to show: only those above zero, in the width the
+    /// thread count uses, so two chips fit one legend row.
+    pub fn faults(&self) -> Vec<(&'static str, String)> {
+        [("err", self.errors), ("drop", self.drops)]
+            .into_iter()
+            .filter_map(|(name, count)| {
+                let count = count.filter(|count| *count > 0)?;
+                Some((
+                    name,
+                    if count > 9999 {
+                        format!("{}K", count / 1000)
+                    } else {
+                        count.to_string()
+                    },
+                ))
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1159,7 +1301,8 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
                     sweep.abort();
                 }
                 // The held GPU values are dropped so the next frame never
-                // shows a value from before the sleep. ACC-PERF-142-WAKE-FAST:
+                // shows a value from before the sleep; their histories stay
+                // (DEF-GRAPH-126-GPU-HISTORY). ACC-PERF-142-WAKE-FAST:
                 // the held slow results stay, so the first post-wake frame
                 // reuses the walk and the charts it already knows instead of
                 // rebuilding them; the next slow pass refreshes them.
@@ -1405,11 +1548,51 @@ pub fn rate(value: Option<f64>) -> String {
     )
 }
 
+/// A network axis value in bytes per second with its unit named: [`rate`]
+/// without `human`'s padding zeros, so a decade reads `10 MiB/s`
+/// (DEF-GRAPH-102-NET-SCALE).
+pub fn axis_rate(value: Option<u64>) -> String {
+    value.map_or_else(
+        || "unavailable".to_string(),
+        |value| {
+            let label = human(value);
+            let (number, unit) = label.split_once(' ').unwrap_or_default();
+            format!("{} {unit}/s", number.parse::<f64>().unwrap_or_default())
+        },
+    )
+}
+
 pub fn celsius(value: Option<f64>) -> String {
     value.map_or_else(
         || "unavailable".to_string(),
-        |value| format!("{value:.1} °C"),
+        // btop's Cpu::draw prints a whole degree with its unit
+        |value| format!("{}°C", value as i64),
     )
+}
+
+fn gib_exact(value: u64) -> f64 {
+    value as f64 / (1u64 << 30) as f64
+}
+
+/// `value` in GiB at three significant digits, as [`human`] prints a value,
+/// with the rounded number; below 0.005 GiB it is `0`.
+fn gib(value: u64) -> (f64, String) {
+    let exact = gib_exact(value);
+    match exact {
+        _ if exact < 0.005 => (0.0, "0".to_string()),
+        _ if exact < 9.995 => {
+            let text = format!("{exact:.2}");
+            (text.parse().unwrap_or(exact), text)
+        }
+        _ if exact < 99.95 => {
+            let text = format!("{exact:.1}");
+            (text.parse().unwrap_or(exact), text)
+        }
+        _ => {
+            let text = format!("{exact:.0}");
+            (text.parse().unwrap_or(exact), text)
+        }
+    }
 }
 
 fn usage(used: Option<u64>, total: Option<u64>) -> String {
@@ -1924,6 +2107,33 @@ mod tests {
         assert_eq!(GpuDevice::default().temperature_label(), "unavailable");
     }
 
+    /// DEF-VIEW-106-SWAP-UNITS: the owner's 284 KiB of 128 GiB reads 0 of 128
+    /// GiB at 0 percent; the percent follows the printed figure wherever the
+    /// figure hides the usage, and stays btop's value otherwise.
+    #[test]
+    fn swap_row_prints_gib_and_a_percent_of_that_figure() {
+        const GIB: u64 = 1 << 30;
+        let row = |used: u64, total: u64| {
+            let mem = MemSnapshot {
+                swap_used: Some(used),
+                swap_total: Some(total),
+                swap_percent: Some((used as f64 * 100.0 / total as f64).round()),
+                ..MemSnapshot::default()
+            };
+            (mem.swap_label(), mem.swap_row_percent().expect("percent"))
+        };
+        assert_eq!(row(284 * 1024, 128 * GIB), ("0 / 128 GiB".into(), 0.0));
+        assert_eq!(row(0, 128 * GIB), ("0 / 128 GiB".into(), 0.0));
+        assert_eq!(row(512 << 20, 128 * GIB), ("0.50 / 128 GiB".into(), 0.0));
+        assert_eq!(row(32 * GIB, 128 * GIB), ("32.0 / 128 GiB".into(), 25.0));
+        assert_eq!(row(GIB / 2, 2 * GIB), ("0.50 / 2.00 GiB".into(), 25.0));
+        // 4 MiB of 100 MiB is btop's 4 percent, and the row prints 0 of 0.10.
+        assert_eq!(row(4 << 20, 100 << 20), ("0 / 0.10 GiB".into(), 0.0));
+        let unavailable = MemSnapshot::default();
+        assert_eq!(unavailable.swap_label(), "unavailable");
+        assert_eq!(unavailable.swap_row_percent(), None);
+    }
+
     /// DEF-VIEW-50-MEM-TERMS: btop's truncated strings alone printed
     /// 13.1 + 37.4 + 225 + 226 GiB of a 503.2 GiB total.
     #[test]
@@ -1933,18 +2143,20 @@ mod tests {
         for i in 0..400_u64 {
             let used = 14_000_000_000 + i * 7_919_113;
             let cache = 40_000_000_000 + i * 104_729_011;
-            let other = (i % 2 == 0).then(|| 240_000_000_000 + i * 15_485_863);
-            let free = total - used - cache - other.unwrap_or(0);
+            let other = (i % 2 == 0).then(|| 40_000_000_000 + i * 15_485_863);
+            let other_cache = other.map(|_| 200_000_000_000 + i * 9_973_207);
+            let free = total - used - cache - other.unwrap_or(0) - other_cache.unwrap_or(0);
             let mem = MemSnapshot {
                 ram_total: Some(total),
                 ram_used: Some(used),
                 ram_cache: Some(cache),
                 ram_other: other,
+                ram_other_cache: other_cache,
                 ram_free: Some(free),
                 ram_available: Some(free + cache),
                 ..MemSnapshot::default()
             };
-            let truncated: f64 = [Some(used), Some(cache), other, Some(free)]
+            let truncated: f64 = [Some(used), Some(cache), other, other_cache, Some(free)]
                 .into_iter()
                 .flatten()
                 .map(|value| shown(value).0)
@@ -1955,7 +2167,10 @@ mod tests {
             let legend = mem.ram_legend();
             let mut printed = shown(used).0;
             let mut largest_step = shown(used).1;
-            for (part, value) in legend.iter().zip([Some(cache), other, Some(free)]) {
+            for (part, value) in legend
+                .iter()
+                .zip([Some(cache), other, other_cache, Some(free)])
+            {
                 let (Some(part), Some(value)) = (*part, value) else {
                     continue;
                 };
@@ -1971,13 +2186,80 @@ mod tests {
                 (total as f64 - printed).abs() < largest_step,
                 "{i}: {printed}"
             );
-            assert_eq!(mem.ram_free_label(), human(legend[2].unwrap()));
-            let free_cache = shown(legend[0].unwrap()).0 + shown(legend[2].unwrap()).0;
-            let (available, step) = shown(free_cache.ceil() as u64);
-            assert_eq!(mem.ram_available_label(), human(free_cache.ceil() as u64));
-            assert!(available <= free_cache && free_cache < available + step);
+            assert_eq!(mem.ram_free_label(), human(legend[3].unwrap()));
+            let sum = shown(legend[0].unwrap()).0
+                + other.map_or(0.0, |_| shown(legend[2].unwrap()).0)
+                + shown(legend[3].unwrap()).0;
+            let (printed, step) = shown(mem.ram_free_reclaimable().unwrap());
+            assert!((printed - sum).abs() <= step / 2.0 + 1.0, "{i}: {printed}");
         }
         assert!(short_by_more_than_a_step > 0);
+    }
+
+    /// ACC-VIEW-195-MEM-SUM: free plus every reclaimable row shown, in each
+    /// mode, whatever MemAvailable reads; an unreadable part leaves no sum.
+    #[test]
+    fn free_plus_reclaimable_sums_the_rows_shown_in_each_mode() {
+        const GIB: u64 = 1 << 30;
+        let host = MemSnapshot {
+            ram_total: Some(16 * GIB),
+            ram_used: Some(4 * GIB),
+            ram_cache: Some(2 * GIB),
+            ram_free: Some(10 * GIB),
+            ram_available: Some(12 * GIB),
+            ..MemSnapshot::default()
+        };
+        assert_eq!(host.ram_free_reclaimable_label(), "12.0 GiB");
+        assert_eq!(host.ram_free_reclaimable_percent(), Some(75.0));
+        let limit = MemSnapshot {
+            ram_total: Some(8 * GIB),
+            ram_limit: Some(8 * GIB),
+            ram_used: Some(3 * GIB),
+            ram_cache: Some(GIB),
+            ram_free: Some(4 * GIB),
+            ram_available: Some(5 * GIB),
+            ..MemSnapshot::default()
+        };
+        assert_eq!(limit.ram_free_reclaimable_label(), "5.00 GiB");
+        assert_eq!(limit.ram_free_reclaimable_percent(), Some(63.0));
+        let container = MemSnapshot {
+            ram_total: Some(503 * GIB),
+            ram_used: Some(171 * GIB),
+            ram_cache: Some(85 * GIB),
+            ram_other: Some(32 * GIB),
+            ram_other_cache: Some(156 * GIB),
+            ram_free: Some(59 * GIB),
+            ram_available: Some(457 * GIB),
+            ..MemSnapshot::default()
+        };
+        assert_eq!(container.ram_free_reclaimable_label(), "300 GiB");
+        assert_eq!(container.ram_free_reclaimable_percent(), Some(60.0));
+        // 81.2 + 151 + 51.7 prints the nearer figure, not btop's truncated 283.
+        let nearer = MemSnapshot {
+            ram_used: None,
+            ram_cache: Some(81 * GIB + GIB / 4),
+            ram_other_cache: Some(151 * GIB),
+            ram_free: Some(51 * GIB + 3 * GIB / 4),
+            ..container.clone()
+        };
+        assert_eq!(nearer.ram_free_reclaimable_label(), "284 GiB");
+        for unreadable in [
+            MemSnapshot {
+                ram_other_cache: None,
+                ..container.clone()
+            },
+            MemSnapshot {
+                ram_free: None,
+                ..container.clone()
+            },
+            MemSnapshot {
+                ram_cache: None,
+                ..host.clone()
+            },
+        ] {
+            assert_eq!(unreadable.ram_free_reclaimable_label(), "unavailable");
+            assert_eq!(unreadable.ram_free_reclaimable_percent(), None);
+        }
     }
 
     #[test]

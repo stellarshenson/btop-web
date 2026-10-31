@@ -1,4 +1,4 @@
-<header class="ph"><h2 id="net-title">Network</h2><span class="head-right">{% if let Some(selected) = snapshot.net.selected_iface %}<span class="meta" data-p="3" data-field="net-interface" data-tip="Selected interface, no unit&#10;source: getifaddrs(3) interface list&#10;net_iface picks it, else the largest total&#10;lo is skipped unless it is the only one">{{ selected }}</span>{% endif %}<span class="meta" data-p="3" data-field="net-axis-note" data-tip="Plot scale, unit bytes/s per row&#10;source: net_auto; the measured peak anchors it&#10;a peak above it moves the step tenfold up&#10;only a page load lowers it; ▼ ▲ per direction">scale ▼ <span data-w="999M">{{ crate::collector::bytes_short(*snapshot.net.scale_down.label_max) }}</span> ▲ <span data-w="999M">{{ crate::collector::bytes_short(*snapshot.net.scale_up.label_max) }}</span>{% if let Some(window) = snapshot.axis_labels().first() %} &middot; {{ window }}{% endif %}</span></span></header>
+<header class="ph"><h2 id="net-title">Network</h2><span class="head-right">{% if let Some(selected) = snapshot.net.selected_iface %}<span class="meta" data-p="3" data-field="net-interface" data-tip="Selected interface, no unit&#10;source: getifaddrs(3) interface list&#10;net_iface picks it, else the largest total&#10;lo is skipped unless it is the only one">{{ selected }}</span>{% endif %}<span class="meta" data-p="3" data-field="net-axis-note" data-tip="Plot scale, unit bytes/s per row&#10;source: net_auto; 1, 10 or 100 of a unit&#10;a sample above it raises it at once&#10;only a page load lowers it; ▼ ▲">scale ▼ <span data-w="9.99 MiB/s">{{ crate::collector::axis_rate(*snapshot.net.scale_down.label_max) }}</span> ▲ <span data-w="9.99 MiB/s">{{ crate::collector::axis_rate(*snapshot.net.scale_up.label_max) }}</span>{% if let Some(window) = snapshot.axis_labels().first() %} &middot; {{ window }}{% endif %}</span></span></header>
 <div class="net-body">
   <div class="net-plots">
     {% let down_scale = snapshot.net.down_scale_labels() %}
@@ -20,23 +20,23 @@
   </div>
   <aside class="net-legend" aria-label="Network legend">
     {% if let Some(selected) = snapshot.net.selected_iface %}{% for interface in snapshot.net.interfaces %}{% if &interface.name == selected %}
-    <div class="legend-item" data-tip="Download rate, unit bytes/s, KiB or MiB&#10;source: sysfs net/&lt;iface&gt;/statistics/rx_bytes&#10;delta over the sample interval, rollover-safe&#10;now is Mibps, top the peak, total since boot">
+    <div class="legend-item" data-tip="Download rate, unit bytes/s, KiB or MiB&#10;source: sysfs net/&lt;iface&gt;/statistics/rx_bytes&#10;delta over the sample interval, rollover-safe&#10;top is the peak, total since boot">
       <i class="sw sw-down"></i>
       <span class="legend-name">download <span class="down">▼</span></span>
       <b class="legend-value">{% if interface.down_rate.is_some() %}{{ interface.down_label() }}{% else %}unavailable{% endif %}</b>
-      {% if let Some(rate) = interface.down_rate %}<span class="legend-meta">now {{ (rate * 8.0 / 1048576.0)|fmt("{:.2}") }} Mibps</span>{% endif %}
       {% if interface.top_down.is_some() %}<span class="legend-meta">top {{ crate::collector::rate(*interface.top_down) }}</span>{% endif %}
       {% if interface.total_down.is_some() %}<span class="legend-meta">total {{ crate::collector::bytes(*interface.total_down) }}</span>{% endif %}
     </div>
-    <div class="legend-item" data-tip="Upload rate, unit bytes/s, KiB or MiB&#10;source: sysfs net/&lt;iface&gt;/statistics/tx_bytes&#10;delta over the sample interval, rollover-safe&#10;now is Mibps, top the peak, total since boot">
+    <div class="legend-item" data-tip="Upload rate, unit bytes/s, KiB or MiB&#10;source: sysfs net/&lt;iface&gt;/statistics/tx_bytes&#10;delta over the sample interval, rollover-safe&#10;top is the peak, total since boot">
       <i class="sw sw-up"></i>
       <span class="legend-name">upload <span class="up-arrow">▲</span></span>
       <b class="legend-value">{% if interface.up_rate.is_some() %}{{ interface.up_label() }}{% else %}unavailable{% endif %}</b>
-      {% if let Some(rate) = interface.up_rate %}<span class="legend-meta">now {{ (rate * 8.0 / 1048576.0)|fmt("{:.2}") }} Mibps</span>{% endif %}
       {% if interface.top_up.is_some() %}<span class="legend-meta">top {{ crate::collector::rate(*interface.top_up) }}</span>{% endif %}
       {% if interface.total_up.is_some() %}<span class="legend-meta">total {{ crate::collector::bytes(*interface.total_up) }}</span>{% endif %}
     </div>
-    {% endif %}{% endfor %}{% else %}
+    {% endif %}{% endfor %}
+    <div class="net-link" data-p="3" data-field="net-link" data-tip="Link of the selected interface, no unit&#10;source: net/&lt;iface&gt;/speed, duplex, operstate&#10;a fact the kernel does not know is left out&#10;err, drop: rx + tx statistics, shown above 0"><span class="legend-meta">link {{ snapshot.net.link.label() }}</span>{% for fault in snapshot.net.link.faults() %}<span class="chip up">{{ fault.0 }} {{ fault.1 }}</span>{% endfor %}</div>
+    {% else %}
     <p class="unavailable">network unavailable</p>
     {% endif %}
   </aside>

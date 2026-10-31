@@ -1,8 +1,9 @@
 // Dashboard interactions: the live state, the CONFIG popover, panel layout,
 // GPU selection, pause, the process list (view, tree, filter, sort) and the
 // process table fit. One delegated listener per event; the only timers are
-// the filter debounce and the stale timeout, which is re-armed once per frame
-// (a stream that stops sends no event to notice).
+// the filter debounce, the stale timeout, which is re-armed once per frame (a
+// stream that stops sends no event to notice), and the process rows' merge,
+// one per slow pass.
 // Theme, mode and the stored layout load in theme.js.
 (function () {
   "use strict";
@@ -261,6 +262,101 @@
     }, 2 * updateMs);
   }
 
+  /* ---------- copy the telemetry as JSON (ACC-VIEW-182-COPY-JSON) ---------- */
+
+  // The button copies the server's own document from the JSON stream's once
+  // mode, so the clipboard holds the same object every stream consumer gets
+  // and the page keeps no second serialiser. The fetch runs on click only,
+  // so the frame loop never waits on it.
+  var copyButton = document.getElementById("copy-json");
+  var copyStatus = document.getElementById("copy-status");
+
+  // DEF-VIEW-122-POPUP-COPY: both copy chips return to rest after 1.5 s, each on
+  // its own timer. `rest` is the popup chip's word; the top bar's chip is an icon.
+  function flashCopied(button, status, rest) {
+    button.classList.add("copied");
+    if (rest) button.textContent = "copied";
+    if (copyStatus) copyStatus.textContent = status;
+    window.clearTimeout(button._copyTimer);
+    button._copyTimer = window.setTimeout(function () {
+      button.classList.remove("copied");
+      if (rest) button.textContent = rest;
+      if (copyStatus) copyStatus.textContent = "";
+    }, 1500);
+  }
+
+  // The selection fallback for a browser that refuses the async clipboard or
+  // does not offer it (an insecure origin, a denied permission).
+  function selectCopy(text) {
+    var back = document.activeElement;
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "-1000px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    var copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch (error) {
+      copied = false;
+    }
+    document.body.removeChild(area);
+    if (back && back.focus) back.focus();
+    if (!copied) throw new Error("the browser refused the copy");
+  }
+
+  function writeClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        selectCopy(text);
+      });
+    }
+    selectCopy(text);
+    return Promise.resolve();
+  }
+
+  if (copyButton) {
+    copyButton.addEventListener("click", function () {
+      window.fetch("events.json?once=1", { cache: "no-store" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("no frame to copy");
+          return response.text();
+        })
+        .then(writeClipboard)
+        .then(function () {
+          flashCopied(copyButton, "Telemetry copied as JSON");
+        })
+        .catch(function () {
+          if (copyStatus) copyStatus.textContent = "Copy failed";
+        });
+    });
+  }
+
+  // DEF-VIEW-119-STALE-TAB: each new /events connection states the server's
+  // build stamp once. A page from another build reloads, so new markup never
+  // lands under an old stylesheet. One reload per stamp: a server that keeps
+  // answering with another stamp cannot loop the page.
+  var pageStamp = new URL(document.currentScript.src).searchParams.get("v");
+
+  function checkStamp(event) {
+    if (event.data === pageStamp) return;
+    try {
+      if (window.sessionStorage.getItem("btop-web-reloaded-for") === event.data) return;
+      window.sessionStorage.setItem("btop-web-reloaded-for", event.data);
+    } catch (error) {
+      // Storage is optional; without it the stamp comparison alone holds.
+    }
+    window.location.reload();
+  }
+
+  // A reconnect of the same EventSource opens again; the same function adds once.
+  document.body.addEventListener("htmx:sseOpen", function (event) {
+    event.detail.source.addEventListener("stamp", checkStamp);
+  });
+
   // Fires for every frame, paused or not, before the frame is applied.
   document.body.addEventListener("htmx:sseBeforeMessage", function (event) {
     if (event.detail.type === "cpu") {
@@ -269,14 +365,23 @@
       var windowSent = /data-window-ms="(\d+)"/.exec(event.detail.data);
       if (windowSent) windowMs = Number(windowSent[1]);
       var slowSent = /data-slow-ms="(\d+)"/.exec(event.detail.data);
-      if (slowSent && Number(slowSent[1]) > 0) slowMs = Number(slowSent[1]);
+      if (slowSent && Number(slowSent[1]) > 0 && Number(slowSent[1]) !== slowMs) {
+        slowMs = Number(slowSent[1]);
+        forgetPasses();
+      }
       var seqSent = /data-slow-seq="(\d+)"/.exec(event.detail.data);
       if (seqSent) {
         var seq = Number(seqSent[1]);
         if (seq !== slowSeq) {
+          // A restarted server counts again from 1.
+          if (seq < slowSeq) forgetPasses();
           slowSeq = seq;
           // A new slow result carries the charts a whole period further left.
           lastChartAt = window.performance.now();
+          notePass(seq);
+          // The pause control sits in the CONFIG popover, and opening that
+          // closes a popup, so a paused page's popup holds its first body.
+          if (!paused) askDetail();
         }
       }
       var now = Date.now();
@@ -304,15 +409,15 @@
   // Between readouts every panel chart scrolls left at the display frame rate:
   // one slow slot is the plot width times the slow period over the chart's
   // window, and the server draws each new slow pass exactly that far left, so
-  // the swap continues the motion instead of restarting it. Only the drawn
-  // series group moves; the grid under the box, the axes, the labels and the
-  // process row sparklines stay. The server's one-slot tail keeps the curve at
+  // the new path continues the motion instead of restarting it. Only the svg
+  // moves; the grid under the box, the axes, the labels and the process row
+  // sparklines stay. The server's one-slot tail keeps the curve at
   // the right edge and holds the newest smoothed knot, never a raw sample.
-  // DEF-PERF-77-PAGE-COST: the move is a linear compositor animation of a
-  // wrapper <g> around the series group, not a style write per display frame,
-  // so the main thread runs no frame pipeline while the charts scroll. A swap
-  // replaces the group, so syncMotion re-creates the animation and continues
-  // it from the phase its slow pass started.
+  // DEF-PERF-77-PAGE-COST: the move is a linear compositor animation of the
+  // chart's svg, not a style write per display frame, so the main thread runs
+  // no frame pipeline while the charts scroll. ACC-PERF-133-PAGE-COST: the svg
+  // is a CSS box, so the animation's style update needs no layout, where a
+  // <g>'s transform lays the SVG out and tests the hover again on every frame.
   var MOTION_KEY = "btop-web-motion";
   var motionPref = true;
   try {
@@ -320,78 +425,107 @@
   } catch (error) {
     // Storage is optional; motion stays on for this page view.
   }
-  // The slow pass the running scroll belongs to: a new pass restarts every
-  // chart's phase even when its fragment did not change, so the 1 Hz reset
-  // never depends on a swap.
-  var motionSeq = -1;
 
   // The OS reduced-motion query is not consulted: the owner's machine sets it
   // on every page, so only the CONFIG motion toggle stops the clock.
   function motionAllowed() {
-    return motionPref && windowMs > 0 && lastChartAt > 0 && !paused && !stale && !document.hidden;
+    return motionPref && windowMs > 0 && lastChartAt > 0 && !paused && !document.hidden;
   }
 
-  // One slow slot in the chart's user units, travelled over one slow period.
-  function seriesTravel(group) {
-    var svg = group.ownerSVGElement;
-    var width = svg && svg.viewBox ? svg.viewBox.baseVal.width : 0;
-    return -width * slowMs / windowMs;
+  // DEF-GRAPH-130-PLOT-STEPS: a popup plot's place is a function of the clock and
+  // of the pass its path holds, not of when the path arrived: pass n's time on
+  // this page is detailAnchor + n * slowMs. The scroll runs on past one slot at
+  // the same speed, far enough to cross a stall of 20 s, so a late body shows as
+  // the curve's end receding from the right edge, and a body that lands fills in
+  // data at the place the curve has already reached.
+  // shortcut: the anchor only falls, so a server that lost time while the popup
+  // stayed open (a late tick skipped, a suspended host) leaves the curve's end
+  // that far from the edge until the popup opens again.
+  var DETAIL_RUN_MS = 30000;
+  var PASSES_KEPT = 16; // the newest passes a new popup's anchor reads
+  var passZeros = []; // each pass's arrival, as the time of pass 0 it implies
+  var detailAnchor = null;
+
+  // The earliest arrival is the one least delayed, so a late one moves nothing,
+  // and a new anchor can only move a curve left.
+  function notePass(seq) {
+    var zero = window.performance.now() - seq * slowMs;
+    passZeros.push(zero);
+    if (passZeros.length > PASSES_KEPT) passZeros.shift();
+    if (detailAnchor === null || zero < detailAnchor) detailAnchor = zero;
   }
 
-  // The offset lives on a plain <g> around the series group: a transform on the
-  // group itself would replace the inline transform a scale change animates.
-  // The wrapper is made once per swapped node, inside the same task as the
-  // swap, so it never paints on its own.
-  function shiftWrapper(group) {
-    var wrap = group.parentNode;
-    if (wrap && wrap.nodeName === "g" && wrap.hasAttribute("data-shift")) return wrap;
-    wrap = document.createElementNS(group.namespaceURI, "g");
-    wrap.setAttribute("data-shift", "");
-    group.parentNode.insertBefore(wrap, group);
-    wrap.appendChild(group);
-    return wrap;
+  function forgetPasses() {
+    passZeros = [];
+    detailAnchor = null;
   }
 
-  // Reconcile each series group's animation with the chart clock: start it on
-  // the node the last swap brought, with the negative delay that continues the
-  // slow pass's phase, and freeze it where it stands whenever motion is not
-  // allowed. A CSS animation, not one created from script: a script animation
-  // on a node this new runs on the main thread until it is promoted, and a
-  // swap every value tick never gives it time to be.
+  // A CSS animation, as a panel chart's, with its start set to the pass's time,
+  // so the new path and the new phase land in one frame on the same compositor
+  // layer. A paused or hidden page, the motion toggle off and a body that says
+  // unavailable hold the plot where it stands. A stale page does not: the stale
+  // timer fires after two ticks, so a proxy that holds the stream for a moment
+  // would show as a stop and then a step; a stream that stays away ends at the
+  // run's end instead.
+  function syncDetailPlot(svg, allowed) {
+    var holder = closest(svg, "[data-slow-seq]");
+    var at = null;
+    if (allowed && holder && detailState.hidden && detailAnchor !== null) {
+      at = detailAnchor + Number(holder.getAttribute("data-slow-seq")) * slowMs;
+    }
+    if (svg._at === at) return;
+    svg._at = at;
+    if (at !== null) {
+      svg.style.setProperty("--shift-to", (-100 * DETAIL_RUN_MS / windowMs).toFixed(3) + "%");
+      svg.style.animationDuration = DETAIL_RUN_MS + "ms";
+      svg.style.animationName = "chart-shift-a";
+    }
+    var run = svg.getAnimations()[0];
+    if (!run) return;
+    if (at === null) run.pause();
+    else run.startTime = at;
+  }
+
+  // Reconcile each chart's animation with the chart clock: start it on the svg
+  // the last frame brought, with the negative delay that continues the slow
+  // pass's phase, and freeze it where it stands whenever motion is not allowed.
+  // A CSS animation, not one created from script: a script animation on a node
+  // this new runs on the main thread until it is promoted. One slow slot is
+  // that share of the svg's own width, travelled over one slow period.
+  // DEF-GRAPH-128-PLOT-JUMP: a chart restarts only once its own new path is on
+  // the page, or the old path jumps back one slot until the new one comes. A
+  // panel chart's path comes in its own SSE event, whose patch stamps svg._seq.
+  // A popup plot's comes by its own fetch and runs on the pass's time.
   function syncMotion() {
     var groups = document.querySelectorAll("[data-chart] g.series, [data-chart] g.gpu-series");
-    var allowed = motionAllowed();
-    var restart = allowed && slowSeq !== motionSeq;
+    var allowed = motionAllowed() && !stale;
     var elapsed = Math.min(slowMs, Math.max(0, window.performance.now() - lastChartAt));
     for (var index = 0; index < groups.length; index += 1) {
-      var group = groups[index];
-      var wrap = group.parentNode;
-      if (!wrap || !wrap.hasAttribute("data-shift")) {
-        // No wrapper while motion cannot run, so a page that never scrolls
-        // keeps the server's own svg tree.
-        if (!allowed) continue;
-        wrap = shiftWrapper(group);
+      var svg = groups[index].ownerSVGElement;
+      if (closest(svg, '[data-chart^="proc-detail"]')) {
+        syncDetailPlot(svg, motionAllowed());
+        continue;
       }
-      if (wrap._run === "run") {
+      if (svg._run === "run") {
         if (!allowed) {
-          wrap.style.animationPlayState = "paused";
-          wrap._run = "pause";
+          svg.style.animationPlayState = "paused";
+          svg._run = "pause";
           continue;
         }
-        if (!restart) continue;
+        if (svg._pass === svg._seq) continue;
       }
       if (!allowed) continue;
+      svg._pass = svg._seq;
       // A changed animation name is what restarts a CSS animation, and two
       // identical keyframe sets alternate so a resume restarts in one write.
-      wrap._flip = !wrap._flip;
-      wrap.style.setProperty("--shift-to", seriesTravel(group).toFixed(3) + "px");
-      wrap.style.animationDuration = slowMs + "ms";
-      wrap.style.animationDelay = (-elapsed) + "ms";
-      wrap.style.animationName = wrap._flip ? "chart-shift-b" : "chart-shift-a";
-      wrap.style.animationPlayState = "running";
-      wrap._run = "run";
+      svg._flip = !svg._flip;
+      svg.style.setProperty("--shift-to", (-100 * slowMs / windowMs).toFixed(3) + "%");
+      svg.style.animationDuration = slowMs + "ms";
+      svg.style.animationDelay = -elapsed + "ms";
+      svg.style.animationName = svg._flip ? "chart-shift-b" : "chart-shift-a";
+      svg.style.animationPlayState = "running";
+      svg._run = "run";
     }
-    if (allowed) motionSeq = slowSeq;
   }
 
   function syncMotionControls() {
@@ -430,11 +564,14 @@
   // owner's machine sets it on every page.
   var NUM_KEY = "btop-web-num-motion";
   var NUM_MODES = ["none", "spring", "blur", "odometer", "spring-blur"];
-  // ACC-VIEW-120: one effect lasts at most four fifths of the current interval,
-  // so it settles before the next reading; NUM_MS caps it at the 250 ms
-  // interval's own duration. A continuous effect resets this span on each
-  // retarget, so the motion settles this soon after the value stops.
+  // ACC-VIEW-120: one discrete effect lasts at most four fifths of the current
+  // interval, so it settles before the next reading; NUM_MS caps it at the
+  // 250 ms interval's own duration.
   var NUM_MS = 200;
+  // ACC-VIEW-203: a spring retargets, so it need not fit one interval. Each
+  // retarget resets this span, so the number rests this soon after the value
+  // stops.
+  var NUM_SPRING_MS = 800;
 
   // ACC-VIEW-126: a change starts an effect only when it moves at least this
   // fraction of the value's display range (data-range on the stat); a smaller
@@ -571,24 +708,28 @@
     state.el.removeAttribute("data-num-host");
   }
 
-  // A spring count-up: the text is rewritten from an underdamped spring, so
-  // the digits travel and overshoot briefly instead of swapping. k = 1600 and
-  // c = 60 leave one short overshoot and settle well inside the effect's
-  // duration. With trail, each intermediate value also leaves an echo behind.
-  // The closed form, not a per-frame Euler step: a 60 Hz frame makes c*dt = 1,
-  // the over-damped case, which hides the designed overshoot at that cadence.
+  // A spring count-up: the text is rewritten from a critically damped spring,
+  // so the digits ease in and travel instead of swapping. k = 100 and c = 20,
+  // because the owner asked to "make spring less 'sudden', more gradual,
+  // smoothened" (ACC-VIEW-203): from rest it covers 90 percent of a change in
+  // about 390 ms with no overshoot, so a value that changes on every tick glides
+  // toward the newest reading. With trail, each intermediate value also leaves
+  // an echo.
+  // The closed form, not a per-frame Euler step, so the motion does not depend
+  // on the display cadence.
   //
   // ACC-VIEW-120/121: this is continuous motion. A new reading mid-run is a
   // new target for the same mass: the spring starts again from the position
   // and velocity the number has now, so it neither jumps back nor restarts.
   // The settle timer moves with it, so the number comes to rest within
-  // numDuration() of the last reading.
+  // NUM_SPRING_MS of the last reading.
   function numSpring(index, el, before, after, trail) {
     var host = { el: el };
-    var ms = numDuration();
-    var omega = Math.sqrt(1600);
-    var zeta = 60 / (2 * omega);
-    var omegaD = omega * Math.sqrt(1 - zeta * zeta);
+    var ms = NUM_SPRING_MS;
+    // The echoes keep a discrete effect's spacing and lifetime, so a longer
+    // spring shows no more of them at once.
+    var echoMs = numDuration();
+    var omega = Math.sqrt(100);
     var parts = after;
     var from = before.value;
     var to = after.value;
@@ -604,18 +745,17 @@
     host.el.appendChild(tween);
     host.el.setAttribute("data-num-host", "");
 
-    // The spring's position and velocity at `now`, from the current run.
+    // The spring's position and velocity at `now`, from the current run. A
+    // frame's timestamp can precede `started` after a long swap, and the closed
+    // form is not valid before zero.
     function motion(now) {
-      var t = (now - started) / 1000;
-      var decay = Math.exp(-zeta * omega * t);
-      var swing = Math.cos(omegaD * t);
-      var ring = Math.sin(omegaD * t);
+      var t = Math.max(0, now - started) / 1000;
+      var decay = Math.exp(-omega * t);
       var gap = from - to;
-      var gain = (velocity + zeta * omega * gap) / omegaD;
+      var gain = velocity + omega * gap;
       return {
-        value: to + decay * (gap * swing + gain * ring),
-        velocity: decay * ((gain * omegaD - zeta * omega * gap) * swing +
-          (-gap * omegaD - zeta * omega * gain) * ring)
+        value: to + decay * (gap + gain * t),
+        velocity: decay * (velocity - omega * gain * t)
       };
     }
 
@@ -659,9 +799,9 @@
         return;
       }
       draw(at.value);
-      if (trail && now - echoAt >= ms / 8) {
+      if (trail && now - echoAt >= echoMs / 8) {
         echoAt = now;
-        echoes.push(numEcho(host.el, tween.textContent, 0.3, -6, ms - (now - started)));
+        echoes.push(numEcho(host.el, tween.textContent, 0.3, -6, Math.min(echoMs, ms - (now - started))));
         if (echoes.length > NUM_ECHOES) {
           var oldest = echoes.shift();
           oldest.animation.cancel();
@@ -803,7 +943,7 @@
     // count, table cell or axis label at 12 px and below switches instantly,
     // so no effect builds an animation layer under a small glyph. The load
     // figures opt in with data-num (ACC-VIEW-131) and take the same effects
-    // through this one path at numDuration().
+    // through this one path.
     if (!el.classList.contains("stat-value") && !el.hasAttribute("data-num")) return;
     if (!el.getClientRects().length) return;
     var before = numParts(oldText);
@@ -930,10 +1070,16 @@
     return null;
   }
 
+  // ACC-VIEW-199-POPUP-DIM: one scrim, shown while the popover or a process's
+  // details are open, so closing one leaves it for the other.
+  function syncScrim() {
+    if (scrim) scrim.hidden = (!config || config.hidden) && detailPid === null;
+  }
+
   function closeConfig(returnTo) {
     if (!config || config.hidden) return;
     config.hidden = true;
-    if (scrim) scrim.hidden = true;
+    syncScrim();
     setExpanded(false);
     if (!returnTo) return;
     var trigger = returnTo.isConnected ? returnTo : visibleToggle();
@@ -944,7 +1090,7 @@
     if (!config) return;
     lastTrigger = trigger;
     config.hidden = false;
-    if (scrim) scrim.hidden = false;
+    syncScrim();
     setExpanded(true);
     var tab = config.querySelector('[role="tab"][aria-selected="true"]');
     if (tab) tab.focus();
@@ -1000,29 +1146,32 @@
         closeConfig(lastTrigger);
         return;
       }
-      if (event.key !== "Tab") return;
-      // ACC-VIEW-104-CONFIG-DIM: Tab and Shift+Tab cycle inside the open menu.
-      var items = [];
-      var nodes = config.querySelectorAll("button, select, input, textarea, a[href], [tabindex]");
-      for (var index = 0; index < nodes.length; index += 1) {
-        if (nodes[index].disabled) continue;
-        if (nodes[index].getAttribute("tabindex") === "-1") continue;
-        if (nodes[index].getClientRects().length === 0) continue;
-        items.push(nodes[index]);
-      }
-      if (items.length === 0) return;
-      var first = items[0];
-      var last = items[items.length - 1];
-      var active = document.activeElement;
-      var outside = !config.contains(active);
-      if (event.shiftKey && (outside || active === first)) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (outside || active === last)) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (event.key === "Tab") cycleTab(event, config);
     });
+  }
+
+  // ACC-VIEW-104-CONFIG-DIM: Tab and Shift+Tab cycle inside the open box.
+  function cycleTab(event, box) {
+    var items = [];
+    var nodes = box.querySelectorAll("button, select, input, textarea, a[href], [tabindex]");
+    for (var index = 0; index < nodes.length; index += 1) {
+      if (nodes[index].disabled) continue;
+      if (nodes[index].getAttribute("tabindex") === "-1") continue;
+      if (nodes[index].getClientRects().length === 0) continue;
+      items.push(nodes[index]);
+    }
+    if (items.length === 0) return;
+    var first = items[0];
+    var last = items[items.length - 1];
+    var active = document.activeElement;
+    var outside = !box.contains(active);
+    if (event.shiftKey && (outside || active === first)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (outside || active === last)) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   /* ---------- panel layout (ACC-VIEW-40-GADGETS) ---------- */
@@ -1335,16 +1484,17 @@
     return panel ? panel.parentNode : null;
   }
 
+  // A write to the band's custom property restyles every panel under it, so an
+  // unchanged count writes nothing.
   function setGpuLanes(count) {
+    var band = count > 0 ? gpuBand() : null;
     var bands = document.querySelectorAll(".band");
     for (var index = 0; index < bands.length; index += 1) {
-      bands[index].removeAttribute("data-gpu-lanes");
-      bands[index].style.removeProperty("--gpu-lanes");
-    }
-    var band = gpuBand();
-    if (band && count > 0) {
-      band.setAttribute("data-gpu-lanes", "");
-      band.style.setProperty("--gpu-lanes", String(count));
+      var lanes = bands[index] === band ? String(count) : "";
+      if (bands[index].style.getPropertyValue("--gpu-lanes") === lanes) continue;
+      bands[index].toggleAttribute("data-gpu-lanes", lanes !== "");
+      if (lanes) bands[index].style.setProperty("--gpu-lanes", lanes);
+      else bands[index].style.removeProperty("--gpu-lanes");
     }
   }
 
@@ -1630,6 +1780,9 @@
     p.search = p.texts.map(function (text) {
       return text.toLowerCase();
     });
+    // ACC-VIEW-176-PROC-POPUP: the keyboard's way to a row's popup and the
+    // popup's way back; set here so no frame carries the attribute.
+    row.tabIndex = 0;
     row._p = p;
     return p;
   }
@@ -1658,16 +1811,37 @@
     });
   }
 
-  function treeGlyphs(p, text) {
+  // ACC-VIEW-180-PROC-TREE: the prefix is drawn as elements at one fixed
+  // step per level, never typed, so it does not depend on a glyph's advance
+  // in the current face. `sig` carries one letter per ancestor level, "l"
+  // for a rule that continues and "b" for a blank slot, then the row's own
+  // elbow: "m" middle sibling, "s" last sibling, "f" first root. The step
+  // elements and the button are reused; only a changed signature writes.
+  function treeGlyphs(p, sig) {
     var cell = p.row.cells[1];
     if (!p.tree) {
       p.tree = document.createElement("span");
       p.tree.className = "tree";
       p.tree.setAttribute("aria-hidden", "true");
     }
-    if (p.tree.textContent !== text) p.tree.textContent = text;
+    var leaf = p.kids.length === 0;
+    if (p.leaf !== leaf) {
+      p.leaf = leaf;
+      p.tree.className = leaf ? "tree leaf" : "tree";
+    }
+    if (p.sig !== sig) {
+      p.sig = sig;
+      var branch = { m: "tb-mid", s: "tb-last", f: "tb-first" }[sig.charAt(sig.length - 1)];
+      var count = sig.length;
+      while (p.tree.childNodes.length < count) p.tree.appendChild(document.createElement("i"));
+      while (p.tree.childNodes.length > count) p.tree.removeChild(p.tree.lastChild);
+      for (var at = 0; at < count; at += 1) {
+        var step = at === count - 1 ? "tstep tbranch " + branch : sig.charAt(at) === "l" ? "tstep tline" : "tstep";
+        if (p.tree.childNodes[at].className !== step) p.tree.childNodes[at].className = step;
+      }
+    }
     if (cell.firstChild !== p.tree) cell.insertBefore(p.tree, cell.firstChild);
-    if (p.kids.length === 0) {
+    if (leaf) {
       if (p.twisty && p.twisty.parentNode) p.twisty.parentNode.removeChild(p.twisty);
       return;
     }
@@ -1676,13 +1850,30 @@
       p.twisty.type = "button";
       p.twisty.className = "twisty";
       p.twisty.setAttribute("aria-label", "children of " + p.texts[1] + " (pid " + p.pid + ")");
+      p.twisty.appendChild(twistyIcon());
     }
-    var mark = p.collapsed ? "\u25b8\u2002" : "\u25be\u2002";
-    if (p.twisty.textContent !== mark) {
-      p.twisty.setAttribute("aria-expanded", String(!p.collapsed));
-      p.twisty.textContent = mark;
+    var expanded = String(!p.collapsed);
+    if (p.twisty.getAttribute("aria-expanded") !== expanded) {
+      p.twisty.setAttribute("aria-expanded", expanded);
+      // DEF-VIEW-105-TOGGLE-GONE: a rotated svg turns the shape about its own
+      // 0 0 and clips it, so the path itself points right or down instead.
+      p.twisty.firstChild.firstChild.setAttribute("d", p.collapsed ? "M0 0L4 2.5L0 5Z" : "M0 0L4 0L2 5Z");
     }
     if (p.tree.nextSibling !== p.twisty) cell.insertBefore(p.twisty, p.tree.nextSibling);
+  }
+
+  // The toggle's icon: a solid triangle that points right when collapsed and
+  // down when expanded; treeGlyphs swaps the path as aria-expanded changes.
+  // aria-label names the subtree.
+  function twistyIcon() {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 4 5");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M0 0L4 2.5L0 5Z");
+    svg.appendChild(path);
+    return svg;
   }
 
   function dropGlyphs(p) {
@@ -1692,11 +1883,11 @@
   }
 
   // ACC-PERF-16-NO-OVERHEAD: a frame updates the table in place instead of
-  // replacing it. A row keeps its element, tree prefix and triangle, and only
+  // replacing it. A row keeps its element, tree steps and toggle, and only
   // what the server changed is written, so the browser lays out and paints
   // the changed rows only. The head is static and stays as it is.
   // Own code: htmx's morph extension would move every row back to the
-  // server's order and strip the prefix and triangle on each frame.
+  // server's order and strip the steps and toggle on each frame.
   function mergeProc(body, next) {
     var live = {};
     (body._rows || Array.prototype.map.call(body.rows, procRow)).forEach(function (p) {
@@ -1786,7 +1977,7 @@
         p.shown = (p.parent === null || p.parent.pid === 1) && (p.match || (p.collapsed && p.under));
       } else {
         // ACC-VIEW-103-TREE-DEPTH: a node at or below the display level starts
-        // folded; a triangle click overrides that for its pid until the level
+        // folded; a toggle click overrides that for its pid until the level
         // changes. A query opens the ancestors of a match without touching the
         // stored set.
         var stored = Object.prototype.hasOwnProperty.call(procView.toggled, p.pid) ? procView.toggled[p.pid] : p.depth >= procView.level;
@@ -1796,23 +1987,24 @@
       if (view !== "tree" && p.shown) order.push(p);
     });
     if (view === "tree") {
-      // btop's prefix (`btop_shared.cpp:188`, `btop_collect.cpp:2754`): one
-      // three-character slot per ancestor level, ' \u2502 ' while that ancestor has
-      // a following sibling and '   ' under the last one, then a leaf's
-      // ' \u251c\u2500 ', ' \u2514\u2500 ' or the first root's ' \u250c\u2500 '. A node with children puts
-      // its triangle in the branch slot instead, followed by U+2002.
+      // ACC-VIEW-180-PROC-TREE: the same pre-order btop walks in
+      // `btop_shared.cpp:181-188` and `btop_collect.cpp:2754-2760`, as the
+      // signature treeGlyphs draws: one letter per ancestor level ("l" while
+      // that ancestor has a following sibling, "b" under the last one), then
+      // the row's own elbow - "s" for the last shown sibling, "f" for the
+      // first root, "m" otherwise.
       var walk = function (siblings, bars) {
         var shown = sortProc(siblings).filter(function (p) {
           return p.match || p.under;
         });
         var prefix = bars.map(function (more) {
-          return more ? " \u2502 " : "   ";
+          return more ? "l" : "b";
         }).join("");
         shown.forEach(function (p, at) {
           var last = at === shown.length - 1;
           p.shown = true;
           order.push(p);
-          glyphs[p.pid] = prefix + (p.kids.length > 0 ? " " : last ? " \u2514\u2500 " : p.depth === 0 && at === 0 ? " \u250c\u2500 " : " \u251c\u2500 ");
+          glyphs[p.pid] = prefix + (last ? "s" : p.depth === 0 && at === 0 ? "f" : "m");
           if (p.kids.length > 0 && !p.collapsed) walk(p.kids, bars.concat([!last]));
         });
       };
@@ -1871,6 +2063,7 @@
     if (!element || !procWrap || !procWrap.contains(element)) return null;
     var row = closest(element, "tr");
     if (element.classList.contains("twisty") && row && row._p) return { pid: row._p.pid };
+    if (element === row && row._p) return { row: row._p.pid };
     if (element.tagName === "BUTTON" && element.parentNode.tagName === "TH") return { col: element.parentNode.cellIndex };
     return null;
   }
@@ -1881,6 +2074,7 @@
     var target = head ? head.querySelector("button") : null;
     rows.forEach(function (p) {
       if (key.pid !== undefined && p.pid === key.pid && p.twisty && p.twisty.isConnected) target = p.twisty;
+      if (p.pid === key.row && !p.row.hidden) target = p.row;
     });
     if (target && document.activeElement !== target) target.focus({ preventScroll: true });
   }
@@ -1905,7 +2099,7 @@
     // control, and the browser would dispatch no click: hold proc frames
     // while a control is pressed, then apply the newest.
     procWrap.addEventListener("pointerdown", function (event) {
-      if (closest(event.target, "button")) procHold = true;
+      if (closest(event.target, "button, #proc-body tr")) procHold = true;
     });
     procWrap.addEventListener("keydown", function (event) {
       if ((event.key === " " || event.key === "Enter") && closest(event.target, "button")) procHold = true;
@@ -1921,13 +2115,173 @@
       });
     });
     // A proc frame, live or flushed after a pause, merges into the table.
+    // ACC-PERF-133-PAGE-COST: the same slow pass brings every chart's new path,
+    // so the rows land in a later frame; together the two miss the frame budget.
+    var procNext = null;
+    var mergeNext = function () {
+      // A merge never lands under a pressed control, as for a held frame above.
+      if (procHold) {
+        window.setTimeout(mergeNext, 50);
+        return;
+      }
+      mergeProc(procWrap.querySelector("tbody"), procNext);
+      procNext = null;
+      applyProc();
+      syncNumbers();
+      refreshTip();
+    };
     procWrap.addEventListener("htmx:oobBeforeSwap", function (event) {
-      var body = procWrap.querySelector("tbody");
       var next = event.target === procWrap ? event.detail.fragment.querySelector("tbody") : null;
-      if (!body || !next) return;
+      if (!procWrap.querySelector("tbody") || !next) return;
       event.detail.shouldSwap = false;
-      mergeProc(body, next);
+      if (!procNext) window.setTimeout(mergeNext, 50);
+      procNext = next;
     });
+  }
+
+  /* ---------- process popup (ACC-VIEW-176-PROC-POPUP) ---------- */
+
+  // A click on a row, or Enter on a focused row, opens that process's popup.
+  // The server renders the body; this code places the box and asks for a new
+  // body once per slow pass, and the sampler stays the only reader. The box
+  // covers the table up to the Cpu% column, so it hides rows and no plot
+  // (ACC-GRAPH-24-UNOBSCURED). The header and its close chip stay in the page,
+  // so a new body never takes the focus; the command block is replaced only
+  // when its text changes, so a selection in it survives.
+  var detail = document.getElementById("proc-detail");
+  var detailBody = document.getElementById("proc-detail-body");
+  var detailState = document.getElementById("proc-detail-state");
+  var detailClose = document.getElementById("proc-detail-close");
+  var detailPid = null;
+  var detailBusy = false;
+
+  function placeDetail() {
+    if (detailPid === null) return;
+    var box = procWrap.getBoundingClientRect();
+    var cpu = procWrap.querySelectorAll("thead th")[6];
+    var right = cpu && cpu.offsetWidth > 0 ? cpu.getBoundingClientRect().left : box.right;
+    detail.style.left = box.left + "px";
+    detail.style.top = box.top + "px";
+    detail.style.width = right - box.left + "px";
+    detail.style.height = box.height + "px";
+  }
+
+  function showDetail(html) {
+    detailState.hidden = html !== null;
+    var live = detailBody.querySelector(".pd-live");
+    if (html === null) {
+      if (!live) detailBody.innerHTML = '<p class="unavailable">Process details unavailable</p>';
+      syncMotion();
+      return;
+    }
+    var fresh = document.createElement("template");
+    fresh.innerHTML = html;
+    var body = fresh.content.querySelector(".pd-live");
+    notePass(Number(body.getAttribute("data-slow-seq")));
+    if (!live) {
+      detailBody.textContent = "";
+      detailBody.appendChild(fresh.content);
+    } else {
+      // In place, as the panels are, so no new compositor layer comes each pass.
+      patchAttributes(live, body);
+      patchChildren(live, body);
+      var command = detailBody.querySelector(".pd-cmd");
+      var next = fresh.content.querySelector(".pd-cmd");
+      if (command.textContent !== next.textContent) command.replaceWith(next);
+    }
+    syncRescale();
+    syncMotion();
+    refreshTip();
+  }
+
+  // A body that does not arrive marks the popup and keeps the last figures; the
+  // next slow pass asks again.
+  function askDetail() {
+    if (detailPid === null || detailBusy) return;
+    var pid = detailPid;
+    detailBusy = true;
+    window.fetch("proc/" + pid + window.location.search, { cache: "no-store" })
+      .then(function (response) {
+        return response.ok ? response.text() : null;
+      })
+      .catch(function () {
+        return null;
+      })
+      .then(function (html) {
+        detailBusy = false;
+        if (pid === detailPid) showDetail(html);
+      });
+  }
+
+  function openDetail(p) {
+    detailPid = p.pid;
+    detailBusy = false;
+    detailAnchor = passZeros.length ? Math.min.apply(null, passZeros) : null;
+    document.getElementById("proc-detail-title").textContent = "PID " + p.pid + " " + p.texts[1];
+    detailBody.textContent = "";
+    detailState.hidden = true;
+    detail.hidden = false;
+    syncScrim();
+    placeDetail();
+    detailClose.focus();
+    askDetail();
+  }
+
+  function closeDetail(refocus) {
+    var pid = detailPid;
+    detailPid = null;
+    detail.hidden = true;
+    syncScrim();
+    detailBody.textContent = "";
+    if (!refocus) return;
+    var rows = procWrap.querySelector("tbody")._rows || [];
+    rows.forEach(function (p) {
+      if (p.pid === pid && !p.row.hidden) p.row.focus();
+    });
+  }
+
+  if (detail && procWrap) {
+    document.addEventListener("click", function (event) {
+      // A drag that selected text is not a click.
+      if (!window.getSelection().isCollapsed) return;
+      var row = closest(event.target, "#proc-body tr");
+      if (row && row._p && row._p.pid !== detailPid && !closest(event.target, "button")) {
+        openDetail(row._p);
+        return;
+      }
+      if (detailPid === null || detail.contains(event.target)) return;
+      // A control the click landed on keeps the focus the click gave it.
+      closeDetail(!closest(event.target, "button, input, select, textarea, a[href]"));
+    });
+    procWrap.addEventListener("keydown", function (event) {
+      if (event.target.tagName !== "TR" || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      openDetail(event.target._p);
+    });
+    document.addEventListener("keydown", function (event) {
+      if (detailPid === null) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDetail(true);
+      } else if (event.key === "Tab") {
+        cycleTab(event, detail);
+      }
+    });
+    detailClose.addEventListener("click", function () {
+      closeDetail(true);
+    });
+    detailBody.addEventListener("click", function (event) {
+      var copy = closest(event.target, ".pd-copy");
+      if (!copy) return;
+      writeClipboard(detailBody.querySelector(".pd-cmd").textContent)
+        .then(function () {
+          flashCopied(copy, "Command line copied", "copy");
+        })
+        .catch(function () {
+          if (copyStatus) copyStatus.textContent = "Copy failed";
+        });
+    });
+    window.addEventListener("resize", placeDetail);
   }
 
   /* ---------- process column menu (ACC-VIEW-140-COLUMN-MENU) ---------- */
@@ -2086,7 +2440,12 @@
     procWrap.style.maxHeight = head + rows * fit + "px";
   }
 
-  if (procPanel && procWrap) new ResizeObserver(fitProc).observe(procPanel);
+  if (procPanel && procWrap) {
+    new ResizeObserver(function () {
+      fitProc();
+      placeDetail();
+    }).observe(procPanel);
+  }
 
   // The GPU legend drops temperature and power by its lane's height (app.css,
   // @container gpu-lane), which no tier query sees, so the tier chip names the
@@ -2111,19 +2470,25 @@
   // narrow gauge never clips. The value box holds the design readout 23.8 GiB
   // in both faces and excludes 1234.5 GiB; the label box spans both label
   // baselines, 78 and the unavailable state's 70; a scale label takes the
-  // 0.78 em by 9.4 box chart.rs checks (GAUGE_SCALE_CHAR_EM), 6.24 px at
-  // font 8, which bounds the drawn advance per character: the narrow face
-  // reaches 0.758 em at 8 px at 1280x720 (0.737 at 1440x900, 0.703 at
+  // 0.78 em by 1.175 em box chart.rs checks (GAUGE_SCALE_CHAR_EM) at its own
+  // design size - 8 px for 0, 50 and 100, 5 px for the eight minor labels
+  // (ACC-VIEW-173) - which bounds the drawn advance per character: the narrow
+  // face reaches 0.758 em at 8 px at 1280x720 (0.737 at 1440x900, 0.703 at
   // 1024x768) and the system face 0.637 em. The design size is read from the
   // stylesheet before any step is written and the floors are fixed. A step
   // back up needs GAUGE_FIT_SLACK units of clear space inside the box: that
   // is the hysteresis, so a text that only just fits keeps its step instead
   // of oscillating with the frame's rounding.
-  var GAUGE_VALUE_BOX = { x: 24, y: 49, w: 60, h: 23 };
-  var GAUGE_LABEL_BOX = { x: 20, y: 59, w: 68, h: 23 };
-  var GAUGE_SCALE_BOX = { per_char: 6.24, h: 9.4 };
-  var GAUGE_FIT_FLOOR = { value: 10, label: 7, scale: 6 };
-  var GAUGE_FIT_DESIGN = { value: 16, label: 9, scale: 8 };
+  // ACC-VIEW-189-GAUGE-ROOM: the gauge draws --gauge-grow times its design box
+  // and the readout's user units shrink by the same factor, so its boxes, sizes
+  // and step divide by it too and each step renders at the px it did before.
+  var GAUGE_GROW = 1.06;
+  var GAUGE_VALUE_BOX = { x: 54 - 30 / GAUGE_GROW, y: 49, w: 60 / GAUGE_GROW, h: 23 };
+  var GAUGE_LABEL_BOX = { x: 54 - 34 / GAUGE_GROW, y: 59, w: 68 / GAUGE_GROW, h: 23 };
+  var GAUGE_SCALE_BOX = { char_em: 0.78, height_em: 1.175 };
+  var GAUGE_FIT_FLOOR = { value: 10 / GAUGE_GROW, label: 7 / GAUGE_GROW, scale: 6, "scale-minor": 5 };
+  var GAUGE_FIT_DESIGN = { value: 16 / GAUGE_GROW, label: 9 / GAUGE_GROW, scale: 8, "scale-minor": 5 };
+  var GAUGE_FIT_STEP = { value: 1 / GAUGE_GROW, label: 1 / GAUGE_GROW, scale: 1, "scale-minor": 1 };
   var GAUGE_FIT_SLACK = 0.5;
   var GAUGE_FIT_EPS = 0.01;
   var gaugeDesign = {};
@@ -2155,6 +2520,7 @@
   function fitGaugeText(node, key, box, kind, scale) {
     var design = gaugeDesignSize(kind, node);
     var floor = GAUGE_FIT_FLOOR[kind];
+    var step = GAUGE_FIT_STEP[kind];
     var text = node.textContent;
     var font = document.documentElement.getAttribute("data-font") || "system";
     var sig = box.x + "," + box.y + "," + box.w + "," + box.h;
@@ -2179,12 +2545,13 @@
         gaugeFit[key] = { text: text, font: font, box: sig, scale: scale, size: design };
         return;
       }
-      while (size > floor && !gaugeBBoxFits(bbox, box, 0)) {
-        size -= 1;
+      while (size > floor + GAUGE_FIT_EPS && !gaugeBBoxFits(bbox, box, 0)) {
+        size -= step;
         bbox = bboxAt(size);
       }
-      while (size < design && gaugeBBoxFits(bboxAt(size + 1), box, GAUGE_FIT_SLACK)) {
-        size += 1;
+      while (size + step <= design + GAUGE_FIT_EPS &&
+          gaugeBBoxFits(bboxAt(size + step), box, GAUGE_FIT_SLACK)) {
+        size += step;
       }
       gaugeFit[key] = { text: text, font: font, box: sig, scale: scale, size: size };
     }
@@ -2208,13 +2575,16 @@
       if (label) fitGaugeText(label, key + ":label", GAUGE_LABEL_BOX, "label", scale);
       var scales = svg.querySelectorAll(".g-scale");
       for (var at = 0; at < scales.length; at += 1) {
-        var scaleText = scales[at].textContent;
-        var x = Number(scales[at].getAttribute("x"));
-        var y = Number(scales[at].getAttribute("y"));
-        var boxWidth = GAUGE_SCALE_BOX.per_char * scaleText.length;
-        fitGaugeText(scales[at], key + ":scale:" + at,
-          { x: x - boxWidth / 2, y: y - GAUGE_SCALE_BOX.h / 2, w: boxWidth, h: GAUGE_SCALE_BOX.h },
-          "scale", scale);
+        var scaleNode = scales[at];
+        var kind = scaleNode.classList.contains("minor") ? "scale-minor" : "scale";
+        var design = gaugeDesignSize(kind, scaleNode);
+        var x = Number(scaleNode.getAttribute("x"));
+        var y = Number(scaleNode.getAttribute("y"));
+        var boxWidth = GAUGE_SCALE_BOX.char_em * design * scaleNode.textContent.length;
+        var boxHeight = GAUGE_SCALE_BOX.height_em * design;
+        fitGaugeText(scaleNode, key + ":" + kind + ":" + at,
+          { x: x - boxWidth / 2, y: y - boxHeight / 2, w: boxWidth, h: boxHeight },
+          kind, scale);
       }
     }
   }
@@ -2290,39 +2660,110 @@
     }
   }
 
-  // A value tick replaces every panel its event feeds, but the server holds
-  // the chart paths and the process walk between slow passes, so a panel's
-  // bytes are often unchanged and replacing it again would parse, style, lay
-  // out, paint and raster a subtree that looks the same. htmx hands an
-  // innerHTML swap the cloned wrapper element and an outerHTML swap (the
-  // interval span) a DocumentFragment, and the interval carries attributes the
-  // page reads, so only the element form is compared.
-  var oobLast = {};
+  // ACC-PERF-133-PAGE-COST: a value tick feeds every panel its event names, and
+  // replacing a panel's nodes makes the browser clean up, style, lay out, paint
+  // and raster the whole subtree and build a new compositor layer for each chart,
+  // for a handful of changed numbers. The frame is written into the nodes already
+  // on the page, paired by place because a fragment keeps its shape between
+  // frames; an equal node is not touched and a differing one is replaced.
+  // Own code: htmx's morph extension would remove what the page adds to these
+  // nodes, the chart's animation and the gauge text's fitted size.
+  function patchAttributes(node, next) {
+    var from = next.attributes;
+    for (var index = 0; index < from.length; index += 1) {
+      // applyGpuSelection owns a GPU's data-selected.
+      if (from[index].name === "data-selected") continue;
+      if (node.getAttribute(from[index].name) !== from[index].value) node.setAttribute(from[index].name, from[index].value);
+    }
+    var own = node.attributes;
+    for (index = own.length - 1; index >= 0; index -= 1) {
+      // fitGaugeText owns a gauge text's style and syncMotion a chart svg's.
+      if (own[index].name === "style" && (node.nodeName === "text" || node.nodeName === "svg")) continue;
+      if (!next.hasAttribute(own[index].name)) node.removeAttribute(own[index].name);
+    }
+  }
 
+  // A number effect keeps its layers inside the value's node, and numAdopt
+  // carries them across a replaced node, so while an effect can run a changed
+  // value's node is replaced.
+  var numberEffects = false;
+
+  function changedValue(have, want) {
+    return want.nodeType === 1 && want.hasAttribute("data-w") &&
+      (have.hasAttribute("data-num-host") || have.textContent !== want.textContent);
+  }
+
+  function patchChildren(node, next) {
+    var have = node.firstChild;
+    var want = next.firstChild;
+    while (want) {
+      var after = want.nextSibling;
+      if (have && have.nodeName === want.nodeName && !(numberEffects && changedValue(have, want))) {
+        if (want.nodeType === 1) {
+          patchAttributes(have, want);
+          patchChildren(have, want);
+        } else if (have.nodeValue !== want.nodeValue) {
+          have.nodeValue = want.nodeValue;
+        }
+        have = have.nextSibling;
+      } else {
+        gaugeNew = true;
+        var gone = have;
+        have = have ? have.nextSibling : null;
+        if (gone) node.replaceChild(want, gone);
+        else node.appendChild(want);
+      }
+      want = after;
+    }
+    while (have) {
+      var rest = have.nextSibling;
+      node.removeChild(have);
+      have = rest;
+    }
+  }
+
+  // htmx hands an innerHTML swap the cloned wrapper element and an outerHTML
+  // swap (the interval span) a DocumentFragment.
   document.body.addEventListener("htmx:oobBeforeSwap", function (event) {
     var target = event.detail.target;
     var source = event.detail.fragment;
-    if (!target || !source || source.nodeType !== 1 || !target.id) return;
-    var html = source.innerHTML;
-    if (oobLast[target.id] === html) {
-      event.detail.shouldSwap = false;
-      return;
+    if (!event.detail.shouldSwap || !target || !source) return;
+    numberEffects = numMode !== "none" || Object.keys(numRuns).length > 0;
+    if (source.nodeType === 1) {
+      patchChildren(target, source);
+    } else {
+      patchAttributes(target, source.firstElementChild);
+      patchChildren(target, source.firstElementChild);
     }
-    oobLast[target.id] = html;
+    var charts = target.querySelectorAll("[data-chart] > .chart");
+    for (var index = 0; index < charts.length; index += 1) charts[index]._seq = slowSeq;
+    event.detail.shouldSwap = false;
   });
+
+  // A gauge text keeps its fitted size through a patch. Tabular figures give
+  // every digit the advance of 0, so only new nodes or a new digit count or unit
+  // need a fit, whose geometry reads force a layout.
+  var gaugeNew = true;
+  var gaugeForm = "";
+
+  function fitChangedGauges() {
+    var values = document.querySelectorAll("[data-gauge] .g-value");
+    var form = "";
+    for (var index = 0; index < values.length; index += 1) form += values[index].textContent.replace(/\d/g, "0") + "\n";
+    if (!gaugeNew && form === gaugeForm) return;
+    gaugeNew = false;
+    gaugeForm = form;
+    fitGauges();
+  }
 
   // Fires after a live frame's out-of-band swaps have landed, before paint.
   document.body.addEventListener("htmx:sseMessage", function (event) {
     var type = event.detail.type;
     syncRescale();
-    // the cpu and mem frames replace the gauge nodes, so the visible shape's
-    // text is fitted again
-    if (type === "cpu" || type === "mem") fitGauges();
+    if (type === "cpu" || type === "mem") fitChangedGauges();
     if (type === "gpu") {
       applyGpuSelection();
       syncBandsIfChanged();
-    } else if (type === "proc") {
-      applyProc();
     } else if (type === "mem") {
       syncBandsIfChanged();
     }
