@@ -47,26 +47,34 @@ count; read it before collector or UI work.
 - The Makefile owns every command: `make`, `make ci`, `make deny`, `make coverage`,
   `make docker`, `make run`. `make ci` runs fmt-check, clippy with `-D warnings`, and tests
 
-**State, 2026-10-26**
+**State, 2026-11-01**
 
-- `make ci` (fmt-check, clippy `-D warnings`, test) passes: 141 tests - 114 library, 2 end-to-end,
-  19 HTTP, 6 theme contrast. `FEATURES` defaults to empty and adds `--features` to clippy, test and
-  coverage; rocm is off unless `FEATURES=rocm` (needs `librocm_smi64` and libclang)
+- Version 1.0.3 in `Cargo.toml` and `Cargo.lock`, bumped by the release build from 1.0.2; `make
+  version` prints 1.0.3 and `target/release/btop-web --version` prints `btop-web 1.0.3`
+- `make ci` (fmt-check, clippy `-D warnings`, test) passes: 423 passed, 0 failed, 4 ignored - 280
+  library, 13 end-to-end (3 ignored), 4 font, 98 HTTP, 7 performance (1 ignored), 14 theme contrast
+  and 7 TLS. `FEATURES` defaults to empty and adds `--features` to clippy, test and coverage; rocm
+  is off unless `FEATURES=rocm` (needs `librocm_smi64` and libclang)
+- CI run 41304736981 on 56075ab is green: Gate, Deny, Coverage and Zizmor passed, and the Docker
+  build passed
+- The Makefile carries the `make publish` target, which refuses a dirty tree and publishes the crate
+  with the `cratesio/api` token from the vault; RELEASE.md is the 13-step release checklist, from
+  the version and dependency update through the commit, tag, push, CI result and publish
 - The collectors are implemented against btop 1.3.0: the NVIDIA NVML path is live, and AMD reads DRM
   sysfs by default with the ROCm SMI path behind `FEATURES=rocm`
 - The page follows the chosen `docs/design/concepts/05.06-network-paired.html`: a fixed top bar
   (btop-web, version, host, interval, LIVE/PAUSED/STALE with sample age, READ-ONLY, clock, CONFIG),
   ten panels in four bands with network shown once, a GPU load plot with one line and one legend
   entry per GPU in band 3 (then cores, then storage), server-built PCHIP charts over a 1 s EMA, and
-  gauges with ticks. The config popover holds five numbered themes (0 Default, then Everforest
-  Medium, Flexoki, Gruvbox, Solarized) and removes, adds back and resizes panels; the server starts
-  read-write and `--readonly` turns the guard on.
+  gauges with ticks. The config popover holds ten numbered themes (0 Default, then Everforest
+  Medium, Flexoki, Gruvbox, Solarized, Synthwave, Terracotta, Ultraviolet, Cyberpunk and Steel) and
+  removes, adds back and resizes panels; the server starts read-write and `--readonly` turns the
+  guard on.
   It serves on the derived port 40290, samples every 250 ms by default and
   accepts btop's config, update, filter, debug and theme flags; btop's terminal-only flags exit 2
 - Every text token reaches 4.5:1 on the layers it sits on, composed (chip tints, zebra and hover rows
-  included), and `tests/theme_contrast.rs` enforces it for all five pairs in dark and light
-- No commit and nothing pushed; origin is set, no workspace submodule entry
-- Open: CI on a pushed checkout
+  included), and `tests/theme_contrast.rs` enforces it for all ten pairs in dark and light
+- The release is prepared but not yet committed, tagged or published
 
 ## Journal Rules (Project-Specific)
 

@@ -26,12 +26,14 @@ The release build and the CI gate that admits it
   - mechanism: 2026-10-25T02:25:08Z @kj axum binds one listener; the page and the SSE stream share it
   - log: 2026-10-25T02:25:08Z @kj added
   - log: 2026-10-25T03:14:13Z @kj closed: verified in the collectors verification, 2026-10-25
-- [ ] `ACC-BUILD-3-CI` **CI gate green** - HIGH; make ci and the GitHub CI job pass format, clippy with warnings denied, and tests
+- [x] `ACC-BUILD-3-CI` **CI gate green** - HIGH; make ci and the GitHub CI job pass format, clippy with warnings denied, and tests
+  - evidence: CI run 41304736981 on 56075ab: Format, lint and test passed every step (Gate, Deny, Coverage, Upload coverage, Zizmor) and the Docker build job passed; first green CI on GitHub
   - test: run make ci and the CI workflow on a clean checkout
   - test-tags: E2E
   - mechanism: 2026-10-25T02:25:08Z @kj The Makefile targets and the GitHub workflow run the same commands
   - log: 2026-10-25T02:25:08Z @kj added
   - log: 2026-10-30T22:14:24Z @kj b7 and b8 verified the workflows on disk; open until a pushed CI run passes, which needs the owner's approval, and until the Zizmor scan has run
+  - log: 2026-11-01T12:08:41Z @kj closed
 - [x] `ACC-BUILD-30-REPO` **The project lives in a private GitHub repository** - HIGH; the repository exists under the house account and the local tree has it as origin; every push and tag needs the Star Colonel's explicit approval first
   - evidence: git remote -v shows origin https://github.com/stellarshenson/btop-web.git for fetch and push; repository created private under stellarshenson via the GitHub API in the repo workflow
   - test: git remote -v shows the GitHub origin; the repository page exists at github.com/stellarshenson/btop-web

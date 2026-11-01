@@ -247,17 +247,6 @@
     {
       "type": "library",
       "name": "base64",
-      "version": "0.22.1",
-      "purl": "pkg:cargo/base64@0.22.1",
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "base64",
       "version": "0.23.1",
       "purl": "pkg:cargo/base64@0.23.1",
       "licenses": [
@@ -348,8 +337,8 @@
     {
       "type": "application",
       "name": "btop-web",
-      "version": "1.0.2",
-      "purl": "pkg:cargo/btop-web@1.0.2",
+      "version": "1.0.3",
+      "purl": "pkg:cargo/btop-web@1.0.3",
       "licenses": [
         {
           "license": {
@@ -1093,8 +1082,8 @@
     {
       "type": "library",
       "name": "log",
-      "version": "0.4.34",
-      "purl": "pkg:cargo/log@0.4.34",
+      "version": "0.4.35",
+      "purl": "pkg:cargo/log@0.4.35",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -1211,8 +1200,8 @@
     {
       "type": "library",
       "name": "nix",
-      "version": "0.30.1",
-      "purl": "pkg:cargo/nix@0.30.1",
+      "version": "0.31.3",
+      "purl": "pkg:cargo/nix@0.31.3",
       "licenses": [
         {
           "license": {
@@ -2241,8 +2230,8 @@
     {
       "type": "library",
       "name": "tower-http",
-      "version": "0.6.11",
-      "purl": "pkg:cargo/tower-http@0.6.11",
+      "version": "0.7.1",
+      "purl": "pkg:cargo/tower-http@0.7.1",
       "licenses": [
         {
           "license": {

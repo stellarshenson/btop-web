@@ -19,7 +19,7 @@ async-stream = "0.3"
 axum.workspace = true
 # ACC-NET-144-ACCESS-KEY: base64url without padding is the key's wire and file
 # form; the crate is the standard maintained implementation and links no unsafe.
-base64 = "0.22"
+base64 = "0.23"
 # ACC-NET-144-ACCESS-KEY: 32 key bytes from the operating system CSPRNG.
 # getrandom is the standard maintained wrapper over getrandom(2) with no unsafe
 # in this build, and its API is one call.
@@ -45,7 +45,7 @@ hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["service", "tokio"] }
 http-body-util = "0.1.5"
 itoa = "1"
-nix = { version = "0.30", features = ["dir", "fs", "hostname", "net", "feature", "user"] }
+nix = { version = "0.31", features = ["dir", "fs", "hostname", "net", "feature", "user"] }
 nvml-wrapper = "0.13"
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
 # ACC-NET-145-TLS-PINNING: the agent's self-signed pair, generated with a

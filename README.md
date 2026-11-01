@@ -1,19 +1,19 @@
 # btop-web
 
 [![GitHub Actions](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml/badge.svg)](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml)
-![Version 1.0.2](https://img.shields.io/badge/version-1.0.2-blue?style=flat)
+![Version 1.0.3](https://img.shields.io/badge/version-1.0.3-blue?style=flat)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue?style=flat)](LICENSE)
 [![Rust 1.99.1](https://img.shields.io/badge/rust-1.99.1-orange?style=flat)](rust-toolchain.toml)
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
 [![Donate PayPal](https://img.shields.io/badge/Donate-PayPal-blue?style=flat)](https://www.paypal.com/donate/?hosted_button_id=B4KPBJDLLXTSA)
 
-btop-web 1.0.2 is a Rust web port of btop 1.3.0 that serves its system telemetry to a browser with a responsive design.
+btop-web 1.0.3 is a Rust web port of btop 1.3.0 that serves its system telemetry to a browser with a responsive design.
 
 ## Overview
 
 btop-web reads the same `/proc`, `/sys` and device interfaces as btop and computes every value with btop's source, formula, units, rounding and field name. The page is rendered on the server with Askama and updated over SSE with htmx: no single-page application. The HTML page is the only UI; a newline-delimited JSON stream carries the same frames for agents and the companion client.
 
-![The owner's dashboard](docs/design/owner-2026-10-30.png)
+![The owner's dashboard](docs/design/owner-2026-11-01.png)
 
 *The owner's page: CPU, memory, processes, cores, gauges, GPU and network in one viewport, with the LIVE sample age and the READ-ONLY guard in the top bar.*
 
@@ -54,7 +54,7 @@ btop-web is optimised for performance, and it delivers.
 
 ### Container
 
-`make docker` builds the image locally as `btop-web:dev`. The Docker workflow publishes the release image to `ghcr.io/stellarshenson/btop-web` as `1.0.2` and `1.0`.
+`make docker` builds the image locally as `btop-web:dev`. The Docker workflow publishes the release image to `ghcr.io/stellarshenson/btop-web` as `1.0.3` and `1.0`.
 
 ```sh
 make docker SKIP_VERSION_INCREMENT=1
