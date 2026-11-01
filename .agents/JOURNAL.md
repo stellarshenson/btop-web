@@ -407,3 +407,6 @@ This journal tracks substantive work on documents, diagrams, and documentation c
 
 135. **Task - The image workflow now runs on commits** (v1.0.3): `docker.yml` triggered only on tags, so the image built from the tag rather than from the release commit<br>
     **Result**: it now runs on every push to `main` and on `workflow_dispatch`, reads the workspace version from `Cargo.toml` and pushes the image tags `1.0.3` and `1.0` from it; RELEASE.md step 12 checks the Docker run for the release commit. The tradeoff is that every push to `main` republishes the same version tags until the version bumps. The tag `RELEASE_1.0.3` stays on `1ad0a12`, the commit before this workflow change, because moving a pushed tag needs its own approval.
+
+136. **Task - btop-web 1.0.3 released to crates.io** (v1.0.3): `make publish` read the `cratesio/api` token through `jupyterlab-passkey vault exec` and published the crate<br>
+    **Result**: cargo packaged 86 files, 1.7 MiB (478 KiB compressed), verified the build in 3.7 s and uploaded; crates.io confirms `btop-web` 1.0.3 as its only version. CI run 41307450853 and Docker run 41307450775 passed on `a51a1c7`; the Docker run pushed the image tags 1.0.3 and 1.0 read from `Cargo.toml`, and the tag `RELEASE_1.0.3` marks `1ad0a12`. The suite passed 423 tests, 0 failed, 4 ignored.
