@@ -131,14 +131,14 @@ Unknown keys are ignored; an invalid value stops startup with file and line. Oth
 - **Naming** - `NAME` matches `[A-Za-z0-9._-]` and is unique; the top bar names every agent beside its sample age
 - **Selection** - the first configured agent is selected; a chip switches the page with `/?agent=NAME`, and an unknown name answers 404
 - **State** - an agent that stops answering reads `unavailable` in its chip, with its last frames held for the page's STALE mark; never zeros
-- **Streams** - one upstream connection per agent, shared by every viewer: two browsers cost one collection per agent tick, not one per viewer
+- **Streams** - one upstream connection per agent while a browser is attached, shared by every viewer: two browsers cost one collection per agent tick, not one per viewer. With no browser the client holds no connection and the agent's sampler sleeps; the next page connects every agent, and its chips read `connecting` until the first frame
 
 ### Config menu
 
 CONFIG opens seven pages: general, cpu, gpu, mem, net, proc and layout.
 
 - **Display options** - theme, mode, pause, motion, GPU, process view, tree depth, sort and layout; stored per browser; a layout reset
-- **Server options** - 41 keys; each option is a form, validated and applied in two ticks
+- **Server options** - 41 keys; each option is a form, validated and applied in two ticks; `proc_sorting` and `proc_reversed` order sibling rows in the JSON stream and break ties in the page's sort, and `theme` and `proc_tree` apply at the next page load of a viewer with no stored choice
 - **`--readonly`** - the options show as text and every mutating request gets 403
 - **File write** - one line rewritten in `$XDG_CONFIG_HOME/btop-web/btop-web.conf`, or `~/.config/btop-web/btop-web.conf` when unset; a temp file and a rename; without a resolvable home a change ends at restart
 - **Origin** - a mismatched `Origin` gets 403
@@ -152,17 +152,17 @@ The page is HTML rendered by Askama and updated with SSE fragments consumed by h
 | Request | Response |
 |---|---|
 | `GET /` | dashboard page; client mode `/?agent=NAME` selects the agent |
-| `GET /events` | SSE: `cpu`, `mem`, `net`, `proc`, `gpu`, five per snapshot; client mode `/events?agent=NAME` relays that agent's fragments |
+| `GET /events` | SSE: `cpu`, `mem`, `net` and `gpu` per snapshot, `proc` per slow pass and one `stamp` per connection; `/events?telemetry=1` adds one `telemetry` event on connect and per slow pass, holding the `/events.json` document, and the page asks for it only when it renders the copy icon; client mode `/events?agent=NAME` relays that agent's fragments |
 | `GET /events.json` | newline-delimited JSON: one document per frame, from the same snapshot `/events` renders, at the same interval; client mode 404, agent mode behind the access key |
-| `GET /events.json?once=1` | the newest frame as one document, then close; the top bar's copy button reads it |
+| `GET /events.json?once=1` | the newest frame as one document, then close |
 | `GET /agents?agent=NAME` | client mode: the agent strip fragment for the one-second htmx poll; 404 in the server modes |
 | `POST /config` | one option as HTML |
-| `GET /proc/PID` | the process popup's HTML body for a pid the table lists, else 404; a request keeps that pid's rings for the next five slow passes |
+| `GET /proc/PID` | the process popup's HTML body for a pid the table lists, else 404, or 502 when a client's agent link fails; a request keeps that pid's rings for the next five slow passes |
 | `GET /healthz` | `ok` |
 | `GET /readyz` | 200 `ready` once the listener serves |
 | `GET /assets/*` | CSS, JavaScript, htmx and icon; sha256 `ETag`, `Cache-Control: no-cache`, 304 on an `If-None-Match` match |
 
-One `/events.json` line carries the whole frame. Units sit in the field suffix: `_pct` is percent 0-100, `_bytes` bytes, `_rate` bytes per second, `_ms` milliseconds, `_mhz` MHz, `_c` degrees Celsius, `_w` watts and `_seconds` seconds. A value the collector could not read is `null`, never zero. `proc` and its plot change at the process refresh period, named by `slow_seq`. The schema below lists keys in place of values.
+One `/events.json` line carries the whole frame. Units sit in the field suffix: `_pct` and `_percent` are percent 0-100, `_bytes` bytes, `_rate` bytes per second (the `net` object's own `down_rate` and `up_rate` sum its interfaces), `_ms` milliseconds, `_mhz` MHz, `_mbps` Mbit/s, `_c` degrees Celsius, `_w` watts and `_seconds` seconds. Three keys break that rule: `cpu_c` is btop's lifetime CPU share, a fraction of one CPU since the process started, and the top-level `gpu.vram_percent` and `gpu.power_percent` keep btop 1.3.0's accumulator quirks, so they do not read as percentages. Fields with no unit in the name: the `ram_*`, `swap_*` and `vram_*` amounts and a disk's `used`, `total` and `free` are bytes, `total_*` is cumulative bytes, `top_*` and `graph_max_*` are bytes per second, `pcie_*` is KB/s, `io_read` and `io_write` are bytes in the last sample and `io_activity` is percent 0-100. A value the collector could not read is `null`, never zero. `proc` and its plot change at the process refresh period, named by `slow_seq`. The top bar's copy icon writes the newest `telemetry` event the page holds, with no server request, and inserts `age_ms` as the first key: the milliseconds since that event arrived. Only a copy carries `age_ms`. The schema below lists keys in place of values.
 
 ```json
 {
@@ -189,7 +189,7 @@ One `/events.json` line carries the whole frame. Units sit in the field suffix: 
   "net": {
     "interfaces": [{"name", "ip", "ipv4", "ipv6", "connected", "down_rate",
     "up_rate", "total_down", "total_up", "top_down", "top_up"}],
-    "selected_iface", "total_down", "total_up", "graph_max_down", "graph_max_up",
+    "selected_iface", "down_rate", "up_rate", "graph_max_down", "graph_max_up",
     "link": {"speed_mbps", "duplex", "operstate", "errors", "drops"}
   },
   "proc": {

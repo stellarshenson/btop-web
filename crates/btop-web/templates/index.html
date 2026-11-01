@@ -28,7 +28,7 @@
     <span class="chip chip-readonly" aria-describedby="readonly-reason" data-tip="Server mode, no unit&#10;source: the server's --readonly flag&#10;signals and every write are refused"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
     {% endif %}
     {% if chips.is_empty() %}
-    <button class="chip chip-copy" id="copy-json" type="button" aria-label="Copy telemetry as JSON" data-tip="Copy telemetry as JSON, unit: one document&#10;source: the newest /events.json frame">
+    <button class="chip chip-copy" id="copy-json" type="button" aria-label="Copy telemetry as JSON" data-tip="Copy telemetry as JSON, unit: one document&#10;source: the newest frame this page holds">
       <svg class="copy-icon" viewBox="0 0 12 12" aria-hidden="true"><rect class="copy-sheet" x="1.5" y="3.5" width="6" height="7" rx="1"></rect><rect class="copy-sheet" x="4.5" y="1.5" width="6" height="7" rx="1"></rect><path class="copy-check" d="M2.2 6.3l2.4 2.4 5-5.2"></path></svg>
       <span class="sr-only" id="copy-status" role="status" aria-live="polite"></span>
     </button>
@@ -260,7 +260,7 @@
 </div>
 
 <div class="panel proc-detail" id="proc-detail" role="dialog" aria-modal="true" aria-labelledby="proc-detail-title" hidden>
-  <header class="ph"><h2 id="proc-detail-title"></h2><span class="head-right"><span class="chip chip-fact up" id="proc-detail-state" hidden>unavailable</span><button class="chip chip-config up" type="button" id="proc-detail-close">close</button></span></header>
+  <header class="ph"><h2 id="proc-detail-title"></h2><span class="head-right"><span class="pd-ended" id="proc-detail-ended" hidden>Process Ended</span><span class="pd-ended" id="proc-detail-stale" hidden>Stale</span><span class="chip chip-fact up" id="proc-detail-state" hidden>unavailable</span><button class="chip chip-config up" type="button" id="proc-detail-close">close</button></span></header>
   <div class="pd-body" id="proc-detail-body"></div>
 </div>
 

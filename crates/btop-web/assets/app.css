@@ -697,7 +697,7 @@ select.opt option {
 }
 
 /* ACC-NET-143-AGENT-MODES: one chip per agent a client shows, its name and
-   sample age; the selected agent carries the accent, a stale or unreachable
+   sample age; the selected agent carries the accent, a stale
    one the warn hue. The age reserves its widest form ("unavailable"), so a
    ticking age or a state change moves no neighbouring chip
    (ACC-LAYOUT-74-RESERVED-WIDTH) */
@@ -1007,6 +1007,13 @@ html[data-off~="proc"] [data-panel="proc"],
   cursor: auto;
 }
 
+/* DEF-VIEW-140-BUTTON-CURSOR: these two controls lose pointer to the auto rule
+   above and to .opt.cfg-in, so each needs at least that rule's specificity. */
+.panel > .ph button:where(:not(:disabled)),
+select.opt.cfg-in:where(:not(:disabled)) {
+  cursor: pointer;
+}
+
 .panel[data-drop] {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
@@ -1027,6 +1034,13 @@ html[data-off~="proc"] [data-panel="proc"],
   color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ACC-VIEW-196-MEM-HEADER: a header's value takes the row values' colour; the
+   markup wraps its line in one span, because .head-right is a flex box and would
+   put its gap between the words and the value */
+.meta-value {
+  color: var(--text);
 }
 
 /* DEF-LAYOUT-121-MEM-TABLE: 1 px inside the clip that the margin gives back,
@@ -1308,6 +1322,12 @@ html[data-off~="proc"] [data-panel="proc"],
   font-size: var(--fs-10);
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* the Processes group fills its head, so the width the name takes never moves
+   the word top (ACC-LAYOUT-74-RESERVED-WIDTH) */
+#p-proc-stat .stat-facts {
+  flex: 1 1 0;
 }
 
 .stat-facts > :first-child {
@@ -2521,6 +2541,12 @@ html[data-off~="proc"] [data-panel="proc"],
   white-space: nowrap;
 }
 
+/* ACC-VIEW-205-TREE-TALLY: until applyProc first runs a row holds the server's
+   order and its own values, so a late app.js would show them and then change them */
+.proc-wrap:not([data-applied]) tbody {
+  visibility: hidden;
+}
+
 .ptable tbody tr:nth-child(even) {
   background: var(--zebra);
 }
@@ -2530,34 +2556,27 @@ html[data-off~="proc"] [data-panel="proc"],
    connector rules stay --muted, a graphic at 3:1. The row and its cells both
    paint the step: one layer leaves a visible hairline at a fractional cell edge
    at a device scale of 1.75, and the second layer covers it */
-.ptable tbody tr:focus-visible,
-.ptable tbody tr:focus-visible td,
 .ptable tbody tr:hover,
 .ptable tbody tr:hover td {
   background: var(--row-hover);
 }
 
-.ptable tbody tr:focus-visible,
 .ptable tbody tr:hover {
   color: var(--row-hover-text);
 }
 
-.ptable tbody tr:focus-visible .cpu-ok,
 .ptable tbody tr:hover .cpu-ok {
   color: var(--row-hover-ok);
 }
 
-.ptable tbody tr:focus-visible .cpu-warn,
 .ptable tbody tr:hover .cpu-warn {
   color: var(--row-hover-warn);
 }
 
-.ptable tbody tr:focus-visible .cpu-crit,
 .ptable tbody tr:hover .cpu-crit {
   color: var(--row-hover-crit);
 }
 
-.ptable tbody tr:focus-visible .cpu-zero,
 .ptable tbody tr:hover .cpu-zero {
   color: var(--row-hover-muted);
 }
@@ -2565,11 +2584,6 @@ html[data-off~="proc"] [data-panel="proc"],
 /* ACC-VIEW-176-PROC-POPUP: a row opens its popup */
 .ptable tbody tr {
   cursor: pointer;
-}
-
-/* ACC-VIEW-201-ROW-FOCUS: the row-hover rules above mark the focused row */
-.ptable tbody tr:focus-visible {
-  outline: none;
 }
 
 .ptable .num {
@@ -2638,6 +2652,13 @@ html[data-off~="proc"] [data-panel="proc"],
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+
+/* the whole cell is the button's target: the sticky th is its containing block, and the word stays where the cell's padding puts it */
+.ptable th > button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
 .ptable th[aria-sort] {
@@ -2796,6 +2817,26 @@ html[data-off~="proc"] [data-panel="proc"],
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Only the title shrinks, so a long program name clips neither these words,
+   the chip nor CLOSE */
+.proc-detail .head-right {
+  flex-shrink: 0;
+}
+
+/* ACC-VIEW-204-PROC-ENDED: plain words in the title's colour, where the
+   unavailable chip sits */
+.pd-ended {
+  font-size: var(--fs-12);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+/* ACC-VIEW-209-POPUP-STALE: the slot holds one state. The chip's hidden attribute
+   keeps its own meaning, because it holds the plot */
+#proc-detail-stale:not([hidden]) + #proc-detail-state {
+  display: none;
 }
 
 .pd-body {

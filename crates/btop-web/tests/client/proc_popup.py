@@ -1,8 +1,9 @@
 """ACC-VIEW-176-PROC-POPUP in a real browser: a click on a process row opens a
 popup with that pid, its plots and its whole command line; Escape, a click
-outside and the close control each close it; focus moves in and comes back.
+outside and the close control each close it; focus moves in and falls to the body.
 ACC-VIEW-199-POPUP-DIM: the config scrim shows with the popup and goes with it.
-ACC-VIEW-201-ROW-FOCUS: the row that holds the focus has no outline and paints as a hovered row.
+ACC-VIEW-201-ROW-FOCUS: no row takes the focus, so no row draws an outline.
+ACC-VIEW-211-ROW-KEYS: Tab goes from the last header past the list body, and no key opens a row.
 DEF-GRAPH-128-PLOT-JUMP: under a delayed fetch a plot's curve only moves left.
 DEF-GRAPH-125-TAIL-GAP: it reaches the plot's right edge in every frame.
 
@@ -14,6 +15,8 @@ tree tests/fixtures/proc-gpu. Needs Playwright with its bundled chromium.
 DEF-GRAPH-129-PROC-PLOT: the first body's curve covers the time the server has run.
 DEF-GRAPH-130-PLOT-STEPS: a delayed and a held body stop no curve.
 ACC-VIEW-202-PLOT-LABELS: each plot names itself and has a value scale on its grid.
+ACC-VIEW-204-PROC-ENDED: a 404 says Process Ended, a failed request keeps the chip, a 200 clears both.
+ACC-VIEW-209-POPUP-STALE: a stale page's popup reads Stale in the same plain text, CLOSE stays, Process Ended wins and a 404 never reads as ended.
 """
 
 import itertools
@@ -25,12 +28,8 @@ from playwright.sync_api import sync_playwright
 URL = sys.argv[1]
 GPU_PID, PLAIN_PID = "500", "501"
 
-# Text and pid of the focused element; a row reports its first cell.
-FOCUS = """() => {
-  const el = document.activeElement;
-  return el.tagName === 'TR' ? 'row:' + el.cells[0].textContent : el.id || el.tagName;
-}"""
-ROW_STYLE = "(el) => { const style = getComputedStyle(el); return [style.outlineStyle, style.backgroundColor]; }"
+# The focused element's id, or its tag.
+FOCUS = "() => document.activeElement.id || document.activeElement.tagName"
 # Every plot the popup's rectangle meets, outside the popup.
 OVERLAPS = """() => {
   const box = document.getElementById('proc-detail').getBoundingClientRect();
@@ -111,6 +110,32 @@ CURVE_SLOTS = """() => {
   const window_s = Number(document.getElementById('update-interval').getAttribute('data-window-ms')) / 1000;
   return (box.right - plot.querySelector('.line').getBoundingClientRect().left) / (box.width / window_s);
 }"""
+# The popup's title bar words, the chip, the state fact and the words' style.
+TITLE_BAR = """() => {
+  const words = document.getElementById('proc-detail-ended');
+  const fact = document.querySelector('[data-fact="state"]');
+  return {
+    words: words.hidden ? null : words.innerText,
+    chip: !document.getElementById('proc-detail-state').hidden,
+    state: fact && fact.textContent,
+    transform: getComputedStyle(words).textTransform,
+    wordsColor: getComputedStyle(words).color,
+    titleColor: getComputedStyle(document.getElementById('proc-detail-title')).color,
+    isChip: words.classList.contains('chip'),
+  };
+}"""
+# The Stale word, and whether Process Ended or the chip shows beside it.
+STALE_WORD = """() => {
+  const word = document.getElementById('proc-detail-stale');
+  const chip = document.getElementById('proc-detail-state');
+  return {
+    text: word.hidden ? null : word.innerText,
+    ended: !document.getElementById('proc-detail-ended').hidden,
+    chip: getComputedStyle(chip).display !== 'none',
+    cls: word.className,
+    transform: getComputedStyle(word).textTransform,
+  };
+}"""
 
 
 def row(page, pid):
@@ -130,6 +155,11 @@ def assert_no_stop(plots):
         assert plot["first"] - plot["last"] >= 1, f"a curve did not scroll: {plot}"
 
 
+# The browser moves the focus off a hidden control at its next frame.
+def focus_on_body(page):
+    page.wait_for_function("document.activeElement === document.body", timeout=2000)
+
+
 def scrim_shown(page):
     return page.locator("#config-scrim").is_visible()
 
@@ -138,6 +168,7 @@ def main():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.add_init_script("document.addEventListener('htmx:sseOpen', (event) => { window.stream = event.detail.source; })")
         page.goto(URL, wait_until="load")
         page.wait_for_selector(f'#proc-body td:first-child:text-is("{GPU_PID}")', timeout=20000)
 
@@ -176,26 +207,36 @@ def main():
         page.keyboard.press("Escape")
         assert page.locator("#proc-detail").is_hidden(), "Escape did not close it"
         assert not scrim_shown(page), "Escape left the scrim"
-        assert page.evaluate(FOCUS) == f"row:{GPU_PID}", "Escape did not return focus to the row"
-        # ACC-VIEW-201-ROW-FOCUS: with the pointer off the rows, the focus alone styles the row.
-        page.mouse.move(720, 12)
-        outline, background = row(page, GPU_PID).evaluate(ROW_STYLE)
-        row(page, PLAIN_PID).hover()
-        _, hovered = row(page, PLAIN_PID).evaluate(ROW_STYLE)
-        assert outline == "none", f"the focused row draws an outline: {outline}"
-        assert background == hovered, f"the focused row paints {background}, a hovered row {hovered}"
+        focus_on_body(page)
+        # ACC-VIEW-201-ROW-FOCUS: a row refuses the focus and draws no outline.
+        assert not row(page, GPU_PID).evaluate("(el) => { el.focus(); return document.activeElement === el; }"), "a row takes the focus"
+        outline = row(page, GPU_PID).evaluate("(el) => getComputedStyle(el).outlineStyle")
+        assert outline == "none", f"a row draws an outline: {outline}"
+        # ACC-VIEW-211-ROW-KEYS: Tab passes the list body, and no key opens a row.
+        page.locator("#proc-table-wrap th:not(.col-off) > button").last.focus()
+        page.keyboard.press("Tab")
+        assert page.evaluate("!document.activeElement.closest('#proc-body')"), "Tab stopped in the list body"
+        page.evaluate("document.activeElement.blur()")
+        for key in ("Enter", " ", "ArrowDown"):
+            page.keyboard.press(key)
+            assert page.locator("#proc-detail").is_hidden(), f"{key!r} opened a popup"
+        # A clicked triangle takes no focus. This tree has no parent row, so the test adds a triangle.
+        row(page, PLAIN_PID).locator("td").nth(1).evaluate("(td) => { const b = document.createElement('button'); b.className = 'twisty'; b.tabIndex = -1; td.appendChild(b); }")
+        row(page, PLAIN_PID).locator(".twisty").click()
+        assert not page.evaluate("document.activeElement.classList.contains('twisty')"), "a clicked triangle took the focus"
+        row(page, PLAIN_PID).locator(".twisty").evaluate("(b) => b.remove()")
 
         open_popup(page, GPU_PID)
         page.click("#proc-detail-close")
         assert page.locator("#proc-detail").is_hidden(), "the close control did not close it"
         assert not scrim_shown(page), "the close control left the scrim"
-        assert page.evaluate(FOCUS) == f"row:{GPU_PID}", "close did not return focus to the row"
+        focus_on_body(page)
 
         open_popup(page, GPU_PID)
         page.mouse.click(720, 12)
         assert page.locator("#proc-detail").is_hidden(), "a click outside did not close it"
         assert not scrim_shown(page), "a click outside left the scrim"
-        assert page.evaluate(FOCUS) == f"row:{GPU_PID}", "a click outside did not return focus"
+        focus_on_body(page)
 
         # The scrim covers the other rows: a click on one closes the popup.
         open_popup(page, GPU_PID)
@@ -228,10 +269,8 @@ def main():
         assert plots[2]["labels"] == ["100%", "50%", "0%"], plots[2]
         page.keyboard.press("Escape")
 
-        # A process with no GPU node has no GPU plot; the keyboard opens it.
-        row(page, PLAIN_PID).focus()
-        page.keyboard.press("Enter")
-        page.wait_for_selector("#proc-detail:not([hidden]) .pd-live")
+        # A process with no GPU node has no GPU plot.
+        open_popup(page, PLAIN_PID)
         assert PLAIN_PID in page.inner_text("#proc-detail-title")
         assert page.locator('[data-chart="proc-detail-gpu"]').count() == 0, "a GPU plot without a GPU"
         assert page.evaluate("document.documentElement.scrollHeight <= innerHeight"), "the page scrolls"
@@ -272,6 +311,73 @@ def main():
         for route in held:
             route.continue_()
         page.unroute(re.compile(r"/proc/\d+"))
+        page.keyboard.press("Escape")
+
+        # ACC-VIEW-204-PROC-ENDED: a 404 on the next slow pass, on an open popup.
+        any_body = re.compile(r"/proc/\d+")
+        open_popup(page, GPU_PID)
+        for chart in ("cpu", "mem", "gpu"):
+            page.wait_for_selector(f'[data-chart="proc-detail-{chart}"] path.line', state="attached", timeout=10000)
+        running = page.evaluate(TITLE_BAR)
+        assert running["words"] is None and not running["chip"], running
+        page.route(any_body, lambda route: route.fulfill(status=404, body="not found"))
+        page.wait_for_selector("#proc-detail-ended:not([hidden])", timeout=5000)
+        ended = page.evaluate(TITLE_BAR)
+        assert ended["words"] == "Process Ended" and not ended["chip"], ended
+        assert ended["state"] == "ended", ended
+        assert ended["transform"] == "none" and not ended["isChip"], ended
+        assert ended["wordsColor"] == ended["titleColor"], ended
+        for plot in page.evaluate(STOPS, 2500):
+            assert plot["right"] == 0 and plot["first"] == plot["last"], f"an ended process's plot moved: {plot}"
+        # A failed request keeps the unavailable chip, with no response and with a 502.
+        page.unroute(any_body)
+        page.route(any_body, lambda route: route.abort())
+        page.wait_for_selector("#proc-detail-state:not([hidden])", timeout=5000)
+        failed = page.evaluate(TITLE_BAR)
+        assert failed["words"] is None and failed["chip"], failed
+        page.unroute(any_body)
+        page.route(any_body, lambda route: route.fulfill(status=404, body="not found"))
+        page.wait_for_selector("#proc-detail-ended:not([hidden])", timeout=5000)
+        page.unroute(any_body)
+        page.route(any_body, lambda route: route.fulfill(status=502, body="bad gateway"))
+        page.wait_for_selector("#proc-detail-state:not([hidden])", timeout=5000)
+        assert page.evaluate(TITLE_BAR)["words"] is None
+        # A later 200 clears the words and shows the body, as after a server restart.
+        page.unroute(any_body)
+        page.route(any_body, lambda route: route.fulfill(status=404, body="not found"))
+        page.wait_for_selector("#proc-detail-ended:not([hidden])", timeout=5000)
+        page.unroute(any_body)
+        page.wait_for_selector("#proc-detail-ended", state="hidden", timeout=5000)
+        back = page.evaluate(TITLE_BAR)
+        assert back["words"] is None and not back["chip"] and back["state"] != "ended", back
+        page.keyboard.press("Escape")
+        # A popup whose first body is a 404 shows the words and its unavailable text.
+        page.route(any_body, lambda route: route.fulfill(status=404, body="not found"))
+        row(page, GPU_PID).locator("td").nth(1).click()
+        page.wait_for_selector("#proc-detail-ended:not([hidden])", timeout=5000)
+        assert page.inner_text("#proc-detail-body .unavailable") == "Process details unavailable"
+        assert page.evaluate(TITLE_BAR)["words"] == "Process Ended"
+        page.unroute(any_body)
+        page.wait_for_selector("#proc-detail:not([hidden]) .pd-live", timeout=5000)
+        assert page.evaluate(TITLE_BAR)["words"] is None
+
+        # ACC-VIEW-209-POPUP-STALE: the stream goes away with an ended process's popup open, then with a running one's.
+        close_at = page.locator("#proc-detail-close").bounding_box()
+        page.route(any_body, lambda route: route.fulfill(status=404, body="not found"))
+        page.wait_for_selector("#proc-detail-ended:not([hidden])", timeout=5000)
+        page.evaluate("window.stream.close()")
+        page.wait_for_function("document.querySelector('.live-word').textContent === 'stale'", timeout=5000)
+        assert page.evaluate(TITLE_BAR)["words"] == "Process Ended", "Stale took Process Ended's place"
+        assert page.locator("#proc-detail-stale").is_hidden()
+        page.keyboard.press("Escape")
+        # A row opened while stale, with a proxy's 404: Stale, and never Process Ended.
+        row(page, GPU_PID).locator("td").nth(1).click()
+        page.wait_for_selector("#proc-detail-body .unavailable", timeout=5000)
+        stale = page.evaluate(STALE_WORD)
+        assert stale["text"] == "Stale" and stale["ended"] is False and stale["chip"] is False, stale
+        assert stale["cls"] == "pd-ended" and stale["transform"] == "none", stale
+        assert page.locator("#proc-detail-close").bounding_box() == close_at, "CLOSE moved"
+        page.keyboard.press("Escape")
         browser.close()
     print("ok")
 

@@ -1,12 +1,15 @@
 //! ACC-NET-181-JSON-STREAM: the telemetry stream beside `/events`, as
 //! newline-delimited JSON. One line per published frame, at the same interval
-//! the page's SSE fragments arrive; a reconnecting client gets the held frame
-//! at once, after the same wake and stale wait `/events` uses.
+//! the page's SSE fragments arrive. While the sampler runs, a new client gets
+//! the held frame at once. When the held sample is stale, as after a park, the
+//! first line waits for the next slow pass, at most 2 x `slow_ms`, so its
+//! process table and GPU readings are not the ones from before the sleep.
 //!
 //! The line is serialized from the published [`Frame`]'s snapshot only. The
 //! sampler collects once and renders the HTML fragments once; this module adds
-//! no collector, no timer and no subscription to the sampler, and a viewer
-//! costs one serialization of the frame it was already sent.
+//! no collector and no timer to the sampler. A connection holds one wake
+//! subscription, as an `/events` stream does, which keeps the sampler awake, and
+//! a viewer costs one serialization of the frame it was already sent.
 //!
 //! The schema, with units in the field suffix:
 //!
@@ -36,7 +39,7 @@
 //!   "net": {
 //!     "interfaces": [{"name", "ip", "ipv4", "ipv6", "connected", "down_rate",
 //!     "up_rate", "total_down", "total_up", "top_down", "top_up"}],
-//!     "selected_iface", "total_down", "total_up", "graph_max_down",
+//!     "selected_iface", "down_rate", "up_rate", "graph_max_down",
 //!     "graph_max_up",
 //!     "link": {"speed_mbps", "duplex", "operstate", "errors", "drops"}
 //!   },
@@ -64,10 +67,19 @@
 //! }
 //! ```
 //!
-//! `_pct` is percent 0-100 (a container's effective CPUs scale the CPU load),
-//! `_bytes` is bytes, `_rate` is bytes per second, `_ms` is milliseconds,
-//! `_mhz` is MHz, `_c` is degrees Celsius, `_w` is watts, `_seconds` is
-//! seconds and `io_read`/`io_write` are bytes in the last sample. `pstate` is
+//! `_pct` and `_percent` are percent 0-100 (a container's effective CPUs scale
+//! the CPU load, and `proc_per_core` lets a process's `cpu_pct` reach 100 x
+//! cores), `_bytes` is bytes, `_rate` is bytes per second (the `net` object's
+//! own `down_rate` and `up_rate` sum its interfaces), `_ms` is milliseconds,
+//! `_mhz` is MHz, `_mbps` is Mbit/s, `_c` is degrees Celsius, `_w` is watts and
+//! `_seconds` is seconds. Three keys break that rule: `cpu_c` is btop's lifetime
+//! CPU share, a fraction of one CPU since the process started, and the top-level
+//! `gpu.vram_percent` and `gpu.power_percent` keep btop 1.3.0's accumulator
+//! quirks (`collector::gpu`), so they do not read as percentages. Fields with no
+//! unit in the name: the `ram_*`, `swap_*` and `vram_*` amounts and a disk's
+//! `used`, `total` and `free` are bytes, `total_*` is cumulative bytes, `top_*`
+//! and `graph_max_*` are bytes per second, `pcie_*` is KB/s, `io_read`/`io_write`
+//! are bytes in the last sample and `io_activity` is percent 0-100. `pstate` is
 //! NVML's performance state. A value the collector could not read is `null`,
 //! never zero. `proc` and its plot change at the process refresh period, named
 //! by `slow_seq`, exactly as the page's `proc` event does.
@@ -80,9 +92,11 @@
 //! consumer draws no second series. A path ends past `width` in a flat tail, the
 //! newest value repeated, which the page scrolls over and its plot box clips.
 //!
-//! `?once=1` answers with the newest frame and closes, which is what the top
-//! bar's copy button reads. Client mode serves no local sampler, so the route
-//! is a 404 there; the process that samples serves the stream.
+//! `?once=1` answers with the newest frame and closes. `/events?telemetry=1`
+//! carries this document as a named event, and the page's copy icon writes the
+//! newest one it holds with `age_ms` inserted first (ACC-VIEW-210-COPY-HELD).
+//! Client mode serves no local sampler, so the route is a 404 there; the process
+//! that samples serves the stream.
 
 use std::convert::Infallible;
 use std::time::Duration;
@@ -128,6 +142,23 @@ pub async fn events_json(
     receiver.borrow_and_update();
     if state.wake.stale(interval) {
         let _ = tokio::time::timeout(interval, receiver.changed()).await;
+        // ACC-PERF-142-WAKE-FAST leaves the wake's frame with the walk from
+        // before the sleep and no GPU reading, and this document is the
+        // reader's only view, so it waits for the next slow pass. The first
+        // sweep after a start lands later than one tick, so a second frame is
+        // not enough.
+        let slow = receiver
+            .borrow_and_update()
+            .as_ref()
+            .map(|frame| (frame.snapshot.slow_seq, frame.snapshot.slow_ms));
+        if let Some((seq, slow_ms)) = slow {
+            let next = receiver.wait_for(|frame| {
+                frame
+                    .as_ref()
+                    .is_some_and(|frame| frame.snapshot.slow_seq != seq)
+            });
+            let _ = tokio::time::timeout(Duration::from_millis(2 * slow_ms), next).await;
+        }
     }
     let mut held = (*receiver.borrow_and_update()).clone();
     if once {
@@ -166,7 +197,7 @@ pub async fn events_json(
 }
 
 /// One frame as a JSON document with its newline.
-fn frame_json(snapshot: &Snapshot) -> String {
+pub(crate) fn frame_json(snapshot: &Snapshot) -> String {
     let mut line = serde_json::to_string(&json!({
         "events": EVENTS,
         "update_ms": snapshot.update_ms,
@@ -269,8 +300,8 @@ fn net(net: &NetSnapshot) -> Value {
             "top_up": interface.top_up,
         })).collect::<Vec<_>>(),
         "selected_iface": net.selected_iface.as_deref(),
-        "total_down": net.total_down,
-        "total_up": net.total_up,
+        "down_rate": net.total_down,
+        "up_rate": net.total_up,
         "graph_max_down": net.graph_max_down,
         "graph_max_up": net.graph_max_up,
         "link": {

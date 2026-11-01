@@ -6,6 +6,7 @@
 
 use askama::Template;
 use axum::extract::{Path, RawQuery, State};
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 
 use crate::AppState;
@@ -71,7 +72,13 @@ pub async fn detail(
             Ok(html) => Ok(Html(html).into_response()),
             Err(error) => {
                 tracing::debug!(agent = %link.name, %error, "no process detail from the agent");
-                Err(AppError::NotFound)
+                // ACC-VIEW-204-PROC-ENDED: only the agent's own 404 says the process
+                // ended; a link that failed says nothing of the process.
+                if error.to_string().contains("agent answered 404") {
+                    Err(AppError::NotFound)
+                } else {
+                    Ok(StatusCode::BAD_GATEWAY.into_response())
+                }
             }
         };
     }

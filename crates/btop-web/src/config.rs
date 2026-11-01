@@ -326,7 +326,7 @@ pub const SERVER_OPTIONS: [ServerOption; 41] = [
         "general",
         "theme",
         Control::Choice(&THEME_CHOICES),
-        "Set color theme.",
+        "Set color theme. Applies at the next page load of a viewer with no stored theme.",
     ),
     option(
         "general",
@@ -470,10 +470,18 @@ pub const SERVER_OPTIONS: [ServerOption; 41] = [
         "proc",
         "proc_sorting",
         Control::Choice(&SORT_CHOICES),
-        "Processes sorting option.",
+        "Processes sorting option. Orders sibling rows in the JSON stream and breaks ties in the page's sort.",
     ),
-    flag("proc", "proc_reversed", "Reverse processes sorting order."),
-    flag("proc", "proc_tree", "Processes tree view."),
+    flag(
+        "proc",
+        "proc_reversed",
+        "Reverse processes sorting order. Orders sibling rows in the JSON stream and breaks ties in the page's sort.",
+    ),
+    flag(
+        "proc",
+        "proc_tree",
+        "Processes tree view. Applies at the next page load of a viewer with no stored view, unless --proc-view is set.",
+    ),
     flag("proc", "proc_per_core", "Process usage per core."),
     flag(
         "proc",
@@ -706,7 +714,7 @@ pub struct Config {
     pub custom_gpu_name4: String,
     /// btop `custom_gpu_name5`: GPU 5 name override, empty to disable.
     pub custom_gpu_name5: String,
-    /// btop `net_iface`: starting interface, empty to auto-select.
+    /// btop `net_iface`: the interface to select, empty to auto-select.
     pub net_iface: String,
     /// btop `net_auto`: auto-rescale the network graphs.
     pub net_auto: bool,

@@ -250,6 +250,7 @@
     // ACC-VIEW-120: a stopped page shows the true value at once; nothing
     // queues while it is stopped.
     if (stale || paused) cancelNumberRuns();
+    paintDetailStale();
     syncMotion();
   }
 
@@ -318,14 +319,22 @@
     return Promise.resolve();
   }
 
+  // ACC-VIEW-210-COPY-HELD: the newest telemetry event, unparsed, and the time
+  // it arrived. A click writes it in its own task, with no server request.
+  var heldFrame = null;
+  var heldAt = 0;
+
+  function holdFrame(event) {
+    heldFrame = event.data;
+    heldAt = Date.now();
+  }
+
   if (copyButton) {
     copyButton.addEventListener("click", function () {
-      window.fetch("events.json?once=1", { cache: "no-store" })
-        .then(function (response) {
-          if (!response.ok) throw new Error("no frame to copy");
-          return response.text();
-        })
-        .then(writeClipboard)
+      new Promise(function (resolve) {
+        if (heldFrame === null) throw new Error("no frame to copy");
+        resolve(writeClipboard('{"age_ms":' + (Date.now() - heldAt) + "," + heldFrame.slice(1)));
+      })
         .then(function () {
           flashCopied(copyButton, "Telemetry copied as JSON");
         })
@@ -355,6 +364,7 @@
   // A reconnect of the same EventSource opens again; the same function adds once.
   document.body.addEventListener("htmx:sseOpen", function (event) {
     event.detail.source.addEventListener("stamp", checkStamp);
+    event.detail.source.addEventListener("telemetry", holdFrame);
   });
 
   // Fires for every frame, paused or not, before the frame is applied.
@@ -411,8 +421,9 @@
   // window, and the server draws each new slow pass exactly that far left, so
   // the new path continues the motion instead of restarting it. Only the svg
   // moves; the grid under the box, the axes, the labels and the process row
-  // sparklines stay. The server's one-slot tail keeps the curve at
-  // the right edge and holds the newest smoothed knot, never a raw sample.
+  // sparklines stay. The server's tail, a sixth of the plot's width, keeps the
+  // curve at the right edge and holds the newest smoothed knot, never a raw
+  // sample.
   // DEF-PERF-77-PAGE-COST: the move is a linear compositor animation of the
   // chart's svg, not a style write per display frame, so the main thread runs
   // no frame pipeline while the charts scroll. ACC-PERF-133-PAGE-COST: the svg
@@ -462,15 +473,15 @@
 
   // A CSS animation, as a panel chart's, with its start set to the pass's time,
   // so the new path and the new phase land in one frame on the same compositor
-  // layer. A paused or hidden page, the motion toggle off and a body that says
-  // unavailable hold the plot where it stands. A stale page does not: the stale
-  // timer fires after two ticks, so a proxy that holds the stream for a moment
-  // would show as a stop and then a step; a stream that stays away ends at the
-  // run's end instead.
+  // layer. A paused or hidden page, the motion toggle off, a body that says
+  // unavailable and a process that ended hold the plot where it stands. A stale
+  // page does not: the stale timer fires after two ticks, so a proxy that holds
+  // the stream for a moment would show as a stop and then a step; a stream that
+  // stays away ends at the run's end instead.
   function syncDetailPlot(svg, allowed) {
     var holder = closest(svg, "[data-slow-seq]");
     var at = null;
-    if (allowed && holder && detailState.hidden && detailAnchor !== null) {
+    if (allowed && holder && detailState.hidden && detailEnded.hidden && detailAnchor !== null) {
       at = detailAnchor + Number(holder.getAttribute("data-slow-seq")) * slowMs;
     }
     if (svg._at === at) return;
@@ -496,6 +507,14 @@
   // the page, or the old path jumps back one slot until the new one comes. A
   // panel chart's path comes in its own SSE event, whose patch stamps svg._seq.
   // A popup plot's comes by its own fetch and runs on the pass's time.
+  // DEF-GRAPH-134-TOGGLE-STEP: a frozen chart starts again at the larger of its own
+  // phase and the clock's phase, so it never moves right, and it moves left only by
+  // the difference when the clock's is larger. A new path comes a slot further left,
+  // so a frozen chart's phase returns to zero with that path and is not larger than
+  // the clock's when motion returns.
+  // DEF-LAYOUT-133-GPU-LATE: a GPU line gets no sample until a wake's first sweep
+  // finishes, so a pass's path can come less than a slot further left. A lane that
+  // begins a pass without a reading stays still until a pass begins with one.
   function syncMotion() {
     var groups = document.querySelectorAll("[data-chart] g.series, [data-chart] g.gpu-series");
     var allowed = motionAllowed() && !stale;
@@ -506,22 +525,35 @@
         syncDetailPlot(svg, motionAllowed());
         continue;
       }
+      var newPass = svg._pass !== svg._seq;
+      if (newPass) {
+        svg._pass = svg._seq;
+        var lane = closest(svg, ".gpu-lane");
+        svg._unread = !!lane && !lane.querySelector(".legend-value [data-w]");
+      }
+      var moves = allowed && !svg._unread;
       if (svg._run === "run") {
-        if (!allowed) {
+        if (!moves) {
           svg.style.animationPlayState = "paused";
           svg._run = "pause";
           continue;
         }
-        if (svg._pass === svg._seq) continue;
+        if (!newPass) continue;
       }
-      if (!allowed) continue;
-      svg._pass = svg._seq;
+      if (!moves) {
+        var held = newPass && svg._run === "pause" && !svg._unread && svg.getAnimations()[0];
+        if (held) held.currentTime = held.effect.getTiming().delay;
+        continue;
+      }
+      var phase = elapsed;
+      var frozen = svg._run === "pause" && svg.getAnimations()[0];
+      if (frozen) phase = Math.max(phase, frozen.effect.getComputedTiming().progress * slowMs);
       // A changed animation name is what restarts a CSS animation, and two
       // identical keyframe sets alternate so a resume restarts in one write.
       svg._flip = !svg._flip;
       svg.style.setProperty("--shift-to", (-100 * slowMs / windowMs).toFixed(3) + "%");
       svg.style.animationDuration = slowMs + "ms";
-      svg.style.animationDelay = -elapsed + "ms";
+      svg.style.animationDelay = -phase + "ms";
       svg.style.animationName = svg._flip ? "chart-shift-b" : "chart-shift-a";
       svg.style.animationPlayState = "running";
       svg._run = "run";
@@ -721,8 +753,8 @@
   // ACC-VIEW-120/121: this is continuous motion. A new reading mid-run is a
   // new target for the same mass: the spring starts again from the position
   // and velocity the number has now, so it neither jumps back nor restarts.
-  // The settle timer moves with it, so the number comes to rest within
-  // NUM_SPRING_MS of the last reading.
+  // The settle timer moves with it, so the number comes to rest about
+  // NUM_SPRING_MS after the last reading.
   function numSpring(index, el, before, after, trail) {
     var host = { el: el };
     var ms = NUM_SPRING_MS;
@@ -812,7 +844,7 @@
     }
 
     draw(from);
-    // The timer, not the display cadence, ends the effect inside the interval.
+    // The timer, not the display cadence, ends the effect.
     timer = window.setTimeout(finish, ms);
     numBegin(index, host, finish, retarget);
     frame = window.requestAnimationFrame(step);
@@ -865,6 +897,10 @@
     var host = { el: el };
     var ms = numDuration();
     var line = numLine(host.el);
+    // DEF-VIEW-136-ODO-DROP: a slot is a whole number of device px, so every stop
+    // paints on the device row the resting text paints on.
+    var ratio = window.devicePixelRatio || 1;
+    var slotHeight = Math.round(line * ratio) / ratio;
     var base = document.createElement("span");
     base.className = "num-base";
     base.textContent = newText;
@@ -900,17 +936,18 @@
         for (var slot = 0; slot < 20; slot += 1) {
           var digit = document.createElement("span");
           digit.textContent = String(slot % 10);
+          digit.style.height = slotHeight + "px";
           strip.appendChild(digit);
         }
         var fromDigit = Number(oldGlyph);
         var toDigit = Number(glyph);
         var target = up ? (toDigit >= fromDigit ? toDigit : toDigit + 10) : toDigit;
-        strip.style.transform = "translateY(" + -fromDigit * line + "px)";
+        strip.style.transform = "translateY(" + -fromDigit * slotHeight + "px)";
         cell.appendChild(strip);
         running.push(strip.animate(
           [
-            { transform: "translateY(" + -fromDigit * line + "px)" },
-            { transform: "translateY(" + -target * line + "px)" }
+            { transform: "translateY(" + -fromDigit * slotHeight + "px)" },
+            { transform: "translateY(" + -target * slotHeight + "px)" }
           ],
           { duration: ms, easing: "cubic-bezier(.33,0,.2,1)", fill: "forwards" }
         ));
@@ -1567,9 +1604,8 @@
     var selection = gpuSelection.filter(function (index) {
       return index < boxes.length;
     });
-    if (selection.length === 0) {
-      for (var index = 0; index < boxes.length; index += 1) selection.push(index);
-    }
+    // Rows that arrive after a first paint with none read the stored choice here.
+    if (selection.length === 0) selection = readGpuSelection(boxes.length);
     gpuSelection = selection;
     // The lane of a GPU and its legend entry both carry data-gpu.
     var items = document.querySelectorAll("#p-gpu [data-gpu]");
@@ -1780,15 +1816,14 @@
     p.search = p.texts.map(function (text) {
       return text.toLowerCase();
     });
-    // ACC-VIEW-176-PROC-POPUP: the keyboard's way to a row's popup and the
-    // popup's way back; set here so no frame carries the attribute.
-    row.tabIndex = 0;
     row._p = p;
     return p;
   }
 
+  // ACC-VIEW-102-TREE-SORT: a tree row ranks by its whole branch, folded or not;
+  // a flat row ranks by the value it shows.
   function procValue(p) {
-    var values = p.collapsed ? p.sums : p.own;
+    var values = procView.view === "tree" || p.collapsed ? p.sums : p.own;
     switch (procView.sort) {
       case "pid": return p.pid;
       case "name": return p.texts[1];
@@ -1849,6 +1884,8 @@
       p.twisty = document.createElement("button");
       p.twisty.type = "button";
       p.twisty.className = "twisty";
+      // ACC-VIEW-211-ROW-KEYS: Tab passes the list body.
+      p.twisty.tabIndex = -1;
       p.twisty.setAttribute("aria-label", "children of " + p.texts[1] + " (pid " + p.pid + ")");
       p.twisty.appendChild(twistyIcon());
     }
@@ -1968,13 +2005,14 @@
     var glyphs = {};
     rows.forEach(function (p) {
       var parent = p.kids.length > 0;
-      if (view === "all") {
+      // ACC-VIEW-206-FILTER-MATCHES: a query in the top view lists the matches themselves, as the all view does.
+      if (view === "all" || (view === "top" && query)) {
         p.collapsed = false;
         p.shown = p.match;
       } else if (view === "top") {
         // pid 1's children are top-level rows of their own.
         p.collapsed = parent && p.pid !== 1;
-        p.shown = (p.parent === null || p.parent.pid === 1) && (p.match || (p.collapsed && p.under));
+        p.shown = p.parent === null || p.parent.pid === 1;
       } else {
         // ACC-VIEW-103-TREE-DEPTH: a node at or below the display level starts
         // folded; a toggle click overrides that for its pid until the level
@@ -2021,6 +2059,7 @@
       var level = String(procView.level);
       if (procWrap.style.getPropertyValue("--tree-level") !== level) procWrap.style.setProperty("--tree-level", level);
       procWrap.toggleAttribute("data-tree", view === "tree");
+      procWrap.toggleAttribute("data-applied", true);
     }
 
     // A row already in place stays: a moved row is styled and laid out again.
@@ -2036,7 +2075,8 @@
         if (collapsed === null) row.removeAttribute("data-collapsed");
         else row.setAttribute("data-collapsed", collapsed);
       }
-      var labels = p.collapsed && p.sumLabels ? p.sumLabels : p.ownLabels;
+      // ACC-VIEW-205-TREE-TALLY: a tree row shows its whole branch, folded or not, as it ranks in procValue.
+      var labels = (view === "tree" || p.collapsed) && p.sumLabels ? p.sumLabels : p.ownLabels;
       if (p.cpuText.nodeValue !== labels[0]) p.cpuText.nodeValue = labels[0];
       if (row.cells[5].textContent !== labels[1]) row.cells[5].textContent = labels[1];
       if (row.cells[3].textContent !== labels[2]) row.cells[3].textContent = labels[2];
@@ -2054,29 +2094,21 @@
     }
     // ACC-VIEW-140-COLUMN-MENU: new rows from a frame take the classes again.
     applyProcCols();
-    if (procCount) procCount.textContent = order.length + "/" + rows.length;
-    restoreProcFocus(focus, rows);
+    if (procCount) procCount.textContent = rows.length ? order.length + "/" + rows.length : "unavailable";
+    restoreProcFocus(focus);
   }
 
-  // The control a keyboard user is on, as a key that survives a new table.
+  // The header button a keyboard user is on, as a key that survives a new table.
   function procFocusKey(element) {
     if (!element || !procWrap || !procWrap.contains(element)) return null;
-    var row = closest(element, "tr");
-    if (element.classList.contains("twisty") && row && row._p) return { pid: row._p.pid };
-    if (element === row && row._p) return { row: row._p.pid };
     if (element.tagName === "BUTTON" && element.parentNode.tagName === "TH") return { col: element.parentNode.cellIndex };
     return null;
   }
 
-  function restoreProcFocus(key, rows) {
+  function restoreProcFocus(key) {
     if (!key) return;
-    var head = key.col !== undefined ? procWrap.querySelectorAll("thead th")[key.col] : null;
-    var target = head ? head.querySelector("button") : null;
-    rows.forEach(function (p) {
-      if (key.pid !== undefined && p.pid === key.pid && p.twisty && p.twisty.isConnected) target = p.twisty;
-      if (p.pid === key.row && !p.row.hidden) target = p.row;
-    });
-    if (target && document.activeElement !== target) target.focus({ preventScroll: true });
+    var target = procWrap.querySelectorAll("thead th")[key.col].querySelector("button");
+    if (document.activeElement !== target) target.focus({ preventScroll: true });
   }
 
   if (procWrap) {
@@ -2092,6 +2124,8 @@
       var twisty = closest(event.target, ".twisty");
       var row = closest(twisty, "tr");
       if (!twisty || !row || !row._p) return;
+      // A query holds this row open (applyProc): a stored fold would land when it clears.
+      if (filterInput && filterInput.value.trim() && row._p.under) return;
       procView.toggled[row._p.pid] = !row._p.collapsed;
       commitProc();
     });
@@ -2100,6 +2134,10 @@
     // while a control is pressed, then apply the newest.
     procWrap.addEventListener("pointerdown", function (event) {
       if (closest(event.target, "button, #proc-body tr")) procHold = true;
+    });
+    // ACC-VIEW-211-ROW-KEYS: a clicked triangle takes no focus, so no key folds it and it draws no outline.
+    procWrap.addEventListener("mousedown", function (event) {
+      if (closest(event.target, ".twisty")) event.preventDefault();
     });
     procWrap.addEventListener("keydown", function (event) {
       if ((event.key === " " || event.key === "Enter") && closest(event.target, "button")) procHold = true;
@@ -2141,7 +2179,7 @@
 
   /* ---------- process popup (ACC-VIEW-176-PROC-POPUP) ---------- */
 
-  // A click on a row, or Enter on a focused row, opens that process's popup.
+  // A click on a row opens that process's popup.
   // The server renders the body; this code places the box and asks for a new
   // body once per slow pass, and the sampler stays the only reader. The box
   // covers the table up to the Cpu% column, so it hides rows and no plot
@@ -2151,6 +2189,8 @@
   var detail = document.getElementById("proc-detail");
   var detailBody = document.getElementById("proc-detail-body");
   var detailState = document.getElementById("proc-detail-state");
+  var detailEnded = document.getElementById("proc-detail-ended");
+  var detailStale = document.getElementById("proc-detail-stale");
   var detailClose = document.getElementById("proc-detail-close");
   var detailPid = null;
   var detailBusy = false;
@@ -2166,11 +2206,24 @@
     detail.style.height = box.height + "px";
   }
 
-  function showDetail(html) {
-    detailState.hidden = html !== null;
+  // ACC-VIEW-209-POPUP-STALE: the page's stale state shows in the state slot;
+  // Process Ended outranks it.
+  function paintDetailStale() {
+    if (detail) detailStale.hidden = !stale || !detailEnded.hidden;
+  }
+
+  // ACC-VIEW-204-PROC-ENDED: a 404 says the process ended; a request that failed
+  // says nothing of the process, so it keeps the unavailable chip.
+  function showDetail(html, ended) {
+    // ACC-VIEW-209-POPUP-STALE: a request that fails with the stream gone takes no known end away.
+    if (html === null && stale && !detailEnded.hidden) return;
+    detailState.hidden = html !== null || ended;
+    detailEnded.hidden = !ended;
+    paintDetailStale();
     var live = detailBody.querySelector(".pd-live");
     if (html === null) {
       if (!live) detailBody.innerHTML = '<p class="unavailable">Process details unavailable</p>';
+      else if (ended) detailBody.querySelector('[data-fact="state"]').textContent = "ended";
       syncMotion();
       return;
     }
@@ -2199,9 +2252,12 @@
   function askDetail() {
     if (detailPid === null || detailBusy) return;
     var pid = detailPid;
+    var ended = false;
     detailBusy = true;
     window.fetch("proc/" + pid + window.location.search, { cache: "no-store" })
       .then(function (response) {
+        // ACC-VIEW-209-POPUP-STALE: with the stream gone a 404 may be a proxy's, which says nothing of the process.
+        ended = response.status === 404 && !stale;
         return response.ok ? response.text() : null;
       })
       .catch(function () {
@@ -2209,7 +2265,7 @@
       })
       .then(function (html) {
         detailBusy = false;
-        if (pid === detailPid) showDetail(html);
+        if (pid === detailPid) showDetail(html, ended);
       });
   }
 
@@ -2220,6 +2276,8 @@
     document.getElementById("proc-detail-title").textContent = "PID " + p.pid + " " + p.texts[1];
     detailBody.textContent = "";
     detailState.hidden = true;
+    detailEnded.hidden = true;
+    paintDetailStale();
     detail.hidden = false;
     syncScrim();
     placeDetail();
@@ -2227,17 +2285,11 @@
     askDetail();
   }
 
-  function closeDetail(refocus) {
-    var pid = detailPid;
+  function closeDetail() {
     detailPid = null;
     detail.hidden = true;
     syncScrim();
     detailBody.textContent = "";
-    if (!refocus) return;
-    var rows = procWrap.querySelector("tbody")._rows || [];
-    rows.forEach(function (p) {
-      if (p.pid === pid && !p.row.hidden) p.row.focus();
-    });
   }
 
   if (detail && procWrap) {
@@ -2250,26 +2302,18 @@
         return;
       }
       if (detailPid === null || detail.contains(event.target)) return;
-      // A control the click landed on keeps the focus the click gave it.
-      closeDetail(!closest(event.target, "button, input, select, textarea, a[href]"));
-    });
-    procWrap.addEventListener("keydown", function (event) {
-      if (event.target.tagName !== "TR" || (event.key !== "Enter" && event.key !== " ")) return;
-      event.preventDefault();
-      openDetail(event.target._p);
+      closeDetail();
     });
     document.addEventListener("keydown", function (event) {
       if (detailPid === null) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        closeDetail(true);
+        closeDetail();
       } else if (event.key === "Tab") {
         cycleTab(event, detail);
       }
     });
-    detailClose.addEventListener("click", function () {
-      closeDetail(true);
-    });
+    detailClose.addEventListener("click", closeDetail);
     detailBody.addEventListener("click", function (event) {
       var copy = closest(event.target, ".pd-copy");
       if (!copy) return;

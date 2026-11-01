@@ -1,9 +1,10 @@
 //! ACC-NET-143-AGENT-MODES: client mode. The process samples nothing and
 //! renders the dashboard from the agents named in its configuration.
 //!
-//! One upstream SSE connection per configured agent, opened at startup and
-//! shared by every browser (ACC-PERF-16-NO-OVERHEAD): N viewers cost one
-//! stream and one collection per agent tick, never one per viewer. The relay
+//! One upstream SSE connection per configured agent, held while a browser is
+//! attached (ACC-NET-207-CLIENT-IDLE) and shared by every browser
+//! (ACC-PERF-16-NO-OVERHEAD): N viewers cost one stream and one collection per
+//! agent tick, never one per viewer. The relay
 //! forwards each event in arrival order and parses nothing inside a fragment
 //! but the advertised interval - the same `data-update-ms` attribute
 //! `assets/app.js` reads - so each agent's sample age and stale mark are
@@ -32,7 +33,7 @@ use hyper::body::Incoming;
 use hyper::header::{ACCEPT, AUTHORIZATION, HOST};
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use crate::config::{Connect, ConnectKey, DEFAULT_UPDATE_MS};
 use crate::secret;
@@ -106,6 +107,9 @@ impl Client {
             );
             resolved.push((connect.name.clone(), connect.addr.clone(), key.to_string()));
         }
+        // ACC-NET-207-CLIENT-IDLE: one count for every link, because the strip's
+        // chips read every link while any browser is attached.
+        let viewers = Arc::new(watch::Sender::new(0_usize));
         let links = resolved
             .into_iter()
             .map(|(name, addr, key)| {
@@ -114,6 +118,7 @@ impl Client {
                 let upstream_pins = Arc::clone(&pins);
                 let upstream_name = name.clone();
                 let (upstream_addr, upstream_key) = (addr.clone(), key.clone());
+                let upstream_viewers = viewers.subscribe();
                 tokio::spawn(async move {
                     upstream(
                         upstream_name,
@@ -121,6 +126,7 @@ impl Client {
                         upstream_key,
                         upstream_pins,
                         state,
+                        upstream_viewers,
                     )
                     .await;
                 });
@@ -130,6 +136,7 @@ impl Client {
                     addr,
                     key,
                     pins: Arc::clone(&pins),
+                    viewers: Arc::clone(&viewers),
                 }
             })
             .collect();
@@ -162,6 +169,7 @@ pub struct Link {
     addr: String,
     key: String,
     pins: Arc<Pins>,
+    viewers: Arc<watch::Sender<usize>>,
 }
 
 impl Link {
@@ -189,15 +197,20 @@ impl Link {
 
     /// Whether the agent's stream is up; the strip chip reads it.
     pub fn connected(&self) -> bool {
-        self.shared.view().connected
+        self.shared.view().connected == Some(true)
     }
 
     /// Relay this agent's fragments to one browser, in arrival order, after
     /// the stamp of the build that served the browser its page
-    /// (DEF-VIEW-119-STALE-TAB).
+    /// (DEF-VIEW-119-STALE-TAB). The stream holds the viewer count, so a dropped
+    /// connection counts (ACC-NET-207-CLIENT-IDLE).
     pub fn relay(&self, stamp: Arc<str>) -> impl IntoResponse {
+        // Subscribed before counted, so the first frame of a link this wakes
+        // reaches this viewer.
         let mut receiver = self.shared.events.subscribe();
+        let viewer = Viewer::attach(&self.viewers);
         let stream = async_stream::stream! {
+            let _viewer = viewer;
             yield Ok::<_, std::convert::Infallible>(Event::default().event("stamp").data(&*stamp));
             loop {
                 match receiver.recv().await {
@@ -220,9 +233,9 @@ impl Link {
         let (state, text) = match (view.connected, view.last_at) {
             // No invented data: an agent that never answered, or stopped
             // answering, shows that word instead of an age or a zero.
-            (false, _) => ("unavailable", "unavailable".to_string()),
-            (true, None) => ("connecting", "connecting".to_string()),
-            (true, Some(at)) => {
+            (Some(false), _) => ("unavailable", "unavailable".to_string()),
+            (_, None) => ("connecting", "connecting".to_string()),
+            (_, Some(at)) => {
                 let age = at.elapsed();
                 let stale = age.as_millis() as u64 > 2 * view.interval_ms;
                 (if stale { "stale" } else { "live" }, age_text(age))
@@ -256,7 +269,9 @@ struct Fragment {
 
 #[derive(Clone, Copy)]
 struct View {
-    connected: bool,
+    /// `None` until the upstream's first attempt since it last had no browser:
+    /// the client being idle says nothing about the agent.
+    connected: Option<bool>,
     last_at: Option<Instant>,
     /// The agent's advertised sampling interval, learned from its cpu
     /// fragment; `DEFAULT_UPDATE_MS` until the first frame.
@@ -275,7 +290,7 @@ impl Shared {
         Self {
             events,
             view: Mutex::new(View {
-                connected: false,
+                connected: None,
                 last_at: None,
                 interval_ms: DEFAULT_UPDATE_MS,
             }),
@@ -290,7 +305,14 @@ impl Shared {
         self.view
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .connected = connected;
+            .connected = Some(connected);
+    }
+
+    /// The upstream left because no browser is attached.
+    fn set_idle(&self) {
+        let mut view = self.view.lock().unwrap_or_else(|error| error.into_inner());
+        view.connected = None;
+        view.last_at = None;
     }
 
     fn publish(&self, fragment: Fragment) {
@@ -301,7 +323,7 @@ impl Shared {
         }
         {
             let mut view = self.view.lock().unwrap_or_else(|error| error.into_inner());
-            view.connected = true;
+            view.connected = Some(true);
             view.last_at = Some(Instant::now());
             if fragment.name == "cpu"
                 && let Some(interval) = advertised_interval(&fragment.data)
@@ -313,23 +335,59 @@ impl Shared {
     }
 }
 
+/// ACC-NET-207-CLIENT-IDLE: one attached browser, held by its relay stream.
+struct Viewer(Arc<watch::Sender<usize>>);
+
+impl Viewer {
+    fn attach(viewers: &Arc<watch::Sender<usize>>) -> Self {
+        viewers.send_modify(|count| *count += 1);
+        Self(Arc::clone(viewers))
+    }
+}
+
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        self.0.send_modify(|count| *count -= 1);
+    }
+}
+
 /// One agent's upstream: connect, relay until the stream ends, retry. Losing
 /// an established stream is a warning; a retry that fails again is debug, so
 /// a stopped agent does not write one log line per second.
-async fn upstream(name: String, addr: String, key: String, pins: Arc<Pins>, shared: Arc<Shared>) {
-    loop {
-        match follow(&name, &addr, &key, Arc::clone(&pins), &shared).await {
-            // An established stream that ends or fails is a warning; a
-            // connect that never established is debug, so a stopped agent
-            // does not write one log line per second.
-            Err(error) if shared.view().connected => {
-                tracing::warn!(agent = %name, %error, "agent stream ended");
+///
+/// ACC-NET-207-CLIENT-IDLE: it waits, with no timer and no connection, while no
+/// browser is attached. The last browser's departure drops the attached future
+/// in whatever state it is, a connect, a stream or a retry wait, and with it
+/// the connection, so the agent's sampler sleeps by ACC-PERF-136-SLEEP.
+async fn upstream(
+    name: String,
+    addr: String,
+    key: String,
+    pins: Arc<Pins>,
+    shared: Arc<Shared>,
+    mut viewers: watch::Receiver<usize>,
+) {
+    while viewers.wait_for(|count| *count > 0).await.is_ok() {
+        let attached = async {
+            loop {
+                match follow(&name, &addr, &key, Arc::clone(&pins), &shared).await {
+                    // An established stream that ends or fails is a warning; a
+                    // connect that never established is debug, so a stopped
+                    // agent does not write one log line per second.
+                    Err(error) if shared.view().connected == Some(true) => {
+                        tracing::warn!(agent = %name, %error, "agent stream ended");
+                    }
+                    Err(error) => tracing::debug!(agent = %name, %error, "agent unreachable"),
+                    Ok(()) => tracing::warn!(agent = %name, "agent stream ended"),
+                }
+                shared.set_connected(false);
+                tokio::time::sleep(RETRY).await;
             }
-            Err(error) => tracing::debug!(agent = %name, %error, "agent unreachable"),
-            Ok(()) => tracing::warn!(agent = %name, "agent stream ended"),
+        };
+        tokio::select! {
+            _ = viewers.wait_for(|count| *count == 0) => shared.set_idle(),
+            () = attached => {}
         }
-        shared.set_connected(false);
-        tokio::time::sleep(RETRY).await;
     }
 }
 

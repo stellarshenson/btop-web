@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
@@ -237,7 +238,7 @@ async fn page_has_every_panel_and_theme_option() {
     let page = String::from_utf8(body).expect("utf-8 page");
     for marker in [
         "btop-web",
-        "sse-connect=\"events\"",
+        "sse-connect=\"events?telemetry=1\"",
         "sse-swap=\"cpu\"",
         "sse-swap=\"mem\"",
         "sse-swap=\"net\"",
@@ -327,7 +328,7 @@ async fn page_references_assets_and_events_relatively() {
         "src=\"assets/htmx-sse.min.js?v=",
         "src=\"assets/theme.js?v=",
         "src=\"assets/app.js?v=",
-        "sse-connect=\"events\"",
+        "sse-connect=\"events?telemetry=1\"",
     ] {
         assert!(page.contains(marker), "page lacks {marker}");
     }
@@ -1260,6 +1261,51 @@ async fn process_tree_draws_rules_at_a_fixed_px_step() {
         ),
         "the toggle path does not swap between a right and a down triangle with aria-expanded"
     );
+    assert!(
+        js.contains(r#"var values = procView.view === "tree" || p.collapsed ? p.sums : p.own;"#),
+        "ACC-VIEW-102-TREE-SORT: a tree row does not rank by its whole branch"
+    );
+    assert!(
+        js.contains(
+            r#"var labels = (view === "tree" || p.collapsed) && p.sumLabels ? p.sumLabels : p.ownLabels;"#
+        ),
+        "ACC-VIEW-205-TREE-TALLY: a tree row does not show its whole branch, folded or not"
+    );
+    assert!(
+        css.contains(".proc-wrap:not([data-applied]) tbody {")
+            && js.contains(r#"procWrap.toggleAttribute("data-applied", true);"#),
+        "ACC-VIEW-205-TREE-TALLY: a row shows before applyProc chose its labels"
+    );
+    assert!(
+        js.contains(r#"if (view === "all" || (view === "top" && query)) {"#),
+        "ACC-VIEW-206-FILTER-MATCHES: a query in the top view does not list the matches as the all view does"
+    );
+}
+
+/// ACC-VIEW-211-ROW-KEYS: no row and no tree triangle is a tab stop, and no key
+/// opens a row. ACC-VIEW-201-ROW-FOCUS: no row takes the focus, so no rule styles one.
+#[test]
+fn process_rows_take_no_tab_stop_and_no_key() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let css = std::fs::read_to_string(base.join("assets/app.css")).expect("app.css");
+    let js = std::fs::read_to_string(base.join("assets/app.js")).expect("app.js");
+    assert!(!js.contains("row.tabIndex"), "a process row is a tab stop");
+    assert!(
+        js.contains("p.twisty.tabIndex = -1;"),
+        "a tree triangle is a tab stop"
+    );
+    assert!(
+        js.contains(r#"if (closest(event.target, ".twisty")) event.preventDefault();"#),
+        "a clicked tree triangle takes the focus"
+    );
+    assert!(
+        !js.contains(r#"event.target.tagName !== "TR""#),
+        "a key handler opens a process row"
+    );
+    assert!(
+        !css.contains("tr:focus-visible"),
+        "a rule styles a focused row, and no row takes the focus"
+    );
 }
 
 /// ACC-VIEW-198-ROW-HOVER: the hovered row paints the row-hover background and
@@ -1702,7 +1748,7 @@ async fn reserved_widths_sit_on_the_memory_values() {
     let used = snapshot.mem.ram_percent.expect("used percent");
     let available = snapshot
         .mem
-        .ram_available_percent
+        .ram_free_reclaimable_percent()
         .expect("available percent");
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
         for marker in [
@@ -2110,7 +2156,7 @@ async fn container_page_shows_only_container_values() {
         // DEF-VIEW-97-MEM-UNITS: the tag also names whose limit it is.
         for header in [
             ">of 8.00 GiB (container limit)</span>",
-            ">of total 8.00 GiB (container limit)</span>",
+            r#"><span>of total <span class="meta-value">8.00 GiB</span> (container limit)</span></span>"#,
         ] {
             assert_eq!(
                 html.matches(header).count(),
@@ -2218,7 +2264,10 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
         );
         // ACC-VIEW-193-MEM-TOTAL: both headers drop the words, the tooltip keeps
         // the scope. ACC-VIEW-196-MEM-HEADER: the table panel's states the total.
-        for header in [">of 503 GiB</span>", ">of total 503 GiB</span>"] {
+        for header in [
+            ">of 503 GiB</span>",
+            r#"><span>of total <span class="meta-value">503 GiB</span></span></span>"#,
+        ] {
             assert_eq!(
                 html.matches(header).count(),
                 1,
@@ -2271,6 +2320,52 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
             "the cache row does not answer whether it is swap"
         );
     }
+}
+
+/// ACC-VIEW-212-MEM-MATCH: on a reading whose exact bytes round to one percent
+/// and whose printed figure rounds to the next, the strip prints the table's
+/// number and the snapshot keeps btop's rounding. A host reading with
+/// MemAvailable but no MemFree has no table figure and keeps the exact percent.
+#[tokio::test]
+async fn memory_strip_prints_the_table_percent_at_a_rounding_boundary() {
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mem/boundary/proc");
+    let mut config = Config::load(None).expect("config");
+    config.container = btop_web::collector::container::detect(&tree);
+    let snapshot = recorded_snapshot_with("tests/fixtures/mem/boundary/proc", 1, config);
+    assert_eq!(snapshot.mem.ram_available_percent, Some(66.0));
+    assert_eq!(snapshot.mem.ram_free_reclaimable_percent(), Some(67.0));
+    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
+        .expect("utf-8 page");
+    for html in page_and_event(&page, &fragments(&snapshot), "mem") {
+        for marker in [
+            r#"<b data-w="100%">67%</b> available"#.to_string(),
+            format!(
+                r#"<span>free + reclaimable</span><b data-w="0000 MiB">{}</b><span class="pct" data-w="100%">67%</span>"#,
+                snapshot.mem.ram_free_reclaimable_label()
+            ),
+        ] {
+            assert!(html.contains(&marker), "lacks {marker}");
+        }
+    }
+
+    let root = std::env::temp_dir().join(format!("btop-web-no-free-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let tree = root.join("proc");
+    std::fs::create_dir_all(&tree).expect("tree");
+    std::fs::write(
+        tree.join("meminfo"),
+        "MemTotal: 1000 kB\nMemAvailable: 250 kB\n",
+    )
+    .expect("meminfo");
+    let snapshot = Snapshot {
+        mem: mem::MemCollector::default().collect(&tree, &Config::load(None).expect("config")),
+        ..Snapshot::default()
+    };
+    std::fs::remove_dir_all(&root).expect("cleanup");
+    assert_eq!(snapshot.mem.ram_free_reclaimable_percent(), None);
+    let page = String::from_utf8(get(&app(Some(snapshot), true), "/").await.2).expect("utf-8 page");
+    assert!(page.contains(r#"<b data-w="100%">25%</b> available"#));
+    assert!(page.contains("source: /proc/meminfo MemAvailable"));
 }
 
 /// ACC-LAYOUT-46-ADAPTIVE-PRIORITY: every field that appears once in its
@@ -2557,9 +2652,9 @@ async fn proc_tile_carries_the_count_graph_and_the_facts() {
                 snapshot.proc.chart.line
             ),
             format!(
-                "top <b>{} {}%</b>",
-                top.name.as_deref().expect("name"),
-                top.cpu_label()
+                r#"top <b data-w="1000%">{}%</b> <b>{}</b>"#,
+                top.cpu_label(),
+                top.name.as_deref().expect("name")
             ),
             format!(
                 r#"80% cpu <b class="foot-count" data-w="000">{}</b>"#,
@@ -2681,6 +2776,12 @@ async fn process_filter_is_a_plain_section_of_the_bar() {
     ] {
         assert!(compact.contains(rule), "app.css lacks {rule}");
     }
+    assert!(
+        compact.contains(
+            ".panel>.phbutton:where(:not(:disabled)),select.opt.cfg-in:where(:not(:disabled)){cursor:pointer;}"
+        ),
+        "app.css lacks the pointer rule for the popup's close and the config selects"
+    );
     for state in [".cfg-in.filter:focus", ".cfg-in.filter:not("] {
         assert!(
             !compact.contains(state),
@@ -2896,11 +2997,11 @@ async fn the_json_stream_writes_one_document_per_frame() {
     assert_eq!(document["update_ms"], serde_json::json!(500));
 }
 
-/// ACC-VIEW-182-COPY-JSON: the top bar's button reads
-/// `/events.json?once=1`, and that document is the stream's own serialisation
-/// of the newest frame: the two are byte-identical, so the clipboard carries
-/// the stream's fields and plot paths, not a second shape. The page ships no
-/// serialiser of its own.
+/// ACC-VIEW-182-COPY-JSON: `/events.json?once=1` is the stream's own
+/// serialisation of the newest frame: the two are byte-identical.
+/// ACC-VIEW-210-COPY-HELD: the top bar's button writes the frame the page holds
+/// from the `telemetry` event, with no request. The page ships no serialiser
+/// of its own.
 #[tokio::test]
 async fn the_copied_document_equals_the_stream_document() {
     let app = app(Some(fixture_snapshot()), true);
@@ -2920,8 +3021,12 @@ async fn the_copied_document_equals_the_stream_document() {
 
     let script = String::from_utf8(get(&app, "/assets/app.js").await.2).expect("utf-8 script");
     assert!(
-        script.contains("events.json?once=1"),
-        "the button reads no once route"
+        script.contains("addEventListener(\"telemetry\", holdFrame)"),
+        "the page holds no telemetry frame"
+    );
+    assert!(
+        !script.contains("events.json"),
+        "the button still asks the server"
     );
     assert!(
         script.contains("navigator.clipboard.writeText"),
@@ -3472,6 +3577,32 @@ async fn events_state_the_stamp_once_per_connection() {
     server.abort();
 }
 
+/// ACC-VIEW-210-COPY-HELD: `/events?telemetry=1` carries the `/events.json`
+/// document as one named event. Without the flag the stream carries none and
+/// builds none. The dropped sender ends each stream after its first frame.
+#[tokio::test]
+async fn events_carry_the_telemetry_frame_only_when_asked() {
+    let frame = Arc::new(Frame::new(fixture_snapshot()));
+    let (_, receiver) = watch::channel(Some(Arc::clone(&frame)));
+    let app = btop_web::app(AppState::new(receiver, true));
+
+    let plain = String::from_utf8(get(&app, "/events").await.2).expect("utf-8 stream");
+    assert!(plain.contains("event: gpu"), "{}", tail(&plain));
+    assert!(!plain.contains("event: telemetry"), "{}", tail(&plain));
+    assert!(frame.telemetry.get().is_none(), "built with nobody asking");
+
+    let asked = String::from_utf8(get(&app, "/events?telemetry=1").await.2).expect("utf-8 stream");
+    let document =
+        String::from_utf8(get(&app, "/events.json?once=1").await.2).expect("utf-8 document");
+    assert!(
+        asked.contains(&format!("event: telemetry\ndata: {document}data: \n\n")),
+        "{}",
+        tail(&asked)
+    );
+    assert_eq!(asked.matches("event: telemetry").count(), 1);
+    assert!(frame.telemetry.get().is_some(), "the text is not held");
+}
+
 #[tokio::test]
 async fn real_socket_serves_healthz() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -3629,6 +3760,139 @@ async fn client_mode_has_no_server_rows_and_refuses_config_posts() {
         std::fs::read_to_string(&conf).expect("config"),
         "update_ms = 250\n"
     );
+}
+
+/// The strip's fragment for a client, as the page's one-second poll reads it.
+async fn strip_of(app: &Router) -> String {
+    String::from_utf8(get(app, "/agents").await.2).expect("utf-8 strip")
+}
+
+/// A browser attached to `/events`; dropping the response is its disconnect.
+async fn attach(app: &Router) -> axum::response::Response {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/events?agent=alpha")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    response
+}
+
+/// The next connection `listener` receives.
+async fn next_connection(listener: &tokio::net::TcpListener) -> tokio::net::TcpStream {
+    tokio::time::timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .expect("the client did not connect")
+        .expect("accept")
+        .0
+}
+
+/// Read to the end of `socket`: the client left the connection.
+async fn left(socket: &mut tokio::net::TcpStream) {
+    let mut bytes = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), socket.read_to_end(&mut bytes))
+        .await
+        .expect("the client kept the connection")
+        .expect("read");
+}
+
+/// ACC-NET-207-CLIENT-IDLE: a client connects to every agent while any browser
+/// holds `/events` open and to none otherwise. The page and the strip's poll are
+/// not viewers. The agents here never answer, so each link stays in its TLS
+/// handshake unless the test closes the socket.
+#[tokio::test]
+async fn a_client_connects_to_its_agents_only_while_a_browser_is_attached() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("client-idle");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("client dir");
+    let key_file = dir.join("agent.key");
+    std::fs::write(&key_file, "client-idle-access-key\n").expect("key file");
+    let alpha = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let beta = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let connects = [("alpha", &alpha), ("beta", &beta)].map(|(name, listener)| Connect {
+        name: name.to_string(),
+        addr: listener.local_addr().expect("address").to_string(),
+    });
+    let keys = ["alpha", "beta"].map(|name| ConnectKey {
+        name: name.to_string(),
+        source: btop_web::secret::Source::Path(key_file.clone()),
+    });
+    let client = btop_web::client::Client::start(&connects, &keys, &dir.join("known_agents"))
+        .expect("client");
+    let (_sender, receiver) = watch::channel(None);
+    let mut state = AppState::new(receiver, false);
+    state.client = Some(Arc::new(client));
+    let app = btop_web::app(state);
+
+    // No browser: the page and the strip connect nothing, and a chip reads the
+    // connecting word, not a verdict on an agent nobody has tried.
+    let page = page_of(&app).await;
+    assert!(page.contains(">connecting<"), "{page}");
+    assert_eq!(strip_of(&app).await.matches(">connecting<").count(), 2);
+    let idle = Duration::from_millis(300);
+    assert!(
+        tokio::time::timeout(idle, alpha.accept()).await.is_err(),
+        "a client with no browser connected"
+    );
+
+    // One browser on one agent connects every agent, and a second browser
+    // leaving does not end them.
+    let first = attach(&app).await;
+    let second = attach(&app).await;
+    let mut alpha_link = next_connection(&alpha).await;
+    let mut beta_link = next_connection(&beta).await;
+    drop(second);
+    let mut byte = [0_u8; 4096];
+    let _ = alpha_link.read(&mut byte).await.expect("client hello");
+    assert!(
+        tokio::time::timeout(idle, alpha_link.read(&mut byte))
+            .await
+            .is_err(),
+        "the client left while a browser was attached"
+    );
+
+    // The last browser leaving drops a link in its handshake.
+    drop(first);
+    left(&mut alpha_link).await;
+    left(&mut beta_link).await;
+    assert_eq!(strip_of(&app).await.matches(">connecting<").count(), 2);
+
+    // A failure reads unavailable while a browser watches. The last browser
+    // leaving ends the retry wait, so nothing connects after RETRY (1 s), and
+    // the chip goes back to the connecting word.
+    let browser = attach(&app).await;
+    drop(next_connection(&alpha).await);
+    drop(next_connection(&beta).await);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while strip_of(&app).await.matches(">unavailable<").count() < 2 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a refused link did not read unavailable"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    drop(browser);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1300), alpha.accept())
+            .await
+            .is_err(),
+        "the retry wait connected after the last browser left"
+    );
+    assert_eq!(strip_of(&app).await.matches(">connecting<").count(), 2);
+
+    // The next browser connects every agent again.
+    let _browser = attach(&app).await;
+    next_connection(&alpha).await;
+    next_connection(&beta).await;
 }
 
 /// The opening tag and inner HTML of the element whose `role` is `role`.
@@ -4187,10 +4451,7 @@ async fn read_write_config_rows_are_forms() {
     let (app, _) = config_app(false, config, Some(path.clone()));
     let page = page_of(&app).await;
     assert!(page.contains(r#"<meta name="htmx-config" content='{"responseHandling":"#));
-    assert!(page.contains(&format!(
-        "changes apply to every viewer and are saved to {}",
-        path.display()
-    )));
+    assert!(page.contains(&format!("changes are saved to {}", path.display())));
     assert!(
         page.contains("$XDG_CONFIG_HOME/btop-web/ when set, else ~/.config/btop-web/"),
         "the note does not state where the path comes from"
@@ -4214,7 +4475,7 @@ async fn read_write_config_rows_are_forms() {
 
     let (app, _) = config_app(false, Config::defaults(), None);
     assert!(page_of(&app).await.contains(
-        "changes apply to every viewer until restart; no btop-web.conf path: set HOME or XDG_CONFIG_HOME"
+        "changes apply until restart; no btop-web.conf path: set HOME or XDG_CONFIG_HOME"
     ));
 }
 
@@ -4946,7 +5207,16 @@ async fn the_page_carries_the_process_popup() {
     assert!(popup > main_end, "a swapped fragment could hold the popup");
     assert!(page[popup..].contains(r#"role="dialog""#));
     assert!(page[popup..].contains(r#"id="proc-detail-close""#));
+    // ACC-VIEW-209-POPUP-STALE: the word is plain text, as Process Ended is.
+    assert!(
+        page[popup..]
+            .contains(r#"<span class="pd-ended" id="proc-detail-stale" hidden>Stale</span>"#)
+    );
     let js = String::from_utf8(get(&app, "/assets/app.js").await.2).expect("utf-8");
+    assert!(
+        js.contains("ended = response.status === 404 && !stale;"),
+        "ACC-VIEW-209-POPUP-STALE: a 404 with the stream gone reads as Process Ended"
+    );
     assert!(
         js.contains(r#""proc/" + pid + window.location.search"#),
         "a relative route"

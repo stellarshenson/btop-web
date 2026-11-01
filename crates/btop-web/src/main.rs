@@ -21,10 +21,11 @@ const USAGE: &str = "\
 Usage: btop-web [OPTIONS]
 
 Options:
-      --agent           Serve telemetry only: /events, /healthz and /readyz,
-                        no page; a client connects to this process. The access
-                        key is printed once on the start that creates it and
-                        kept at $XDG_CONFIG_HOME/btop-web/access-key
+      --agent           Serve telemetry only: /events, /events.json, /proc/PID,
+                        /healthz and /readyz, no page; a client connects to
+                        this process. The access key is printed once on the
+                        start that creates it and kept at
+                        $XDG_CONFIG_HOME/btop-web/access-key
       --client          Sample nothing; serve the dashboard from the agents
                         named by --connect (mode = client in btop-web.conf).
                         Every agent needs a `connect_key = NAME=PATH` line in

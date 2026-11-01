@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::response::IntoResponse;
 use btop_web::AppState;
 use btop_web::client::Client;
 use btop_web::collector::frame::Frame;
@@ -235,6 +236,8 @@ async fn the_client_pins_the_first_fingerprint_and_refuses_a_changed_certificate
         source: Source::Path(key_path),
     }];
     let client = Client::start(&connects, &keys, &pins_path).expect("client start");
+    // ACC-NET-207-CLIENT-IDLE: a client connects only for an attached browser.
+    let _viewer = client.links[0].relay(Arc::from("stamp")).into_response();
     let deadline = Instant::now() + Duration::from_secs(10);
     while !client.links[0].connected() {
         assert!(Instant::now() < deadline, "the client never streamed");

@@ -6,6 +6,8 @@
 //! behind an `Arc`; a stream sends the held strings, so a viewer adds only its
 //! own event framing and socket write.
 
+use std::sync::{Arc, OnceLock};
+
 use askama::Template;
 
 use super::Snapshot;
@@ -15,6 +17,10 @@ pub struct Frame {
     pub snapshot: Snapshot,
     /// The named fragments in event order, rendered once by [`Frame::new`].
     pub events: Vec<(&'static str, String)>,
+    /// ACC-VIEW-210-COPY-HELD: the slow pass's `/events.json` text, one cell
+    /// shared by the pass's frames. The first connection that asks builds it,
+    /// and with no connection asking it stays empty.
+    pub telemetry: Arc<OnceLock<String>>,
 }
 
 impl Frame {
@@ -22,6 +28,7 @@ impl Frame {
     pub fn new(snapshot: Snapshot) -> Self {
         Self {
             events: fragments(&snapshot),
+            telemetry: Arc::default(),
             snapshot,
         }
     }

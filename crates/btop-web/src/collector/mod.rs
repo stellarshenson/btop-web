@@ -52,7 +52,7 @@ pub use frame::Frame;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
@@ -438,10 +438,9 @@ impl MemSnapshot {
 
     /// ACC-VIEW-195-MEM-SUM: the free row plus every reclaimable row the table
     /// shows, as the legend prints them, so the line adds up on screen; `None`
-    /// when a part is unreadable, never a partial sum. `ram_available` stays
-    /// MemAvailable, which with the other rows in the table also counts the
-    /// container's active_file and slab_reclaimable; used keeps those two
-    /// (DEF-VIEW-96-MEM-WRONG), so this figure falls below it there.
+    /// when a part is unreadable, never a partial sum. `ram_available` is the
+    /// same rows' exact bytes (ACC-VIEW-212-MEM-MATCH), so this figure differs
+    /// from it only by the rounding of the printed rows.
     fn ram_free_reclaimable(&self) -> Option<u64> {
         let printed = match self.ram_legend() {
             [Some(cache), Some(_), Some(other_cache), Some(free)] => {
@@ -963,6 +962,24 @@ impl GpuSnapshot {
     pub fn available(&self) -> bool {
         !self.devices.is_empty()
     }
+
+    /// DEF-LAYOUT-133-GPU-LATE: the same devices with their names and no reading,
+    /// for the frames between a wake and its first sweep. Every field the page
+    /// reads then renders as unavailable, and [`gpu::attach_charts`] pushes no
+    /// sample.
+    fn unread(&self) -> Self {
+        Self {
+            devices: self
+                .devices
+                .iter()
+                .map(|device| GpuDevice {
+                    name: device.name.clone(),
+                    ..GpuDevice::default()
+                })
+                .collect(),
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1193,6 +1210,8 @@ struct SlowPass {
     scale_down: ScaleFrame,
     scale_up: ScaleFrame,
     gpu_charts: Vec<ChartPath>,
+    /// ACC-VIEW-210-COPY-HELD: this pass's [`Frame::telemetry`] cell.
+    telemetry: Arc<OnceLock<String>>,
 }
 
 impl SlowPass {
@@ -1214,6 +1233,7 @@ impl SlowPass {
                 .iter()
                 .map(|device| device.chart.clone())
                 .collect(),
+            telemetry: Arc::default(),
         }
     }
 
@@ -1226,10 +1246,11 @@ impl SlowPass {
         snapshot.net.scale_down = self.scale_down.clone();
         snapshot.net.scale_up = self.scale_up.clone();
         snapshot.proc = self.proc.clone();
-        // A device the sweep added since the pass keeps the chart it just
-        // built, because the pass holds nothing for it.
-        for (device, chart) in snapshot.gpu.devices.iter_mut().zip(&self.gpu_charts) {
-            device.chart = chart.clone();
+        // DEF-GRAPH-135-GPU-STEP: a device the sweep added since the pass has no
+        // held chart, so it draws nothing until its first pass; a tick's chart
+        // would put the next pass's path right of the position the page scrolled to.
+        for (index, device) in snapshot.gpu.devices.iter_mut().enumerate() {
+            device.chart = self.gpu_charts.get(index).cloned().unwrap_or_default();
         }
     }
 }
@@ -1300,13 +1321,19 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
                 if let Some(sweep) = gpu_sweep.take() {
                     sweep.abort();
                 }
-                // The held GPU values are dropped so the next frame never
-                // shows a value from before the sleep; their histories stay
+                // The held GPU readings are dropped so the next frame never
+                // shows a value from before the sleep; the devices stay, so
+                // the panel keeps its size from the wake's first frame
+                // (DEF-LAYOUT-133-GPU-LATE), and their histories stay
                 // (DEF-GRAPH-126-GPU-HISTORY). ACC-PERF-142-WAKE-FAST:
                 // the held slow results stay, so the first post-wake frame
                 // reuses the walk and the charts it already knows instead of
                 // rebuilding them; the next slow pass refreshes them.
-                gpu_latest = GpuSnapshot::default();
+                gpu_latest = gpu_latest.unread();
+                // ACC-VIEW-210-COPY-HELD: the wake's frame keeps this pass's
+                // number but has new values, so the text from before the sleep
+                // is dropped.
+                slow.telemetry = Arc::default();
                 sampler_wake.set_parked(true);
                 if sampler_wake.idle() {
                     // Subscribe first, then check again: a change before the
@@ -1402,7 +1429,11 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
             sampler_wake.sampled();
             // ACC-PERF-16-NO-OVERHEAD: the fragments are rendered once, here,
             // and every client shares them, so a viewer adds no render work.
-            if sender.send(Some(Arc::new(Frame::new(snapshot)))).is_err() {
+            let frame = Frame {
+                telemetry: Arc::clone(&slow.telemetry),
+                ..Frame::new(snapshot)
+            };
+            if sender.send(Some(Arc::new(frame))).is_err() {
                 break;
             }
         }
@@ -2478,6 +2509,63 @@ mod tests {
             Some(2)
         );
         sampler.task.abort();
+    }
+
+    /// DEF-LAYOUT-133-GPU-LATE: across a park a device keeps its name and loses
+    /// every reading, so the wake's first frames draw its panel with no old value.
+    #[test]
+    fn a_park_keeps_the_device_and_drops_its_readings() {
+        let gpu = GpuSnapshot {
+            devices: vec![GpuDevice {
+                name: "RTX".to_string(),
+                utilization_pct: Some(37.0),
+                vram_used: Some(1),
+                vram_total: Some(2),
+                power_w: Some(3.0),
+                temperature_c: Some(40.0),
+                ..GpuDevice::default()
+            }],
+            average_utilization_pct: Some(37.0),
+            process_count: Some(1),
+            ..GpuSnapshot::default()
+        };
+        let kept = gpu.unread();
+        assert!(kept.available());
+        assert_eq!(kept.devices[0].name, "RTX");
+        assert_eq!(kept.devices[0].utilization_bar(), None);
+        assert_eq!(kept.devices[0].vram_bar(), None);
+        assert_eq!(kept.devices[0].power_bar(), None);
+        assert_eq!(kept.devices[0].temperature_c, None);
+        assert_eq!(kept.average_utilization_pct, None);
+        assert_eq!(kept.process_count, None);
+        // A host with no GPU has no device to keep.
+        assert!(!GpuSnapshot::default().unread().available());
+    }
+
+    /// DEF-GRAPH-135-GPU-STEP: a device with no held chart draws nothing on a fast
+    /// frame, and from its first pass the frames hold that pass's chart.
+    #[test]
+    fn a_gpu_line_starts_on_its_first_slow_pass() {
+        let chart = |line: &str| ChartPath {
+            line: line.to_string(),
+            area: String::new(),
+        };
+        let device = |line: &str| GpuDevice {
+            chart: chart(line),
+            ..GpuDevice::default()
+        };
+        let mut before = Snapshot::default();
+        let pass = SlowPass::new(&before, 1, 1000);
+        before.gpu.devices = vec![device("tick")];
+        pass.apply(&mut before);
+        assert_eq!(before.gpu.devices[0].chart, ChartPath::default());
+
+        let mut first = Snapshot::default();
+        first.gpu.devices = vec![device("pass")];
+        let pass = SlowPass::new(&first, 2, 1000);
+        first.gpu.devices[0].chart = chart("tick");
+        pass.apply(&mut first);
+        assert_eq!(first.gpu.devices[0].chart, chart("pass"));
     }
 
     /// DEF-CPU-44 and ACC-PERF-136-SLEEP: only the LOAD_FREQ timer adds a

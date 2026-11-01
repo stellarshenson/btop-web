@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 
 use crate::AppState;
 use crate::error::AppError;
-use crate::routes::agent_name;
+use crate::routes::{agent_name, telemetry};
 
 /// ACC-PERF-136-SLEEP: subscribing wakes a parked sampler. ACC-PERF-137-
 /// WAKE-BURST: the held frame goes out at once for every panel, ring
@@ -28,7 +28,9 @@ use crate::routes::agent_name;
 /// fragments once for every viewer, so a stream clones a pointer and yields
 /// the held text. DEF-VIEW-119-STALE-TAB: every connection opens with one
 /// `stamp` event naming this build, so a page from another build reloads; no
-/// frame carries it.
+/// frame carries it. ACC-VIEW-210-COPY-HELD: `?telemetry=1` adds one `telemetry`
+/// event per slow pass, first frame included, holding the `/events.json`
+/// document. A client's page and its agent links do not ask.
 pub async fn events(
     State(state): State<AppState>,
     RawQuery(query): RawQuery,
@@ -41,6 +43,9 @@ pub async fn events(
             .ok_or(AppError::NotFound)?;
         return Ok(link.relay(state.asset_stamp.clone()).into_response());
     }
+    let asks_telemetry = query
+        .as_deref()
+        .is_some_and(|query| query.split('&').any(|pair| pair == "telemetry=1"));
     let subscription = state.wake.subscribe();
     let interval = Duration::from_millis(state.config.borrow().update_ms.max(1));
     let mut receiver = state.snapshot.clone();
@@ -64,6 +69,12 @@ pub async fn events(
                         continue;
                     }
                     yield Ok(Event::default().event(*name).data(html));
+                }
+                if slow && asks_telemetry {
+                    let text = frame
+                        .telemetry
+                        .get_or_init(|| telemetry::frame_json(&frame.snapshot));
+                    yield Ok(Event::default().event("telemetry").data(text));
                 }
                 slow_seq = Some(frame.snapshot.slow_seq);
             }

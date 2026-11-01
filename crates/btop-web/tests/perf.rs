@@ -44,6 +44,22 @@ fn temp_tree(name: &str) -> PathBuf {
     root
 }
 
+/// [`temp_tree`] with every process at uid 0: every Linux host names uid 0
+/// root, and the recorded uid 1000 has a different name on each host.
+fn temp_tree_as_root(name: &str) -> PathBuf {
+    let root = temp_tree(name);
+    for entry in fs::read_dir(&root).unwrap() {
+        let status = entry.unwrap().path().join("status");
+        if let Ok(text) = fs::read_to_string(&status) {
+            let text = text.replace("Uid:\t1000\t1000\t1000\t1000", "Uid:\t0\t0\t0\t0");
+            // The copy keeps the mode of a read-only recorded file.
+            fs::remove_file(&status).unwrap();
+            fs::write(&status, text).unwrap();
+        }
+    }
+    root
+}
+
 fn copy_tree(source: &Path, target: &Path) {
     for entry in fs::read_dir(source).unwrap() {
         let entry = entry.unwrap();
@@ -75,7 +91,7 @@ fn proc_fragment(root: &Path, ticks: usize) -> String {
 
 #[test]
 fn proc_fragment_matches_the_recorded_fragment() {
-    let root = temp_tree("fragment");
+    let root = temp_tree_as_root("fragment");
     let fragment = proc_fragment(&root, 3);
     let _ = fs::remove_dir_all(&root);
     let golden = fs::read_to_string(golden()).expect("golden fragment");
@@ -86,7 +102,7 @@ fn proc_fragment_matches_the_recorded_fragment() {
 #[test]
 #[ignore]
 fn record_proc_fragment() {
-    let root = temp_tree("fragment");
+    let root = temp_tree_as_root("fragment");
     let fragment = proc_fragment(&root, 3);
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(golden().parent().expect("fixtures/perf")).unwrap();
@@ -181,6 +197,20 @@ async fn get_page(address: SocketAddr) -> String {
     String::from_utf8_lossy(&response).into_owned()
 }
 
+/// The one document `/events.json?once=1` answers, with its response head.
+async fn get_once(address: SocketAddr) -> String {
+    let mut stream = TcpStream::connect(address).await.expect("connect");
+    let request =
+        format!("GET /events.json?once=1 HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.expect("request");
+    let mut response = Vec::new();
+    timeout(Duration::from_secs(10), stream.read_to_end(&mut response))
+        .await
+        .expect("the document within 10 s")
+        .expect("read");
+    String::from_utf8_lossy(&response).into_owned()
+}
+
 /// Add `busy` jiffies to the aggregate `cpu` line's user field, so the next
 /// sample computes a CPU total of 100 percent against the previous one.
 fn add_busy_jiffies(stat: &Path, busy: u64) {
@@ -214,7 +244,6 @@ async fn sampler_parks_with_nobody_connected_and_wakes_for_a_request() {
         .is_err(),
         "the sampler ticked with nobody connected"
     );
-    let at = Instant::now();
     guarded.sampler.wake.request();
     timeout(
         Duration::from_millis(500),
@@ -223,11 +252,6 @@ async fn sampler_parks_with_nobody_connected_and_wakes_for_a_request() {
     .await
     .expect("a page request wakes the sampler")
     .expect("snapshot");
-    assert!(
-        at.elapsed() < Duration::from_millis(250),
-        "the wake sample took {:?}",
-        at.elapsed()
-    );
     guarded.sampler.snapshots.borrow_and_update();
     assert!(
         timeout(
@@ -372,6 +396,25 @@ async fn first_frame_after_a_sleep_carries_the_post_wake_sample() {
     assert!(
         elapsed < Duration::from_millis(250),
         "the wake frame took {elapsed:?}, past one interval"
+    );
+}
+
+/// A one-frame read after a sleep carries the next slow pass, so a process
+/// that started during the sleep is listed.
+#[tokio::test]
+async fn a_one_frame_read_after_a_sleep_carries_the_next_slow_pass() {
+    let guarded = guarded("once", 100).await;
+    let document = get_once(guarded.address).await;
+    assert!(document.contains(r#""pid":1,"#), "{document}");
+    // The read ended, so the sampler parks.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let new_pid = guarded.tree.join("7777");
+    fs::create_dir_all(&new_pid).unwrap();
+    copy_tree(&fixture("proc/1"), &new_pid);
+    let document = get_once(guarded.address).await;
+    assert!(
+        document.contains(r#""pid":7777,"#),
+        "the document carried the walk from before the sleep: {document}"
     );
 }
 

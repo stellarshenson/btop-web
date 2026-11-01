@@ -55,8 +55,9 @@ struct IndexTemplate<'a> {
     pages: Vec<(&'static str, Vec<CfgRow>)>,
     /// The server group's note line.
     note: String,
-    /// ACC-NET-143-AGENT-MODES: `events`, or `events?agent=NAME` in client
-    /// mode, the stream this page subscribes to.
+    /// ACC-NET-143-AGENT-MODES: `events?agent=NAME` in client mode, the stream
+    /// this page subscribes to. ACC-VIEW-210-COPY-HELD: `events?telemetry=1`
+    /// elsewhere, because only those pages render the copy icon.
     sse_url: String,
     /// One chip per agent in client mode; empty in the server modes.
     chips: Vec<Chip>,
@@ -87,16 +88,16 @@ pub fn render(
             client.chips(name),
             format!("agents?agent={name}"),
         ),
-        _ => ("events".to_string(), Vec::new(), String::new()),
+        _ => ("events?telemetry=1".to_string(), Vec::new(), String::new()),
     };
     let note = match (state.readonly, file) {
         (true, _) => "read-only: restart without --readonly to change".to_string(),
         (false, Some(path)) => format!(
-            "changes apply to every viewer and are saved to {} (btop-web.conf; $XDG_CONFIG_HOME/btop-web/ when set, else ~/.config/btop-web/; btop.conf stays the baseline)",
+            "changes are saved to {} (btop-web.conf; $XDG_CONFIG_HOME/btop-web/ when set, else ~/.config/btop-web/; btop.conf stays the baseline)",
             path.display()
         ),
         (false, None) => {
-            "changes apply to every viewer until restart; no btop-web.conf path: set HOME or XDG_CONFIG_HOME"
+            "changes apply until restart; no btop-web.conf path: set HOME or XDG_CONFIG_HOME"
                 .to_string()
         }
     };

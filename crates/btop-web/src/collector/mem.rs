@@ -44,12 +44,15 @@
 //!   the container's use and are not subtracted
 //! - T = MemTotal when `memory.max` is `max`, missing or at least MemTotal:
 //!   total, free and the other rows are the host's (DEF-VIEW-101-MEM-BREAKDOWN).
-//!   free = MemFree; available = MemAvailable. other reclaimable =
+//!   free = MemFree. other reclaimable =
 //!   MemAvailable - MemFree - (`inactive_file` + `active_file` +
 //!   `slab_reclaimable`): MemAvailable counts all three of this container's as
 //!   reclaimable, though docker's working set keeps the last two in used.
 //!   other used is the remainder, T - the other four rows, so the bar is
-//!   used | cache | other used | other reclaimable | free = T exactly
+//!   used | cache | other used | other reclaimable | free = T exactly.
+//!   available = free + cache + other reclaimable, the table's free +
+//!   reclaimable row (ACC-VIEW-212-MEM-MATCH): MemAvailable would also count
+//!   the `active_file` and `slab_reclaimable` that used holds
 //! - when `memory.max` is below MemTotal the limit binds: T = `memory.max`,
 //!   free = T - U - cache, this container's room under its limit, and both
 //!   other rows are dropped; the bar is used | cache | free = T; available =
@@ -565,7 +568,8 @@ fn container_memory(
             let ([used, cache, free, other_cache], other) =
                 split(mem_total, [used, inactive_file, mem_free, other_cache]);
             let others = Some((other, other_cache));
-            Some((mem_total, used, cache, free, others, mem_available))
+            let available = free + cache + other_cache;
+            Some((mem_total, used, cache, free, others, available))
         });
     if let Some((total, used, cache, free, others, available)) = bar {
         snapshot.ram_total = Some(total);
@@ -1327,8 +1331,9 @@ mod tests {
 
     /// DEF-VIEW-101-MEM-BREAKDOWN, recorded /proc/meminfo and cgroup: the five
     /// rows each read the source the row names and sum to MemTotal exactly,
-    /// available is MemAvailable, and the gauge draws the first two rows' shares
-    /// alone, the rest being the bare track (ACC-VIEW-192-GAUGE-CONTAINER).
+    /// available is the free and reclaimable rows, and the gauge draws the first
+    /// two rows' shares alone, the rest being the bare track
+    /// (ACC-VIEW-192-GAUGE-CONTAINER).
     #[test]
     fn container_rows_sum_to_mem_total() {
         let (total, free, available): (u64, u64, u64) =
@@ -1346,7 +1351,10 @@ mod tests {
         assert_eq!(snapshot.ram_other_cache, Some(other_cache));
         assert_eq!(snapshot.ram_other, Some(other));
         assert_eq!(snapshot.ram_free, Some(free));
-        assert_eq!(snapshot.ram_available, Some(available));
+        assert_eq!(
+            snapshot.ram_available,
+            Some(free + inactive_file + other_cache)
+        );
         assert_eq!(snapshot.ram_available_percent, Some(93.0));
         assert_eq!(bar_sum(&snapshot), total);
         let share = |value: u64| value as f64 * 100.0 / total as f64;
@@ -1359,6 +1367,39 @@ mod tests {
             assert_eq!(*name, want);
             assert!((drawn - value).abs() < 1e-9, "{name}: {drawn} vs {value}");
         }
+        let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
+    }
+
+    /// ACC-VIEW-212-MEM-MATCH, recorded readings with active_file and
+    /// slab_reclaimable non-zero: available is the free and reclaimable rows,
+    /// below MemAvailable by those two, and used and the other rows reach the
+    /// total with it.
+    #[test]
+    fn container_available_is_free_plus_reclaimable_rows() {
+        let (active_file, slab_reclaimable): (u64, u64) = (GIB, 256 << 20);
+        let cgroup = cgroup_variant("cg-match", "memory.max", Some("max\n"));
+        let stat = std::fs::read_to_string(cgroup.join("memory.stat")).expect("memory.stat");
+        assert!(stat.contains(&format!("active_file {active_file}\n")));
+        assert!(stat.contains(&format!("slab_reclaimable {slab_reclaimable}\n")));
+        let snapshot = container_snapshot(&cgroup);
+        let field = |value: Option<u64>| value.expect("every row");
+        let (used, cache, other, other_cache, free) = (
+            field(snapshot.ram_used),
+            field(snapshot.ram_cache),
+            field(snapshot.ram_other),
+            field(snapshot.ram_other_cache),
+            field(snapshot.ram_free),
+        );
+        let available = free + cache + other_cache;
+        assert_eq!(snapshot.ram_available, Some(available));
+        assert_eq!(
+            available,
+            490_578_592 * 1024 - active_file - slab_reclaimable
+        );
+        assert_eq!(
+            used + cache + other + other_cache + free,
+            527_649_328 * 1024
+        );
         let _ = std::fs::remove_dir_all(cgroup.parent().expect("root"));
     }
 
@@ -1417,7 +1458,7 @@ mod tests {
                 snapshot.ram_other,
                 Some(total - 4 * GIB - free - other_cache)
             );
-            assert_eq!(snapshot.ram_available, Some(available));
+            assert_eq!(snapshot.ram_available, Some(free + GIB + other_cache));
             assert_eq!(bar_sum(&snapshot), total);
             assert_eq!(snapshot.ram_percent, Some(1.0));
             assert_eq!(snapshot.ram_other_percent, Some(7.0));

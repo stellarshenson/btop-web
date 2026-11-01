@@ -929,6 +929,15 @@ fn agent_and_client_modes() {
     let relayed = read_event_stream_at(client_addr, "/events?agent=alpha", None);
     assert_eq!(relayed.matches("event: stamp").count(), 1, "{relayed}");
 
+    // ACC-NET-207-CLIENT-IDLE: a client connects only for an attached browser,
+    // so this connection stays open to the end of the test.
+    let mut viewer = TcpStream::connect(client_addr).expect("viewer");
+    write!(
+        viewer,
+        "GET /events?agent=alpha HTTP/1.1\r\nHost: {client_addr}\r\nAccept: text/event-stream\r\n\r\n"
+    )
+    .expect("viewer request");
+
     // The strip carries one sample age per agent, and each selection relays
     // that agent's own interval, 250 ms against 500 ms.
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -1021,6 +1030,10 @@ fn agent_and_client_modes() {
         strip.contains("beta</span><b class=\"agent-age\" data-w=\"unavailable\">unavailable"),
         "{strip}"
     );
+    // ACC-VIEW-204-PROC-ENDED: a popup body the stopped agent cannot send is a
+    // failed relay, not a 404, because the process may still run there.
+    let failed = get(client_addr, "/proc/222?agent=beta").expect("a response");
+    assert!(failed.starts_with("HTTP/1.1 502"), "{failed}");
     assert!(
         strip.contains("alpha</span><b class=\"agent-age\" data-w=\"unavailable\">"),
         "{strip}"
@@ -1033,7 +1046,7 @@ fn agent_and_client_modes() {
 
 /// ACC-VIEW-176-PROC-POPUP: the popup in a real browser, on the recorded tree
 /// with a GPU holder: it opens with the row's pid and its plots, and Escape, the
-/// close control and a click outside each close it and return focus to the row.
+/// close control and a click outside each close it and leave the focus on the body.
 /// Ignored because `make ci` runs where no browser is installed; `make
 /// test-client` runs it and needs python3 with Playwright and its chromium.
 #[test]

@@ -350,10 +350,11 @@ fn apply_custom_names(devices: &mut [GpuDevice], config: &Config) {
 }
 
 /// btop's GPU graph history: one utilization sample per device per tick. A
-/// device that disappears loses its history; a new device starts empty. An
-/// empty list is the time before a wake's first sweep lands: it says nothing of
-/// the devices, so the histories stay, as the other charts' do across a sleep
-/// (DEF-GRAPH-126-GPU-HISTORY).
+/// device that disappears loses its history; a new device starts empty. Between
+/// a wake and its first sweep a device has no reading and pushes no sample, and
+/// its history stays, as the other charts' do across a sleep
+/// (DEF-GRAPH-126-GPU-HISTORY). An empty list says nothing of the devices, so
+/// the histories stay then too.
 pub fn attach_charts(proc_root: &Path, devices: &mut [GpuDevice], update_ms: u64, window_ms: u64) {
     if devices.is_empty() {
         return;
@@ -1610,9 +1611,10 @@ mod tests {
         );
     }
 
-    /// DEF-GRAPH-126-GPU-HISTORY: the ticks before a wake's first sweep carry no
-    /// devices. The samples from before the sleep stay and the line goes on from
-    /// them; a device missing from a sweep's list still loses its history.
+    /// DEF-GRAPH-126-GPU-HISTORY: the ticks before a wake's first sweep carry the
+    /// devices with no reading. The samples from before the sleep stay and the
+    /// line goes on from them; a device missing from a sweep's list still loses its
+    /// history.
     #[test]
     fn a_sleep_keeps_the_utilization_history() {
         let device = || GpuDevice {
@@ -1629,6 +1631,10 @@ mod tests {
         for _ in 0..3 {
             attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
         }
+        let drawn = devices[1].chart.clone();
+        let mut unread = vec![GpuDevice::default(), GpuDevice::default()];
+        attach_charts(key, &mut unread, 250, crate::chart::WINDOW_MS);
+        assert_eq!(unread[1].chart, drawn, "no reading moved the line");
         attach_charts(key, &mut [], 250, crate::chart::WINDOW_MS);
         attach_charts(key, &mut devices, 250, crate::chart::WINDOW_MS);
         assert!(

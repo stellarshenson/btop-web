@@ -575,12 +575,14 @@ What the panels render and how an unavailable value is drawn
   - test-tags: FUNCTIONAL
   - log: 2026-10-30T18:03:11Z @kj added
   - log: 2026-10-30T18:29:19Z @kj closed
-- [ ] `DEF-VIEW-131-PROC-ENDED` **Details of a process that ended look stuck** - MAJOR; When a process ends, its details stop with no word that it ended: the plots freeze, state still reads Sleeping, every figure stays, and the only change is a chip reading UNAVAILABLE. The owner's image paste-20261031-002259.png, reported as stuck after about 15 s, shows this on PID 3973276, a test browser
+- [x] `DEF-VIEW-131-PROC-ENDED` **Details of a process that ended look stuck** - MAJOR; When a process ends, its details stop with no word that it ended: the plots freeze, state still reads Sleeping, every figure stays, and the only change is a chip reading UNAVAILABLE. The owner's image paste-20261031-002259.png, reported as stuck after about 15 s, shows this on PID 3973276, a test browser
+  - evidence: wf_6c51bc6a-ce2: a 404 now shows Process Ended where the UNAVAILABLE chip stood, measured live through the proxy at 0.53 s; a failed request with no 404 keeps the chip, covered by tests/client/proc_popup.py
   - related: ACC-VIEW-204-PROC-ENDED
   - repro: Open the details of a process, end that process: from the next slow pass the server answers 404, the chip reads UNAVAILABLE and the plots and figures freeze
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-30T23:27:46Z @kj askDetail in app.js treats every missing body the same way: showDetail(null) keeps the last figures and shows the unavailable chip, so a 404 for a process that ended looks the same as a failed request
   - log: 2026-10-30T23:27:46Z @kj added; reason: Measured through the lab proxy on the live build: a probe killed at 6.1 s gets 404 from 6.2 s with the same picture as the owner's image; a live process ran 45 s with 46 bodies, all 200.
+  - log: 2026-10-31T16:22:26Z @kj closed; reason: the stuck popup's cause is answered
 - [x] `DEF-VIEW-132-DIGIT-SHIFT` **A digit of a big number moves sideways as the value changes** - MEDIUM; A digit that does not change, such as the 1 or 2 in the CPU total, moves back and forth by 1 to 2 px as the number changes. The owner's image paste-20261031-003659.png shows the CPU strip reading 18 percent
   - evidence: Live pid 286679 in spring: leading digit x 34.67 and 52.05 at rest and inside num-tween over 721 frames; wf_c17d0d1b-c1c verify: spread 0.000 px over 13497 readings in 5 effects, unchanged build 0.78 px; spring crops identical in every pixel; make ci 408 passed
   - root-cause: 2026-10-30T23:41:17Z @kj The spring's .num-tween span takes the face's letter-spacing, 0.765 px, from the galaxatron rule, while its host .stat-value has 0.368 px, so a two-digit number's leading digit sits 0.78 CSS px further left, 1.37 device px at scale 1.75, whenever a spring runs, and returns when it ends
@@ -589,10 +591,44 @@ What the panels render and how an unavailable value is drawn
   - log: 2026-10-30T23:38:50Z @kj added
   - log: 2026-10-30T23:41:17Z @kj root-cause recorded; reason: Measured on the live build at 1040x760 scale 1.75: leading digit left 34.67 in none and at rest, 33.89 inside num-tween; computed letter-spacing 0.367595 px against 0.764809 px.
   - log: 2026-10-31T00:23:04Z @kj closed; reason: Deployed and measured
-- [ ] `DEF-VIEW-136-ODO-DROP` **A rolled odometer digit stops above its rest position** - MINOR; A rolled odometer digit at its final stop sits 1 to 2 device px above its rest position, so it drops when the resting text returns
+- [x] `DEF-VIEW-136-ODO-DROP` **A rolled odometer digit stops above its rest position** - MINOR; A rolled odometer digit at its final stop sits 1 to 2 device px above its rest position, so it drops when the resting text returns
+  - evidence: wf_6c51bc6a-ce2: under a real device scale of 1.75 the odometer stop differs from rest by at most 0.154 device px against 2.06 before; 0 of 180 rolls off
   - repro: With the odometer effect, compare a crop of a rolled digit at its final stop with the same digit at rest, in the owner's window
   - test-tags: FUNCTIONAL, MANUAL
   - log: 2026-10-31T00:23:04Z @kj added
+  - log: 2026-10-31T16:22:26Z @kj closed; reason: measured on both builds under a real scale
+- [x] `DEF-VIEW-138-TREE-ORDER` **Tree view sorted by MEM ranks a 25M row above a branch holding 533M** - MAJOR; In tree view sorted by MEM, the first row is 2.1.316 at 25M, above sh, whose branch holds chrome-headless at 533M, and above tini, whose branch holds the largest processes.
+  - evidence: wf_e685facf-16c, deployed as pid 1054602: tree view six numeric sorts 0 inversions against branch totals, against 297 on the unchanged build; rerun on the deployed binary total_inversions 0; fold keeps rank in 6 of 6 parents; make ci 415 passed in the scratch copy
+  - related: ACC-VIEW-102-TREE-SORT
+  - repro: Open the tree view and click MEM; the owner's image paste-20261031-160715.png shows 25M, 2.1M, 1.6M and 1.0M as the top-level rows
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-31T15:09:07Z @kj procValue in crates/btop-web/assets/app.js compares a sibling's own value when it is expanded and its subtree sum only when it is collapsed, as ACC-VIEW-102-TREE-SORT was worded. A parent with little memory of its own ranks below a sibling with more, whatever its branch holds.
+  - log: 2026-10-31T15:09:07Z @kj added; reason: the text names the rows in the owner's image and the root cause names the function and criterion
+  - log: 2026-10-31T15:31:38Z @kj closed; reason: states the measure on both builds and on the deployed binary
+- [x] `DEF-VIEW-140-BUTTON-CURSOR` **Close button and other controls keep the arrow cursor** - MEDIUM; Over the process popup's Close button, the mouse cursor does not change, so the button does not read as clickable. The process table's sort headers and the theme select in CONFIG show the same fault.
+  - evidence: wf_da253100-991, deployed as pid 1297949: 175 of 175 click controls read pointer in the owner's window, against 172 of 175 on the unchanged build; 123 of 123 under --readonly; 0 of 142,104 other computed values differ; make ci 415 passed; #proc-detail-close reads pointer on the live page
+  - repro: Open a process popup and hover Close: computed cursor is auto. Hover the theme select in CONFIG: text. A process table header's button already reads pointer; only the th cell's padding reads auto, and a click there does nothing
+  - test-tags: FUNCTIONAL
+  - root-cause: 2026-10-31T16:06:28Z @kj .panel > .ph button {cursor: auto} in app.css outranks .chip-config {cursor: pointer} on #proc-detail-close, and .opt.cfg-in {cursor: text} outranks select.cfg-in {cursor: pointer} on two CONFIG selects.
+  - log: 2026-10-31T15:46:47Z @kj added; reason: the text covers the owner's report and the audit's other controls
+  - log: 2026-10-31T16:06:28Z @kj root-cause updated "2026-10-31T15:46:47Z @kj app.css sets cursor: pointer component by component, with no rule for controls in general, so a control without its own rule keeps the default. #proc-detail-close has chip classes but not .config-toggle's rule." -> ".panel > .ph button {cursor: auto} in app.css outranks .chip-config {cursor: pointer} on #proc-detail-close, and .opt.cfg-in {cursor: text} outranks select.cfg-in {cursor: pointer} on two CONFIG selects."; reason: the verifier found my first root cause false: app.css has no .config-toggle rule
+  - log: 2026-10-31T16:06:28Z @kj edited repro "Open a process popup and hover Close: computed cursor is auto. Hover a process table header: auto. Hover the theme select in CONFIG: text" -> "Open a process popup and hover Close: computed cursor is auto. Hover the theme select in CONFIG: text. A process table header's button already reads pointer; only the th cell's padding reads auto, and a click there does nothing"; reason: the verifier found the header claim true only for the cell padding
+  - log: 2026-10-31T16:06:28Z @kj closed; reason: states the measure on both builds and the live check
+- [x] `DEF-VIEW-141-MEM-STRIP` **Memory strip and table disagree on available memory** - MAJOR; In container mode the Memory top strip reads 93% available beside 28% used, over 100 percent together, while the table reads free + reclaimable 68%
+  - evidence: wf_9015f6e7-b38: the no-limit branch returns free + cache + other_cache and the strip prints the table's percent; baseline differed by 26 or 27 points; live pid 3311092 reads 29% used, 67% available
+  - related: DEF-VIEW-96-MEM-WRONG - used stays docker's working set
+  - repro: on the live page compare the Memory strip's available percent with the table's free + reclaimable row
+  - test-tags: UNIT, FUNCTIONAL
+  - root-cause: 2026-10-31T20:10:20Z @kj strip reads kernel MemAvailable, which counts active_file 104.3 GiB and slab_reclaimable 21.5 GiB as available; table's used holds both as docker's working set; the 125.8 GiB gap equals their sum
+  - log: 2026-10-31T20:10:20Z @kj added; reason: root cause names the exact readings that make the gap
+  - log: 2026-10-31T20:49:38Z @kj closed; reason: evidence names the fix, the baseline and the live reading
+- [-] `DEF-VIEW-142-CLIENT-LIVE` **A fresh client page shows LIVE while every agent is down** - MAJOR; On a client page loaded fresh while every configured agent is down, the top bar's live chip reads LIVE while the panels read unavailable. A page already open when its agents stop reads STALE. Client mode only; standalone is not affected.
+  - test-tags: FUNCTIONAL
+  - repro: Client mode with two configured agents stopped, a fresh /?agent=NAME page in the owner's conditions 1040x760 at device scale 1.75: #live-chip still reads live after 5 s while both agent chips and the panels read unavailable.
+  - log: 2026-11-01T10:45:40Z @kj added; reason: owner answered Fix it on 2026-11-01; found by the final review and reproduced by its verifier
+  - log: 2026-11-01T10:58:30Z @kj attempted: wf_75096751-886 measured a fresh client page in both scenarios - two agents on closed loopback ports, and two live agents stopped by exact pid - in the owner's conditions; #live-chip read stale at 0.5, 2, 5 and 10 s in both, so the live-after-5-s claim in repro did NOT reproduce; the word reads live only from load to 0.3 s, the 2 x 250 ms grace armStale() gives before STALE; reason: reproduction failed at the filed times; the only live window is the designed two-interval grace
+  - log: 2026-11-01T10:58:36Z @kj edited test-tags added "FUNCTIONAL"; reason: a browser measurement in client mode; no automated test yet
+  - log: 2026-11-01T10:59:24Z @kj rejected: not reproduced: wf_75096751-886 measured #live-chip stale at 0.5, 2, 5 and 10 s in both filed scenarios, with both agent chips and the panels unavailable; the word reads live only from load to 0.3 s, the two-interval grace armStale() gives by design; reason: the filed persistent-LIVE claim is false; the only live window is the documented 2 x 250 ms grace
 
 ## Process collection `PROC`
 
@@ -659,6 +695,20 @@ Recorded fixtures that stand in for the host
   - root-cause: 2026-10-30T13:36:46Z @kj cause under investigation
   - log: 2026-10-30T13:36:46Z @kj added
   - log: 2026-10-30T16:02:23Z @kj closed
+- [ ] `DEF-TEST-137-GOLDEN-USER` **Recorded process fragment holds this host's user name** - MAJOR; make ci fails on GitHub's runner: proc_fragment_matches_the_recorded_fragment expects user lab and the runner shows packer. cargo stops there, so theme_contrast, tls, Deny, Coverage and Zizmor do not run.
+  - repro: CI run 41211717601 on main at ad83df6, job Format, lint and test, step Gate; or run the perf test on a host where uid 1000 is not lab
+  - test-tags: E2E
+  - root-cause: 2026-10-31T15:12:25Z @kj The fixture's nine processes have Uid 1000. The collector maps uids through the host's /etc/passwd, which BTOP_WEB_PROC_ROOT does not redirect, so the recorded fragment crates/btop-web/tests/fixtures/perf/proc-fragment.html holds the name lab, which is this host's name for uid 1000.
+  - log: 2026-10-31T14:50:29Z @kj added; reason: the text names the skipped gates and the root cause names the source of the name
+  - log: 2026-10-31T15:12:25Z @kj root-cause updated "2026-10-31T14:50:29Z @kj The fixture's six processes have Uid 1000. The collector maps uids through the host's /etc/passwd, which BTOP_WEB_PROC_ROOT does not redirect, so the recorded fragment crates/btop-web/tests/fixtures/perf/proc-fragment.html holds the name lab, which is this host's name for uid 1000." -> "The fixture's nine processes have Uid 1000. The collector maps uids through the host's /etc/passwd, which BTOP_WEB_PROC_ROOT does not redirect, so the recorded fragment crates/btop-web/tests/fixtures/perf/proc-fragment.html holds the name lab, which is this host's name for uid 1000."; reason: the verifier counted nine status files with Uid 1000, not six
+  - log: 2026-10-31T15:12:27Z @kj wf_7a2c4882-7f0 landed uncommitted: both fragment tests use uid 0 in a private tree and the recorded fragment changed only in its 9 user cells. Under a passwd naming uid 1000 packer: unpatched failed 21 of 21 runs of that test, patched full suite 415 passed, make deny and coverage exit 0. Open until a CI run passes.; reason: states the verification and what keeps it open
+- [x] `DEF-TEST-139-WAKE-TIMING` **A wall-clock limit in the sampler wake test fails under load** - MINOR; sampler_parks_with_nobody_connected_and_wakes_for_a_request failed once in 134 runs with 'the wake sample took 376.16244ms' against its 250 ms limit, at load average 32, and passed on its rerun. CI has no rerun, so a repeat turns the job red.
+  - evidence: wf_2d0087f1-124: the 250 ms assert and its variable are removed; the 500 ms timeout stays and the test fails on it when the wake request is removed in a copy; perf suite 20 of 20 runs next to 4 busy loops on CPUs 0-3; fmt-check and clippy pass
+  - repro: crates/btop-web/tests/perf.rs:242; run the perf suite while other builds load the host; log tmp/workflows/btop-web-ci-golden/verify/full-checkout-runner.log
+  - test-tags: E2E
+  - root-cause: 2026-10-31T15:12:25Z @kj The test asserts elapsed time under 250 ms after a 500 ms timeout has already bounded the same wait. ACC-PERF-136-SLEEP states no 250 ms limit, so the assert adds a limit on host speed that the criterion does not ask for.
+  - log: 2026-10-31T15:12:25Z @kj added; reason: the text quotes the failure and the root cause compares the test with its criterion
+  - log: 2026-10-31T15:20:20Z @kj closed; reason: states the removal, the proof the test can still fail and the repeat runs
 
 ## Libraries `LIB`
 
@@ -781,11 +831,13 @@ Page fit, density and use of space
   - root-cause: 2026-10-30T22:05:07Z @kj the table takes its natural width, and the label container reclaimable sets it at 173.27 CSS px
   - log: 2026-10-30T22:05:07Z @kj added
   - log: 2026-10-30T22:39:15Z @kj closed
-- [ ] `DEF-LAYOUT-133-GPU-LATE` **GPU panel appears late and resizes the Network plots on page load** - MEDIUM; A page load that wakes a parked sampler has no GPU panel for about 700 ms, so the Network panel fills the band and its plots shrink from 816 px to 243 px when the first sweep brings the GPU panel back
+- [x] `DEF-LAYOUT-133-GPU-LATE` **GPU panel appears late and resizes the Network plots on page load** - MEDIUM; A page load that wakes a parked sampler has no GPU panel for about 700 ms, so the Network panel fills the band and its plots shrink from 816 px to 243 px when the first sweep brings the GPU panel back
+  - evidence: wf_6c51bc6a-ce2: 5 wakes on 3 GPUs: panel with 3 lanes from the first frame, Network plots steady at 242.69 px; before 0 lanes then a move from 816.03 px; first SSE frame after a park median 3.47 ms against 3.86 ms; host with no GPU unchanged
   - repro: Close every viewer until the sampler parks, then open the page: the Network plots fill the band and then resize
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-31T00:09:32Z @kj The sampler drops gpu_latest when it parks, so the page's first frames carry no GPU device
   - log: 2026-10-31T00:09:32Z @kj added
+  - log: 2026-10-31T16:22:26Z @kj closed; reason: measured on both builds
 
 ## Graphs and sparklines `GRAPH`
 
@@ -907,16 +959,20 @@ Line graphs, sparklines and history charts: interpolation, marks, scale and obst
   - root-cause: 2026-10-30T23:06:36Z @kj the scroll follows the arrival of each body: a late body leaves the curve held at its slot's end, and the next body starts at phase zero, so proxy jitter shows as stops and steps
   - log: 2026-10-30T23:06:36Z @kj added; reason: owner's report, measured through the lab proxy
   - log: 2026-10-31T14:15:51Z @kj closed; reason: Deployed and measured; reopen if the owner's tab still stops
-- [ ] `DEF-GRAPH-134-TOGGLE-STEP` **Turning motion on moves the panel charts right** - MINOR; Turning the motion setting back on moves every panel chart right by up to 1.29 px at 180 s and 3.83 px at 60 s, in 22 of 48 toggles
+- [x] `DEF-GRAPH-134-TOGGLE-STEP` **Turning motion on moves the panel charts right** - MINOR; Turning the motion setting back on moves every panel chart right by up to 1.29 px at 180 s and 3.83 px at 60 s, in 22 of 48 toggles
+  - evidence: wf_6c51bc6a-ce2: panel charts moved right in 0 of 96 motion toggles, 38 of 96 before; speed after a toggle 0.976 to 1.025 of one slot per slow period; a scripted toggle with the process popup open still moves popup plots on both builds, not reachable through the page's own controls alone
   - repro: Toggle motion off and on with the charts running and read each chart's left edge per frame
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-31T00:09:33Z @kj syncMotion restarts a panel chart at minus the time since the last slow pass, whatever phase the chart was frozen at, so a smaller elapsed time moves it right
   - log: 2026-10-31T00:09:33Z @kj added
-- [ ] `DEF-GRAPH-135-GPU-STEP` **Each GPU line moves right once after a server start** - MINOR; After a server start each GPU line moves right once, by about 1.1 px at 180 s and 3.4 px at 60 s
+  - log: 2026-10-31T16:22:26Z @kj closed; reason: measured on both builds; states the remaining scripted case
+- [x] `DEF-GRAPH-135-GPU-STEP` **Each GPU line moves right once after a server start** - MINOR; After a server start each GPU line moves right once, by about 1.1 px at 180 s and 3.4 px at 60 s
+  - evidence: wf_6c51bc6a-ce2: GPU lines moved right 0 times in 6 of 6 starts at 180 s and 60 s windows, against one move each of 1.1 to 3.4 px before; the line first draws at the first slow pass, about 1.4 s
   - repro: Start the server, open the page and read each GPU line per frame until the first slow pass after the first sweep
   - test-tags: FUNCTIONAL
   - root-cause: 2026-10-31T00:09:38Z @kj SlowPass::apply lets a device with no held chart keep the chart its tick built, so the next slow pass's path is one tick further left while the svg's phase restarts
   - log: 2026-10-31T00:09:38Z @kj added
+  - log: 2026-10-31T16:22:26Z @kj closed; reason: measured on both builds
 
 ## Theme `THEME`
 

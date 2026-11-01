@@ -16,7 +16,9 @@
 //! exceed the counter plus rollover. The selected interface keeps its choice
 //! while it exists, and is re-chosen when the saved one is empty or gone:
 //! `net_iface` when it names a current interface, otherwise the interface with
-//! the largest download + upload total.
+//! the largest download + upload total. Departure: a `net_iface` that names a
+//! current interface and differs from the selection also re-chooses, so a
+//! change in CONFIG applies without a restart.
 //!
 //! Departure (DEF-NET-42-LOOPBACK-PICK, owner 2026-10-27, "Skip lo"): btop's
 //! largest total picks `lo` on a host whose proxy traffic runs over loopback,
@@ -371,11 +373,21 @@ fn sample(
     }
 
     // btop re-selects only when the saved interface is gone; the configured
-    // interface wins over the largest total.
-    let selection_absent = state
-        .selected_iface
-        .as_ref()
-        .is_none_or(|selected| !interfaces.iter().any(|iface| &iface.name == selected));
+    // interface wins over the largest total. Departure: CONFIG is the page's
+    // only way to choose an interface, so a configured name that is present
+    // and differs also re-selects, which applies a saved change without a
+    // restart. A configured interface that disappears and returns is selected
+    // again, where btop stays on the fallback.
+    let configured_differs = !config.net_iface.is_empty()
+        && state.selected_iface.as_deref() != Some(config.net_iface.as_str())
+        && interfaces
+            .iter()
+            .any(|iface| iface.name == config.net_iface);
+    let selection_absent = configured_differs
+        || state
+            .selected_iface
+            .as_ref()
+            .is_none_or(|selected| !interfaces.iter().any(|iface| &iface.name == selected));
     if selection_absent {
         state.max_count = [[0; 2]; 2];
         state.scale = Default::default();
@@ -915,6 +927,17 @@ mod tests {
         );
         // lo carries the largest total, but the configured name wins.
         assert_eq!(snapshot.selected_iface.as_deref(), Some("eth0"));
+
+        // A name changed on a running server applies at the next sample.
+        config.net_iface = "eth1".to_string();
+        let snapshot = sample(
+            &mut state,
+            &fixture("sys"),
+            1_700_000_001_000,
+            &observed(&["lo", "eth0", "eth1"]),
+            &config,
+        );
+        assert_eq!(snapshot.selected_iface.as_deref(), Some("eth1"));
 
         let mut state = NetState::default();
         let mut config = default_config();
