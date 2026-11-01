@@ -18,12 +18,13 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       # Same channel as rust-toolchain.toml. The tag pins it: @master needs a toolchain input.
-      - uses: dtolnay/rust-toolchain@1.99.1
-      - uses: release-plz/action@v0.5
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
+      - uses: release-plz/action@f67a7e724bdad4a0f6875f186060a0ca2770d76c # v0.5
         with:
           command: release-pr
         env:
@@ -37,12 +38,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       # Same channel as rust-toolchain.toml. The tag pins it: @master needs a toolchain input.
-      - uses: dtolnay/rust-toolchain@1.99.1
-      - uses: release-plz/action@v0.5
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
+      - uses: release-plz/action@f67a7e724bdad4a0f6875f186060a0ca2770d76c # v0.5
         with:
           command: release
         env:
