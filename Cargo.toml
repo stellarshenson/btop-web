@@ -9,7 +9,7 @@ rust-version = "1.99.1"
 license = "MIT"
 keywords = ["btop", "monitoring", "dashboard", "system"]
 categories = ["command-line-utilities", "web-programming"]
-publish = false
+publish = true
 
 [workspace.dependencies]
 axum = "0.8.9"

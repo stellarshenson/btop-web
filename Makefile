@@ -1,4 +1,4 @@
-.PHONY: help increment_version_number build build-static fmt-check clippy test test-client test-python deny coverage sbom ci run docker clean env tools version upgrade release doctor
+.PHONY: help increment_version_number build build-static fmt-check clippy test test-client test-python deny coverage sbom ci run docker clean env tools version upgrade release publish doctor
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -160,6 +160,12 @@ release:
 	else \
 		$(CARGO) release $(LEVEL); \
 	fi
+
+## Publish the current version to crates.io; the release checklist is RELEASE.md
+publish:
+	@test -z "$$(git status --porcelain)" || { echo "working tree not clean - commit first (RELEASE.md)"; exit 1; }
+	@if grep -q '^publish = false' Cargo.toml; then echo "Cargo.toml sets publish = false - see RELEASE.md"; exit 1; fi
+	jupyterlab-passkey vault exec --caller btop-web --env CARGO_REGISTRY_TOKEN=cratesio/api -- $(CARGO) publish --locked -p btop-web
 
 ## Report the pinned and active toolchain and which dev tools are present
 doctor:

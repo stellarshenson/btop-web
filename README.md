@@ -269,6 +269,7 @@ Build commands and gates; `make help` lists all of them.
 | `make doctor` | report the pinned and active toolchain and which dev tools are present |
 | `make version`, `make upgrade`, `make clean` | workspace version; cargo upgrade; cargo clean |
 | `make release LEVEL=patch` | cargo-release dry run; `EXECUTE=1` acts; `LEVEL=none` refuses |
+| `make publish` | publish the crate to crates.io, reading the `cratesio/api` token from the vault; the checklist is RELEASE.md |
 
 - **Tests** - `make ci` runs the suite: library tests, HTTP route tests, end-to-end tests that boot the binary against recorded `/proc` and `/sys` trees, TLS tests, theme contrast tests, font tests and performance tests
 - **Fixtures** - collector tests read recorded `/proc` and `/sys` trees through `BTOP_WEB_PROC_ROOT`; the end-to-end tests set it too
