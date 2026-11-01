@@ -2,8 +2,8 @@ name: Docker
 
 on:
   push:
-    # cargo-release tags btop-web-v<version>; make release prints btop-web-v1.0.2
-    tags: ["btop-web-v*"]
+    # the release tag is RELEASE_<version>, for example RELEASE_1.0.3
+    tags: ["RELEASE_*"]
 
 permissions:
   contents: read
@@ -27,10 +27,10 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}
-          # type=semver refuses the crate prefix in the tag, so the groups take the version out of it
+          # type=semver refuses the RELEASE_ prefix, so the groups take the version out of the tag
           tags: |
-            type=match,pattern=btop-web-v(.*),group=1
-            type=match,pattern=btop-web-v(\d+\.\d+),group=1
+            type=match,pattern=RELEASE_(.*),group=1
+            type=match,pattern=RELEASE_(\d+\.\d+),group=1
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
