@@ -6,10 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-02
+
 ### Added
 
+- The cpu and memory panels are fed as compact data records the page applies in place, instead of out-of-band HTML fragments, using about 0.67 s less renderer CPU per minute with the same pixels, values and cadence
 - The page listener serves TLS 1.3 when started with `--tls-cert` and `--tls-key`, in standalone and client mode; without the pair it keeps serving plain HTTP
 - The `--port` flag sets the listening port alone; `0` binds an ephemeral port, and the flag outranks the `listen` key's port
+
+### Changed
+
+- Continuous animations advance in steps sized from their own duration, so the page renders at most 25 frames per second of motion, using about 1.0 s less renderer CPU per minute with the resting frame unchanged
 
 ### Removed
 

@@ -28,8 +28,8 @@
     {
       "type": "library",
       "name": "aes",
-      "version": "0.9.3",
-      "purl": "pkg:cargo/aes@0.9.3",
+      "version": "0.9.4",
+      "purl": "pkg:cargo/aes@0.9.4",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -162,8 +162,8 @@
     {
       "type": "library",
       "name": "async-compression",
-      "version": "0.4.51",
-      "purl": "pkg:cargo/async-compression@0.4.51",
+      "version": "0.4.52",
+      "purl": "pkg:cargo/async-compression@0.4.52",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -385,8 +385,8 @@
     {
       "type": "library",
       "name": "cc",
-      "version": "1.10.0",
-      "purl": "pkg:cargo/cc@1.10.0",
+      "version": "1.11.0",
+      "purl": "pkg:cargo/cc@1.11.0",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -466,8 +466,8 @@
     {
       "type": "library",
       "name": "compression-codecs",
-      "version": "0.4.46",
-      "purl": "pkg:cargo/compression-codecs@0.4.46",
+      "version": "0.4.47",
+      "purl": "pkg:cargo/compression-codecs@0.4.47",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -521,8 +521,8 @@
     {
       "type": "library",
       "name": "crc32fast",
-      "version": "1.5.3",
-      "purl": "pkg:cargo/crc32fast@1.5.3",
+      "version": "1.5.4",
+      "purl": "pkg:cargo/crc32fast@1.5.4",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
