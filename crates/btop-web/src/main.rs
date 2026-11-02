@@ -64,6 +64,8 @@ Options:
                         $XDG_CONFIG_HOME/btop-web/known_agents; a named file
                         must exist
   -c, --config <PATH>   Read configuration from PATH after the embedded defaults
+      --port <PORT>     Listening port, 0 for a kernel-chosen port; the host
+                        comes from the listen key (default 40290)
       --default-config  Print the embedded default configuration and exit
   -d, --debug           Log at debug level
   -f, --filter <TEXT>   Initial process filter, shown in the filter input
@@ -107,6 +109,7 @@ async fn run() -> Result<()> {
     let mut readonly = false;
     let mut debug = false;
     let mut update_ms: Option<u64> = None;
+    let mut port: Option<u16> = None;
     let mut theme: Option<usize> = None;
     let mut filter: Option<String> = None;
     let mut proc_view: Option<&'static str> = None;
@@ -134,6 +137,13 @@ async fn run() -> Result<()> {
             "-d" | "--debug" => debug = true,
             "-f" | "--filter" => {
                 filter = Some(args.next().context("-f/--filter requires a string")?);
+            }
+            "--port" => {
+                let value = args.next().context("--port requires a port number")?;
+                let number: u16 = value.parse().map_err(|_| {
+                    anyhow::anyhow!("--port expects a port number 0..=65535, got `{value}`")
+                })?;
+                port = Some(number);
             }
             "-u" | "--update" => {
                 let value = args.next().context("-u/--update requires milliseconds")?;
@@ -341,6 +351,11 @@ async fn run() -> Result<()> {
     config.readonly = readonly;
     if let Some(millis) = update_ms {
         config.update_ms = millis;
+    }
+    // ACC-CONF-218-PORT: the flag sets the port alone; the listen key keeps
+    // the host.
+    if let Some(port) = port {
+        config.listen.set_port(port);
     }
     if let Some(index) = theme {
         config.theme = index;

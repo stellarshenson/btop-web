@@ -115,7 +115,6 @@ fn spawn_listening(mut command: Command) -> (Server, SocketAddr) {
     ));
     let file = std::fs::File::create(&log).expect("server log");
     command
-        .env("BTOP_WEB_LISTEN", "127.0.0.1:0")
         .env("RUST_LOG", "info")
         .stdout(file.try_clone().expect("server log"))
         .stderr(file);
@@ -154,6 +153,7 @@ fn start_mode(xdg: &str, args: &[String], envs: &[(&str, &str)]) -> (Server, Soc
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(args)
+        .args(["--port", "0"])
         .env("XDG_CONFIG_HOME", xdg_home(xdg))
         .env_remove("BTOP_WEB_UPDATE_MS")
         .env_remove("BTOP_WEB_PROC_ROOT");
@@ -167,6 +167,7 @@ fn start_in(xdg: &Path, update_ms: Option<&str>, args: &[&str]) -> (Server, Sock
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(args)
+        .args(["--port", "0"])
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", xdg)
         .env_remove("BTOP_WEB_UPDATE_MS");
@@ -191,8 +192,8 @@ fn run_env(args: &[&str], envs: &[(&str, &str)]) -> (Option<i32>, String, String
     let run = RUN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
+        .args(["--port", "0"])
         .args(args)
-        .env("BTOP_WEB_LISTEN", "127.0.0.1:0")
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", xdg_home(&format!("run-{run}")))
         .stdout(Stdio::piped())
@@ -226,6 +227,7 @@ fn start_agent(xdg: &str, args: &[&str], envs: &[(&str, &str)]) -> (Server, Sock
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(args)
+        .args(["--port", "0"])
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", xdg_home(xdg))
         .env_remove("BTOP_WEB_UPDATE_MS");
@@ -344,7 +346,7 @@ fn tls_event_stream(address: SocketAddr, key: &str) -> String {
         &format!(
             "GET /events HTTP/1.1\r\nHost: {address}\r\nAccept: text/event-stream\r\nAuthorization: Bearer {key}\r\n\r\n"
         ),
-        |text| text.contains("event: cpu") && text.contains("data-update-ms=\""),
+        |text| text.contains("event: cpu") && text.contains("data: c1|"),
     )
     .expect("TLS event stream")
 }
@@ -401,7 +403,7 @@ fn read_event_stream_at(address: SocketAddr, path: &str, key: Option<&str>) -> S
                 if text.contains("event: cpu")
                     && text.contains("data: ")
                     && text.contains("<h2")
-                    && text.contains("data-update-ms=\"")
+                    && text.contains("data: c1|")
                 {
                     return text.into_owned();
                 }
@@ -557,6 +559,39 @@ fn title_flag() {
     }
     let (_, stdout, _) = run(&["--help"]);
     assert!(stdout.contains("--title <TEXT>"), "{stdout}");
+}
+
+/// ACC-CONF-218-PORT: `--port` sets the listening port alone; an invalid or
+/// missing value stops the start naming the flag; `--help` lists it.
+#[test]
+fn port_flag() {
+    let (_server, address) = start(None, &["--port", "0"]);
+    assert_ne!(address.port(), 0);
+    for args in [&["--port", "nope"][..], &["--port", "65536"], &["--port"]] {
+        let (code, _, stderr) = run(args);
+        assert_ne!(code, Some(0), "{args:?}: {stderr}");
+        assert!(stderr.contains("--port"), "{args:?}: {stderr}");
+    }
+    let (code, stdout, _) = run(&["--help"]);
+    assert_eq!(code, Some(0));
+    assert!(stdout.contains("--port <PORT>"), "{stdout}");
+}
+
+/// ACC-CONF-218-PORT: `--port` outranks the `listen` key's port. The held
+/// listener occupies the key's port, so a flag that lost would fail to bind.
+#[test]
+fn port_flag_outranks_the_listen_key() {
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("held port");
+    let held_port = held.local_addr().expect("held address").port();
+    let xdg = xdg_home("port-precedence");
+    let conf = xdg.join("btop.conf");
+    std::fs::write(&conf, format!("listen = 127.0.0.1:{held_port}\n")).expect("conf");
+    let (_server, address) = start_in(
+        &xdg,
+        None,
+        &["-c", conf.to_str().expect("utf-8 config"), "--port", "0"],
+    );
+    assert_ne!(address.port(), held_port);
 }
 
 #[test]
@@ -759,7 +794,7 @@ fn the_created_key_never_reaches_stdout_or_stderr() {
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .arg("--agent")
-        .env("BTOP_WEB_LISTEN", "127.0.0.1:0")
+        .args(["--port", "0"])
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
         .env("XDG_CONFIG_HOME", &xdg)
         .stdout(Stdio::from(
@@ -996,15 +1031,9 @@ fn agent_and_client_modes() {
         "the pin file is not private"
     );
     let beta_events = read_event_stream_at(client_addr, "/events?agent=beta", None);
-    assert!(
-        beta_events.contains("data-update-ms=\"500\""),
-        "{beta_events}"
-    );
+    assert!(beta_events.contains("data: c1|500|"), "{beta_events}");
     let alpha_events = read_event_stream_at(client_addr, "/events?agent=alpha", None);
-    assert!(
-        alpha_events.contains("data-update-ms=\"250\""),
-        "{alpha_events}"
-    );
+    assert!(alpha_events.contains("data: c1|250|"), "{alpha_events}");
 
     // Two viewers at once: each receives the agent's frames at its tick rate.
     let first = std::thread::spawn(move || {
@@ -1073,7 +1102,9 @@ fn proc_popup_opens_with_the_pid_and_closes_on_escape() {
 
 /// ACC-PERF-133-PAGE-COST in a real browser: a frame writes into the nodes on
 /// the page, so a kept node keeps its identity and the panel ends equal to the
-/// fragment. Ignored for the reason above; `make test-client` runs it.
+/// fragment. A client page is rendered from the default snapshot, so the same
+/// records must create the members it lacks; the script checks that too.
+/// Ignored for the reason above; `make test-client` runs it.
 #[test]
 #[ignore = "needs python3 with Playwright; make test-client runs it"]
 fn frames_patch_the_panels_in_place() {
@@ -1086,11 +1117,26 @@ fn frames_patch_the_panels_in_place() {
             root.to_str().expect("utf-8 fixture path"),
         )],
     );
+    let keys = xdg_home("frame-patch-keys");
+    let key = keys.join("access-key");
+    std::fs::write(&key, "browser-test-key\n").expect("key");
+    let key_file = keys.join("keys.conf");
+    std::fs::write(&key_file, format!("connect_key = nas={}\n", key.display()))
+        .expect("key config");
+    let client_args = [
+        "--client".to_string(),
+        "-c".to_string(),
+        key_file.to_str().expect("utf-8 key config").to_string(),
+        "--connect".to_string(),
+        "nas=http://127.0.0.1:1".to_string(),
+    ];
+    let (_client, client) = start_mode("frame-patch-client", &client_args, &[]);
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/client/frame_patch.py");
     let status = Command::new("python3")
         .arg("-I")
         .arg(script)
         .arg(format!("http://{address}/"))
+        .arg(format!("http://{client}/"))
         .status()
         .expect("python3 runs");
     assert!(status.success(), "the browser test failed: {status}");
@@ -1139,7 +1185,7 @@ fn descriptors_carry_every_secret_and_the_agent_starts() {
     let binary = Path::new(env!("CARGO_BIN_EXE_btop-web"));
 
     let script = format!(
-        "exec 3<{}; exec 4<{}; exec 5<{}; exec 6<{}; exec {} --agent \
+        "exec 3<{}; exec 4<{}; exec 5<{}; exec 6<{}; exec {} --port 0 --agent \
          --tls-cert-fd 3 --tls-key-fd 4 --access-key-fd 5 \
          --tls-key-passphrase-fd 6",
         shell_word(&cert),

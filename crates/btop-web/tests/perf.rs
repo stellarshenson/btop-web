@@ -375,7 +375,7 @@ async fn first_frame_after_a_sleep_carries_the_post_wake_sample() {
     let guarded = guarded("first-frame", 250).await;
     // The recorded counters do not move, so the first sample is a zero delta.
     let (elapsed, block) = first_event(guarded.address, "cpu").await;
-    assert!(block.contains(r#"id="cpu-total">0<"#), "{block}");
+    assert_eq!(block.split('|').nth(5), Some("0"), "{block}");
     assert!(
         elapsed < Duration::from_millis(250),
         "the first frame took {elapsed:?}, past one interval"
@@ -385,12 +385,14 @@ async fn first_frame_after_a_sleep_carries_the_post_wake_sample() {
     tokio::time::sleep(Duration::from_millis(750)).await;
     add_busy_jiffies(&guarded.tree.join("stat"), 1000);
     let (elapsed, block) = first_event(guarded.address, "cpu").await;
-    assert!(
-        block.contains(r#"id="cpu-total">100<"#),
+    assert_eq!(
+        block.split('|').nth(5),
+        Some("100"),
         "the first frame carried the pre-sleep sample: {block}"
     );
+    let parts: Vec<&str> = block.split('|').collect();
     assert!(
-        block.contains(r#"<path class="line" d="M"#),
+        parts[parts.len() - 2].starts_with('M'),
         "the ring did not ride in the first frame: {block}"
     );
     assert!(

@@ -341,7 +341,7 @@ This section lists what each control stops, what it does not stop, and the decis
 
 **Do standalone and client keep serving an unauthenticated dashboard on a non-loopback address?**
 
-Today `BTOP_WEB_LISTEN=0.0.0.0:40290` serves the page and the event stream to anyone who can reach the port. The new agent mode is protected, and standalone and client are not.
+Today a `listen = 0.0.0.0:40290` configuration key serves the page and the event stream to anyone who can reach the port. The new agent mode is protected, and standalone and client are not.
 
 - **Keep as is** - no deployment breaks; two postures coexist, and the documentation says so
 - **Refuse at startup** - standalone or client with a non-loopback `listen` exits 2; standalone points at `--agent`, and the client points at the operator's own access layer

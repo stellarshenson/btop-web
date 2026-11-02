@@ -638,14 +638,19 @@ async fn live_chip_carries_the_live_paused_and_stale_hooks() {
 }
 
 /// ACC-GRAPH-24-UNOBSCURED: no number, label or control sits inside a plot
-/// box, on the page or in any SSE fragment; gauges are not plot boxes.
+/// box, on the page or in any HTML SSE fragment; gauges are not plot boxes.
+/// The cpu and mem events are data records, so they carry no markup.
 #[tokio::test]
 async fn no_text_inside_chart_boxes() {
     let snapshot = fixture_snapshot();
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let mut documents = vec![("page", page)];
-    documents.extend(fragments(&snapshot));
+    documents.extend(
+        fragments(&snapshot)
+            .into_iter()
+            .filter(|(name, _)| !matches!(*name, "cpu" | "mem")),
+    );
     for (name, html) in &documents {
         let boxes = elements_with(html, "data-chart");
         assert!(
@@ -692,7 +697,11 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let mut documents = vec![("page", page)];
-    documents.extend(fragments(&snapshot));
+    documents.extend(
+        fragments(&snapshot)
+            .into_iter()
+            .filter(|(name, _)| !matches!(*name, "cpu" | "mem")),
+    );
     // The container tooltips add the scope lines; they hold the same budget.
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/container/proc");
     let mut config = Config::load(None).expect("config");
@@ -701,12 +710,6 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
     let page = String::from_utf8(get(&app(Some(container.clone()), true), "/").await.2)
         .expect("utf-8 page");
     documents.push(("container page", page));
-    // This tree records no GPU, so the GPU fragment carries no tooltip.
-    documents.extend(
-        fragments(&container)
-            .into_iter()
-            .filter(|(name, _)| *name == "mem"),
-    );
     for (name, html) in &documents {
         let tips = elements_with(html, "data-tip");
         assert!(!tips.is_empty(), "{name} has no stat tooltip");
@@ -775,8 +778,8 @@ async fn stat_tips_sit_on_every_tip_anchor() {
         r#"data-gauge="cpu" data-tip="CPU total"#,
         r#"data-gauge="mem" data-tip="Memory shares"#,
         r#"class="mem-bar" data-tip="Memory bar"#,
-        r#"class="mem-row" data-tip="Memory used"#,
-        r#"class="mem-row" data-tip="Reclaimable cache"#,
+        r#"class="mem-row" data-row="used" data-tip="Memory used"#,
+        r#"class="mem-row" data-row="cache" data-tip="Reclaimable cache"#,
         r#"data-field="net-interface" data-tip="Selected interface"#,
         r#"data-field="net-axis-note" data-tip="Plot scale"#,
         r#"class="legend-item" data-tip="Download rate"#,
@@ -1617,7 +1620,12 @@ async fn gpu_panel_draws_one_lane_per_device() {
 }
 
 /// The page and the event fragment `name`, the two places a panel renders.
+/// The cpu and mem events are data records, not HTML, so their markup asserts
+/// read the page the client's applier writes.
 fn page_and_event<'a>(page: &'a str, events: &'a [(&str, String)], name: &str) -> [&'a str; 2] {
+    if name == "cpu" || name == "mem" {
+        return [page, page];
+    }
     let event = events
         .iter()
         .find(|(event, _)| *event == name)
@@ -1942,7 +1950,7 @@ async fn cpu_stat_header_shows_the_temperature_where_a_sensor_reads() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let marker = format!(
-        r#"<b>{}</b></span><span class="cpu-temp" data-tip="CPU temperature, unit degrees Celsius&#10;source: hwmon and thermal sysfs, m°C / 1000&#10;whole degrees, btop's sensor choice"><b data-w="100°C">45°C</b></span>"#,
+        r#"<b>{}</b></span><span class="cpu-temp" data-field="cpu-temp" data-tip="CPU temperature, unit degrees Celsius&#10;source: hwmon and thermal sysfs, m°C / 1000&#10;whole degrees, btop's sensor choice"><b data-w="100°C">45°C</b></span>"#,
         snapshot.cpu.frequency_label()
     );
     for html in page_and_event(&page, &fragments(&snapshot), "cpu") {
@@ -2390,18 +2398,7 @@ async fn tier_markers_sit_on_single_elements() {
             .collect()
     };
     // (event, field, priority, count in that event)
-    let fields: [(&str, &str, u8, usize); 21] = [
-        ("cpu", "cpu-stat-facts", 3, 1),
-        ("cpu", "cpu-stat-axis", 3, 1),
-        ("cpu", "cpu-name", 3, 1),
-        ("cpu", "cpu-gauge-cores", 3, 1),
-        ("cpu", "cpu-gauge-facts", 3, 1),
-        ("cpu", "gauge-scale", 3, 2),
-        ("mem", "mem-stat-facts", 3, 1),
-        ("mem", "mem-stat-axis", 3, 1),
-        ("mem", "mem-gauge-total", 3, 1),
-        ("mem", "mem-gauge-facts", 3, 1),
-        ("mem", "gauge-scale", 3, 2),
+    let fields: [(&str, &str, u8, usize); 10] = [
         ("net", "net-interface", 3, 1),
         ("net", "net-axis-note", 3, 1),
         ("net", "net-x-axis", 3, 1),
@@ -2420,21 +2417,40 @@ async fn tier_markers_sit_on_single_elements() {
             count,
             "{event}: {field}"
         );
-        // DEF-LAYOUT-90-LOAD-SHIFT: each gauge carries both shapes, so the
-        // scale group is marked once per shape: twice in the page per panel.
-        let in_page = if field == "gauge-scale" {
-            2 * count
-        } else {
-            count
-        };
         assert_eq!(
             page.matches(&marker(field, priority)).count(),
-            in_page,
+            count,
             "page: {field}"
         );
         assert_eq!(
             page.matches(&format!(r#"data-field="{field}""#)).count(),
-            in_page,
+            count,
+            "page: {field} priority"
+        );
+    }
+    // The cpu and mem events are data records, so their panels render on the
+    // page alone; DEF-LAYOUT-90-LOAD-SHIFT gives each gauge two shapes, so the
+    // scale group is marked twice per panel.
+    for (field, count) in [
+        ("cpu-stat-facts", 1),
+        ("cpu-stat-axis", 1),
+        ("cpu-name", 1),
+        ("cpu-gauge-cores", 1),
+        ("cpu-gauge-facts", 1),
+        ("mem-stat-facts", 1),
+        ("mem-stat-axis", 1),
+        ("mem-gauge-total", 1),
+        ("mem-gauge-facts", 1),
+        ("gauge-scale", 4),
+    ] {
+        assert_eq!(
+            page.matches(&marker(field, 3)).count(),
+            count,
+            "page: {field}"
+        );
+        assert_eq!(
+            page.matches(&format!(r#"data-field="{field}""#)).count(),
+            count,
             "page: {field} priority"
         );
     }
@@ -2791,7 +2807,8 @@ async fn process_filter_is_a_plain_section_of_the_bar() {
 }
 
 /// Each event's out-of-band wrappers name a panel that exists once in the
-/// page, and together the five events reach every swapped region.
+/// page; the cpu and mem events are data records the client writes into the
+/// page's own nodes, so together the events reach every swapped region.
 #[tokio::test]
 async fn every_oob_target_exists_in_the_page() {
     let snapshot = fixture_snapshot();
@@ -2804,6 +2821,16 @@ async fn every_oob_target_exists_in_the_page() {
         ["cpu", "mem", "net", "proc", "gpu"]
     );
     for (name, html) in &events {
+        if *name == "cpu" || *name == "mem" {
+            let token = if *name == "cpu" { "c1|" } else { "m1|" };
+            assert!(html.starts_with(token), "{name} is not a data record");
+            assert!(!html.contains("hx-swap-oob"), "{name} swaps markup");
+            assert!(
+                page.contains(&format!(r#"sse-swap="{name}""#)),
+                "{name} sink"
+            );
+            continue;
+        }
         let ids = oob_targets(html);
         assert!(!ids.is_empty(), "{name} swaps nothing");
         for id in ids {
@@ -2822,19 +2849,7 @@ async fn every_oob_target_exists_in_the_page() {
     targets.sort();
     assert_eq!(
         targets,
-        [
-            "p-cores",
-            "p-cpu-gauge",
-            "p-cpu-stat",
-            "p-gpu",
-            "p-mem-gauge",
-            "p-mem-stat",
-            "p-net",
-            "p-proc-stat",
-            "p-storage",
-            "proc-table-wrap",
-            "update-interval",
-        ]
+        ["p-gpu", "p-net", "p-proc-stat", "proc-table-wrap"]
     );
 }
 
@@ -4309,8 +4324,8 @@ fn stored_segment_mode_falls_back_to_none() {
         "a stored mode is not checked against NUM_MODES"
     );
     assert!(
-        !js.contains("segment"),
-        "the segment effect is still in app.js"
+        !js.contains(r#""segment""#) && !js.contains("'segment'"),
+        "the segment effect is still named as a mode in app.js"
     );
 }
 

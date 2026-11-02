@@ -471,6 +471,10 @@ pub const RESCALE_MS: u64 = 1000;
 /// vertex of a 77.5 px plot moves at most about 3.2 px per 60 Hz frame.
 pub const RESCALE_MS_PER_LN: f64 = 400.0;
 
+/// ACC-PERF-220-FPS-CAP: the page shows at most one animation step per 40 ms,
+/// 25 steps a second. A change's step count is its duration over this.
+const STEP_MS: u64 = 40;
+
 /// The ceiling an auto-scaled chart shows (ACC-GRAPH-67-SMOOTH-SCALE). When
 /// the collector's ceiling changes, the shown ceiling `S` moves from `from` to
 /// `to` geometrically, `S = from * (to / from)^p` with `p = elapsed /
@@ -552,11 +556,12 @@ impl Scale {
             draw_max,
             label_max,
             style: format!(
-                "--k0:{:.6};--q:{:.6};transform-origin:0 {:.2}px;animation:rescale {}ms linear both",
+                "--k0:{:.6};--q:{:.6};transform-origin:0 {:.2}px;animation:rescale {}ms steps({}, end) both",
                 draw_max / self.from,
                 self.from / self.to,
                 size.height - 1.0,
-                self.duration_ms
+                self.duration_ms,
+                (self.duration_ms / STEP_MS).max(1)
             ),
             rescale: format!("{} {}", self.id, self.elapsed_ms),
         }
@@ -1251,7 +1256,7 @@ mod tests {
             assert_eq!(frame.draw_max, 1000.0);
             assert_eq!(
                 frame.style,
-                "--k0:10.000000;--q:0.100000;transform-origin:0 76.00px;animation:rescale 1000ms linear both"
+                "--k0:10.000000;--q:0.100000;transform-origin:0 76.00px;animation:rescale 1000ms steps(25, end) both"
             );
         }
         assert_eq!(frames[0].rescale, "1 0");
@@ -1275,7 +1280,7 @@ mod tests {
         assert!(
             frame
                 .style
-                .ends_with("animation:rescale 1843ms linear both"),
+                .ends_with("animation:rescale 1843ms steps(46, end) both"),
             "{}",
             frame.style
         );

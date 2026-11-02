@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - The page listener serves TLS 1.3 when started with `--tls-cert` and `--tls-key`, in standalone and client mode; without the pair it keeps serving plain HTTP
+- The `--port` flag sets the listening port alone; `0` binds an ephemeral port, and the flag outranks the `listen` key's port
+
+### Removed
+
+- The `BTOP_WEB_LISTEN` environment variable; the bind address comes from the `listen` key and the port from `--port`
 
 ## [1.0.3] - 2026-11-01
 

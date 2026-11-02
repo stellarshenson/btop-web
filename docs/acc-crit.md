@@ -578,6 +578,19 @@ Sampling cost, render cost, and the dashboard's effect on the host it measures
   - test-tags: FUNCTIONAL
   - log: 2026-11-01T14:28:46Z @kj added
   - log: 2026-11-02T09:06:42Z @kj closed
+- [x] `ACC-PERF-219-DATA-FEED` **Data-fed live panels** - MEDIUM; Live panels may update from a compact data frame instead of HTML fragments; the server keeps rendering the first page, the client writes the same DOM, and no SPA or new public API is introduced. Owner-authorised 2026-11-02; values, the 250 ms cadence and the pixels stay identical
+  - evidence: paired over 8 interleaved 30 s rounds: renderer CPU 13.426 to 12.705 s per 60 s, paired mean 0.722 s, sd 0.302, 8 of 8 rounds won; 0 differing pixels at 1040x760 and 187 at 1440x900, max delta 11, against a 896-1484 pixel self-difference; make ci 426 passed
+  - test: paired headless run against the previous build with the existing pixel comparison at 1040x760 dsf 1.75 and 1440x900: zero differing pixels outside the masked time-driven regions, every panel value matches the frame, and renderer CPU falls below the previous build over 8 interleaved 30 s rounds
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-02T11:07:08Z @kj added
+  - log: 2026-11-02T12:26:57Z @kj closed
+  - log: 2026-11-02T14:19:20Z @kj measured; reason: final landed build: paired over 8 rounds renderer CPU 12.275 to 11.605 s per 60 s, mean 0.670, sd 0.413, 8/8 won; TaskDuration 7.291 to 6.676
+- [x] `ACC-PERF-220-FPS-CAP` **Frame rate ceiling** - MEDIUM; The page never produces more than 25 visual frames per second: every continuous animation advances in at most 25 steps per second, while the data cadence stays 250 ms and the resting rendering is unchanged. The owner accepts the stepped motion
+  - evidence: the landed build shows 25 distinct transform values per second on all six animated charts, 25.002 transitions over the 3 s window; resting frames pixel-identical; make ci 426 passed; eight paired rounds gave 12.922 to 11.912 s per 60 s, paired mean 1.010, 7 of 8
+  - test: count animation updates per second on the live page and assert at most 25; assert the resting screenshot is unchanged; paired headless run against the previous build shows renderer CPU below it
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-02T14:22:46Z @kj added
+  - log: 2026-11-02T14:46:58Z @kj closed
 
 ## Graphs and sparklines `GRAPH`
 
@@ -1673,6 +1686,14 @@ Startup options, defaults and precedence
   - log: 2026-10-30T21:36:26Z @kj edited test "unit test on the parsed flags: no flag is read-write, --readonly guards, --read-write is accepted and equals the default; http test that a POST succeeds without the guard and 403s with it" -> "unit test on the parsed flags: no flag is read-write, --readonly guards, --read-write and --no-readonly are refused; http test that a POST succeeds without the guard and 403s with it"; reason: the amended criterion removed --read-write, so the test line contradicted it
   - log: 2026-10-30T21:36:26Z @kj mechanism updated "2026-10-30T10:38:09Z @kj the default flips to false; the negated flag is renamed and the guard is unchanged" -> "the default flips to false; the negated flag is removed, --readonly is the only mode flag and the guard is unchanged"; reason: no flag was renamed; the negated flag was removed
   - log: 2026-10-30T21:36:26Z @kj closed
+- [x] `ACC-CONF-218-PORT` **Listening port control** - MEDIUM; The listening port has a dedicated command-line setting: --port <PORT> sets the port alone, so an operator writes a number instead of HOST:PORT. No environment variable sets the port: BTOP_WEB_LISTEN is removed and BTOP_WEB_LISTEN_PORT is not added. The full bind address keeps its current control through the listen key
+  - evidence: --port 45871 serves that port, --port 0 yields an OS-chosen port, no flag yields 40290, --port 99999 exits naming --port, and BTOP_WEB_LISTEN has no effect; make ci exit 0 with 280 lib, 98 http, 16 e2e passed
+  - test: set BTOP_WEB_LISTEN_PORT to a free port and assert the listening line reports it; run --port with a free port and the variable unset and assert the same; give an invalid value and assert the start stops naming the key or flag
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-02T10:08:47Z @kj added
+  - log: 2026-11-02T10:09:49Z @kj amended text "The listening port has a dedicated setting: --port <PORT> on the command line and BTOP_WEB_LISTEN_PORT in the environment set the port alone, so an operator writes a number instead of HOST:PORT; the full bind address keeps its current control through the listen key" -> "The listening port has a dedicated setting: --port <PORT> on the command line and BTOP_WEB_LISTEN_PORT in the environment set the port alone, so an operator writes a number instead of HOST:PORT; BTOP_WEB_LISTEN is removed and the full bind address keeps its current control through the listen key"; reason: owner decision: remove the old variable rather than alias it
+  - log: 2026-11-02T10:16:41Z @kj amended text "The listening port has a dedicated setting: --port <PORT> on the command line and BTOP_WEB_LISTEN_PORT in the environment set the port alone, so an operator writes a number instead of HOST:PORT; BTOP_WEB_LISTEN is removed and the full bind address keeps its current control through the listen key" -> "The listening port has a dedicated command-line setting: --port <PORT> sets the port alone, so an operator writes a number instead of HOST:PORT. No environment variable sets the port: BTOP_WEB_LISTEN is removed and BTOP_WEB_LISTEN_PORT is not added. The full bind address keeps its current control through the listen key"; reason: owner decision: flag only, no environment variable
+  - log: 2026-11-02T10:28:11Z @kj closed
 
 ## Libraries `LIB`
 

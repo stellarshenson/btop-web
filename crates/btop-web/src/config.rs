@@ -1166,12 +1166,6 @@ impl Config {
     }
 
     fn apply_env(&mut self) -> Result<(), ConfigError> {
-        if let Ok(value) = std::env::var("BTOP_WEB_LISTEN") {
-            self.listen = value.parse().map_err(|_| ConfigError::InvalidEnv {
-                key: "BTOP_WEB_LISTEN",
-                value,
-            })?;
-        }
         if let Ok(value) = std::env::var("BTOP_WEB_UPDATE_MS") {
             self.update_ms = value.parse().map_err(|_| ConfigError::InvalidEnv {
                 key: "BTOP_WEB_UPDATE_MS",

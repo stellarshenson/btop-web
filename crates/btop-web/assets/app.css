@@ -1143,7 +1143,10 @@ select.opt.cfg-in:where(:not(:disabled)) {
    animation, so a resume restarts in one write.
    ACC-PERF-133-PAGE-COST: on the svg, a CSS box, the animation needs no layout
    per frame; on a <g> inside it the browser lays the SVG out and tests the
-   hover again on every frame. */
+   hover again on every frame.
+   ACC-PERF-220-FPS-CAP: a stepped timing function shows one step per 40 ms at
+   most, and app.js sets --shift-steps from the pass's duration so the whole
+   displacement still happens inside the same duration. */
 @keyframes chart-shift-a {
   from { transform: translateX(0); }
   to { transform: translateX(var(--shift-to, 0)); }
@@ -1156,7 +1159,7 @@ select.opt.cfg-in:where(:not(:disabled)) {
 
 [data-chart] > .chart {
   overflow: visible;
-  animation-timing-function: linear;
+  animation-timing-function: steps(var(--shift-steps, 1), end);
   animation-fill-mode: forwards;
 }
 

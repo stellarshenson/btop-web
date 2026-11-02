@@ -553,6 +553,174 @@ impl MemSnapshot {
         self.gauge_spans().last().map_or(0.0, |span| span.2).round()
     }
 
+    /// The Memory gauge's tooltip, in the page's `data-tip` text. The SSE
+    /// data frame carries the same text, so the template and the frame read
+    /// it from here.
+    pub fn gauge_tip(&self, container: bool) -> String {
+        let total = if self.ram_limit.is_some() {
+            "memory.max"
+        } else {
+            "MemTotal"
+        };
+        let source = if container {
+            "cgroup and /proc/meminfo"
+        } else {
+            "/proc/meminfo"
+        };
+        let arc = if self.gauge_segments.is_empty() {
+            "arc: unavailable".to_string()
+        } else if container {
+            let share = self.gauge_share();
+            format!("arc: container used and reclaimable {share:.0}%, 1 s EMA")
+        } else {
+            let share = self.gauge_share();
+            format!("arc: used and reclaimable {share:.0}%, 1 s EMA")
+        };
+        format!(
+            "Memory shares, unit percent of {total}\n\
+             source: {source}\n\
+             {arc}\n\
+             readout: used; the rest is the bare track"
+        )
+    }
+
+    /// The Memory header's total tooltip, in the page's `data-tip` text. Both
+    /// Memory headers and the data record read it from here.
+    pub fn total_tip(&self, container: bool) -> String {
+        let total = if self.ram_limit.is_some() {
+            "cgroup memory.max"
+        } else {
+            "/proc/meminfo MemTotal"
+        };
+        let scope = if self.ram_limit.is_some() {
+            "this container's memory limit"
+        } else if container {
+            "the host's total; memory.max is unlimited"
+        } else {
+            "the host's total"
+        };
+        format!("Memory total, unit KiB, MiB or GiB\nsource: {total}\n{scope}")
+    }
+
+    /// The Memory stat header's used tooltip.
+    pub fn used_tip(&self, container: bool) -> String {
+        let total = if self.ram_limit.is_some() {
+            "memory.max"
+        } else {
+            "MemTotal"
+        };
+        let (source, scope) = if container {
+            (
+                "cgroup memory.current - inactive_file",
+                "this container's working set",
+            )
+        } else {
+            (
+                "/proc/meminfo, btop's rounding",
+                "used = MemTotal - MemAvailable",
+            )
+        };
+        format!("Memory used, unit percent of {total}\nsource: {source}\n{scope}")
+    }
+
+    /// One Memory gauge row's tooltip; the gauge's rows and the record share
+    /// it.
+    pub fn row_tip(&self, kind: &str, container: bool) -> String {
+        let limited = self.ram_limit.is_some();
+        match kind {
+            "cache" => format!(
+                "Reclaimable cache, unit KiB, MiB or GiB\nsource: {}\n{}",
+                if container {
+                    "cgroup memory.stat inactive_file"
+                } else {
+                    "MemAvailable - MemFree"
+                },
+                if container {
+                    "this container's reclaimable file cache\nnot swap; swap has its own row"
+                } else {
+                    "percent of MemTotal"
+                }
+            ),
+            "free" => format!(
+                "Free memory, unit KiB, MiB or GiB\nsource: {}\n{}",
+                if limited {
+                    "cgroup memory.max - memory.current"
+                } else {
+                    "/proc/meminfo MemFree"
+                },
+                if limited {
+                    "this container's room under its limit"
+                } else if container {
+                    "the host's free memory"
+                } else {
+                    "percent of MemTotal"
+                }
+            ),
+            "free-cache" => format!(
+                "Free + reclaimable, unit KiB, MiB or GiB\nsource: {}\ntheir sum, percent of {}",
+                if limited {
+                    "the container free and reclaimable rows"
+                } else if self.ram_other.is_some() {
+                    "the free, reclaimable and other reclaimable rows"
+                } else {
+                    "the free and reclaimable rows"
+                },
+                if limited { "memory.max" } else { "MemTotal" }
+            ),
+            _ => format!(
+                "Memory used, unit KiB, MiB or GiB\nsource: {}\n{}",
+                if container {
+                    "cgroup memory.current - inactive_file"
+                } else {
+                    "MemTotal - MemAvailable"
+                },
+                if container {
+                    "this container's working set\ninactive_file comes from cgroup memory.stat"
+                } else {
+                    "percent of MemTotal"
+                }
+            ),
+        }
+    }
+
+    /// The Memory stat header's available tooltip.
+    pub fn available_tip(&self, container: bool) -> String {
+        let total = if self.ram_limit.is_some() {
+            "memory.max"
+        } else {
+            "MemTotal"
+        };
+        let rows = self.ram_free_reclaimable_percent().is_some();
+        let source = if rows {
+            "the free and reclaimable rows"
+        } else {
+            "/proc/meminfo MemAvailable"
+        };
+        let scope = if self.ram_limit.is_some() {
+            "free plus reclaimable under this limit"
+        } else if container {
+            "free plus reclaimable, this container's and the rest of the host's"
+        } else if rows {
+            "free plus reclaimable, the host's"
+        } else {
+            "memory the kernel can reclaim, the host's"
+        };
+        format!("Memory available, unit percent of {total}\nsource: {source}\n{scope}")
+    }
+
+    /// The swap row's tooltip.
+    pub fn swap_tip(&self, container: bool) -> String {
+        let (source, scope) = if container {
+            (
+                "cgroup memory.swap.current",
+                "this container's swap use\ntotal: min(memory.swap.max, SwapTotal)",
+            )
+        } else {
+            ("/proc/meminfo SwapTotal - SwapFree", "the host's swap use")
+        };
+        format!("Swap used, unit GiB\nsource: {source}\n{scope}")
+    }
+
     /// The swap row in the panel's GiB (DEF-VIEW-106-SWAP-UNITS): a tiny
     /// usage reads `0`, not a KiB figure, and both figures share one unit.
     pub fn swap_label(&self) -> String {
@@ -1566,6 +1734,34 @@ pub fn bytes(value: Option<u64>) -> String {
     value.map_or_else(|| "unavailable".to_string(), human)
 }
 
+/// The storage mount's tooltip; inside a container `io.stat` has no busy
+/// time. The storage template and the memory record read it from here.
+pub fn mount_tip(container: bool) -> String {
+    let io = if container {
+        "IO unavailable: io.stat has no busy time"
+    } else {
+        "IO: block stat io_ticks delta / uptime"
+    };
+    format!(
+        "Mount space, unit bytes and percent\n\
+         source: statvfs(3) blocks × frsize\n\
+         used = total - free (f_bavail)\n\
+         {io}"
+    )
+}
+
+/// The host's use outside this container that `MemAvailable` does not count.
+pub const OTHER_TIP: &str = "Other used, unit KiB, MiB or GiB\n\
+     source: MemTotal - the other four rows\n\
+     the host's use outside this container\n\
+     that MemAvailable does not count";
+
+/// The host's reclaimable memory outside this container.
+pub const OTHER_CACHE_TIP: &str = "Other reclaimable, unit KiB, MiB or GiB\n\
+     source: MemAvailable - MemFree - container's\n\
+     inactive_file, active_file, slab_reclaimable\n\
+     the host's reclaimable memory outside it";
+
 /// The process table's shortened byte form, `floating_humanizer(value, true)`.
 pub fn bytes_short(value: Option<u64>) -> String {
     value.map_or_else(|| "unavailable".to_string(), human_short)
@@ -2371,16 +2567,15 @@ mod tests {
         snapshots.changed().await.expect("first snapshot");
         let frame = snapshots.borrow().clone().expect("a frame");
         assert_eq!(frame.snapshot.cpu.load_scale, LoadScale::Aggregate);
-        let cpu = frame
+        let cpu: Vec<&str> = frame
             .events
             .iter()
             .find(|(name, _)| *name == "cpu")
-            .map(|(_, html)| html.as_str())
-            .expect("the cpu fragment");
-        assert!(
-            cpu.contains(r#"<span data-w="6400%" data-num>3200%</span>/1m"#),
-            "{cpu}"
-        );
+            .map(|(_, record)| record.split('|').collect())
+            .expect("the cpu record");
+        assert_eq!(cpu[11], "6400%", "the reserved width");
+        assert_eq!(cpu[13], "3200%", "the one minute figure");
+        assert!(cpu[12].contains("6400%"), "the load tip: {}", cpu[12]);
         sampler.task.abort();
     }
 

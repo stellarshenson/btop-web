@@ -33,6 +33,8 @@
   var lastChartAt = 0; // performance.now() of the last slow pass, the chart clock
   var slowSeq = -1;
   var pending = [];
+  // The newest compact cpu and mem records held while paused, by event name.
+  var pendingFrames = {};
   var filterTimer = 0;
   var gpuSelection = [];
 
@@ -369,50 +371,1128 @@
 
   // Fires for every frame, paused or not, before the frame is applied.
   document.body.addEventListener("htmx:sseBeforeMessage", function (event) {
-    if (event.detail.type === "cpu") {
-      var sent = /data-update-ms="(\d+)"/.exec(event.detail.data);
-      if (sent) updateMs = Number(sent[1]);
-      var windowSent = /data-window-ms="(\d+)"/.exec(event.detail.data);
-      if (windowSent) windowMs = Number(windowSent[1]);
-      var slowSent = /data-slow-ms="(\d+)"/.exec(event.detail.data);
-      if (slowSent && Number(slowSent[1]) > 0 && Number(slowSent[1]) !== slowMs) {
-        slowMs = Number(slowSent[1]);
-        forgetPasses();
+    var type = event.detail.type;
+    if (type === "cpu" || type === "mem") {
+      var frame = splitRecord(event.detail.data);
+      // An agent from the previous release sends HTML, not a record. Leave
+      // the event alone so htmx still swaps that HTML into the panels.
+      if (frame[0] !== (type === "cpu" ? "c1" : "m1")) return;
+      if (type === "cpu") readCpuMeta(frame);
+      event.preventDefault();
+      if (paused) {
+        pendingFrames[type] = frame;
+      } else {
+        if (type === "cpu") applyCpuFrame(frame);
+        else applyMemFrame(frame);
+        afterValueFrame(type);
       }
-      var seqSent = /data-slow-seq="(\d+)"/.exec(event.detail.data);
-      if (seqSent) {
-        var seq = Number(seqSent[1]);
-        if (seq !== slowSeq) {
-          // A restarted server counts again from 1.
-          if (seq < slowSeq) forgetPasses();
-          slowSeq = seq;
-          // A new slow result carries the charts a whole period further left.
-          lastChartAt = window.performance.now();
-          notePass(seq);
-          // The pause control sits in the CONFIG popover, and opening that
-          // closes a popup, so a paused page's popup holds its first body.
-          if (!paused) askDetail();
-        }
-      }
-      var now = Date.now();
-      if (lastFrame > 0 && sampleAge) sampleAge.textContent = ((now - lastFrame) / 1000).toFixed(1) + " s";
-      lastFrame = now;
-      if (stale) {
-        stale = false;
-        paintLive();
-      }
-      armStale();
-      paintClock();
-      syncMotion();
+      return;
     }
-    var held = procHold && event.detail.type === "proc";
+    var held = procHold && type === "proc";
     if (!paused && !held) {
-      if (event.detail.type === "proc") procFocus = procFocusKey(document.activeElement);
+      if (type === "proc") procFocus = procFocusKey(document.activeElement);
       return;
     }
     event.preventDefault();
     rememberSnapshot(event);
   });
+
+  /* ---------- the cpu and mem data frames (ACC-PERF-133-PAGE-COST) ---------- */
+
+  // The server sends the values as one pipe-delimited record; the field order
+  // is documented in collector/frame.rs and mirrored here. The page's nodes
+  // are written in place, so a tick parses no HTML and replaces no subtree.
+  // The records carry an empty field for an unavailable value.
+
+  // The applier remembers the last text and attributes it wrote to each node
+  // and compares against them, so the steady-state path reads no DOM value
+  // back. A cache belongs to one node generation: a node the page re-creates
+  // (a mount, a row, a client-mode member) starts empty, and an out-of-band
+  // swap that merges an older agent's HTML into a panel drops every cache at
+  // once, because htmx edits the very nodes those references point at.
+  var cacheGen = 0;
+  var DATA_PANELS = {
+    "p-cpu-stat": true, "p-cpu-gauge": true, "p-cores": true,
+    "p-mem-stat": true, "p-mem-gauge": true, "p-storage": true
+  };
+
+  function nodeCache(node) {
+    var cache = node._cache;
+    if (!cache || cache.gen !== cacheGen) cache = node._cache = { gen: cacheGen };
+    return cache;
+  }
+
+  function cached(node, key, selector) {
+    var cache = nodeCache(node);
+    if (cache[key] === undefined) cache[key] = node.querySelector(selector);
+    return cache[key];
+  }
+
+  function cachedList(node, key, selector) {
+    var cache = nodeCache(node);
+    if (cache[key] === undefined) cache[key] = Array.prototype.slice.call(node.querySelectorAll(selector));
+    return cache[key];
+  }
+
+  function frameText(node, text) {
+    if (!node) return;
+    var cache = nodeCache(node);
+    if (cache.text === text) return;
+    cache.text = text;
+    node.textContent = text;
+  }
+
+  function frameAttr(node, name, value) {
+    var cache = nodeCache(node);
+    var attrs = cache.attrs || (cache.attrs = {});
+    if (attrs[name] === value) return;
+    attrs[name] = value;
+    if (value === null) node.removeAttribute(name);
+    else node.setAttribute(name, value);
+  }
+
+  // Split a record on the pipe, skipping an escaped one, and decode each field
+  // in the same pass. The server escapes the backslash first, so a backslash
+  // always begins a two-character escape; the applier reads the decoded fields
+  // by index and decodes nothing again.
+  function splitRecord(text) {
+    var fields = [];
+    var field = "";
+    for (var index = 0; index < text.length; index += 1) {
+      var ch = text[index];
+      if (ch === "\\") {
+        index += 1;
+        ch = text[index];
+        field += ch === "n" ? "\n" : ch;
+      } else if (ch === "|") {
+        fields.push(field);
+        field = "";
+      } else {
+        field += ch;
+      }
+    }
+    fields.push(field);
+    return fields;
+  }
+
+  // A [data-w] host with a running number effect owns its children. The new
+  // reading becomes the effect's target and its settled text; writing
+  // textContent here would replace the effect's layers, and numFinish would
+  // then put the older reading back. syncNumbers stamps each host with its
+  // state index, so the lookup is a property read, not a scan.
+  function numberText(node, text) {
+    if (!node) return;
+    var index = node._num;
+    var state = index === undefined ? null : numStates[index];
+    if (state && state.el === node) {
+      var run = numRuns[index];
+      if (run) {
+        if (state.text !== text) {
+          state.text = text;
+          if (run.retarget) run.retarget(text);
+        }
+        return;
+      }
+    }
+    frameText(node, text);
+  }
+
+  function svgNode(name) {
+    return document.createElementNS("http://www.w3.org/2000/svg", name);
+  }
+
+  // The CPU event's metadata fields, and the page's interval chip, which the
+  // first page renders and every frame re-states.
+  function readCpuMeta(frame) {
+    if (frame[0] !== "c1") return;
+    var sent = Number(frame[1]);
+    if (sent > 0) updateMs = sent;
+    var windowSent = Number(frame[2]);
+    if (windowSent > 0) windowMs = windowSent;
+    var slowSent = Number(frame[3]);
+    if (slowSent > 0 && slowSent !== slowMs) {
+      slowMs = slowSent;
+      forgetPasses();
+    }
+    var seq = Number(frame[4]);
+    if (seq !== slowSeq) {
+      // A restarted server counts again from 1.
+      if (seq < slowSeq) forgetPasses();
+      slowSeq = seq;
+      // A new slow result carries the charts a whole period further left.
+      lastChartAt = window.performance.now();
+      notePass(seq);
+      // The pause control sits in the CONFIG popover, and opening that
+      // closes a popup, so a paused page's popup holds its first body.
+      if (!paused) askDetail();
+    }
+    if (interval) {
+      frameAttr(interval, "data-update-ms", String(updateMs));
+      frameAttr(interval, "data-window-ms", String(windowMs));
+      frameAttr(interval, "data-slow-ms", String(slowMs));
+      frameAttr(interval, "data-slow-seq", String(slowSeq));
+      frameText(interval, updateMs + " ms");
+    }
+    var now = Date.now();
+    if (lastFrame > 0 && sampleAge) sampleAge.textContent = ((now - lastFrame) / 1000).toFixed(1) + " s";
+    lastFrame = now;
+    if (stale) {
+      stale = false;
+      paintLive();
+    }
+    armStale();
+    paintClock();
+    syncMotion();
+  }
+
+  // CPU_HISTORY and MEM_HISTORY are both 467 by 28 (src/chart.rs). A chart is
+  // absent until the first slow pass has a path; the client creates the same
+  // svg then. `_seq` is the slow pass the path belongs to, so syncMotion
+  // restarts a chart only when its own new path is on the page (DEF-GRAPH-128).
+  function setChart(box, line, area, seq) {
+    if (!box) return;
+    var svg = cached(box, "svg", "svg.chart");
+    if (!line) {
+      if (svg) {
+        svg.remove();
+        nodeCache(box).svg = null;
+      }
+      return;
+    }
+    if (!svg) {
+      box.innerHTML = '<svg class="chart" viewBox="0 0 467 28" preserveAspectRatio="none" aria-hidden="true"><g class="series"><path class="area"></path><path class="line"></path></g></svg>';
+      svg = nodeCache(box).svg = box.querySelector("svg.chart");
+    }
+    var areaPath = cached(svg, "area", "path.area");
+    var linePath = cached(svg, "line", "path.line");
+    frameAttr(areaPath, "d", area);
+    frameAttr(linePath, "d", line);
+    svg._seq = seq;
+  }
+
+  function setStatTile(tile, value, band) {
+    if (!tile) return;
+    var span = cached(tile, "value", ".stat-value");
+    if (!value) {
+      if (span) {
+        tile.innerHTML = '<span class="stat-na">unavailable</span>';
+        nodeCache(tile).value = null;
+      }
+      return;
+    }
+    if (!span) {
+      tile.innerHTML = '<span class="stat-value" data-w="100" data-range="100" id="cpu-total"></span><span class="stat-unit">%</span>';
+      span = nodeCache(tile).value = tile.querySelector(".stat-value");
+    }
+    numberText(span, value);
+    frameAttr(span, "class", "stat-value " + band);
+  }
+
+  function setGaugeAria(gauge, label, unavailable) {
+    if (label) {
+      frameAttr(gauge, "aria-label", label);
+      frameAttr(gauge, "data-state", null);
+    } else {
+      frameAttr(gauge, "aria-label", unavailable);
+      frameAttr(gauge, "data-state", "unavailable");
+    }
+  }
+
+  // One gauge shape's arc. The server sends the path, so the client draws no
+  // geometry; an empty path means the gauge is unavailable and draws no fill.
+  function setGaugePath(svg, d, band) {
+    var path = cached(svg, "fill", "path.g-fill");
+    if (!d) {
+      if (path) {
+        path.remove();
+        nodeCache(svg).fill = null;
+      }
+      return;
+    }
+    if (!path) {
+      path = svgNode("path");
+      svg.insertBefore(path, cached(svg, "tick", "path.g-tick"));
+      nodeCache(svg).fill = path;
+    }
+    frameAttr(path, "class", "g-fill " + band);
+    frameAttr(path, "d", d);
+  }
+
+  function setWideFill(gauge, band, to) {
+    var wide = cached(gauge, "wide", "svg.g-wide");
+    var use = cached(wide, "use", "use.g-fill");
+    if (!to) {
+      if (use) {
+        use.remove();
+        nodeCache(wide).use = null;
+      }
+      return;
+    }
+    if (!use) {
+      use = svgNode("use");
+      wide.appendChild(use);
+      nodeCache(wide).use = use;
+    }
+    frameAttr(use, "class", "g-fill " + band);
+    frameAttr(use, "href", "#g-wide-arc");
+    frameAttr(use, "style", "--from:0;--to:" + to);
+  }
+
+  // The two shapes' big value text, or the unavailable label the page draws
+  // in its place. The unit tspan keeps the value's own text node separate.
+  function setGaugeValue(svg, value, unit, label) {
+    var text = cached(svg, "value", "text.g-value");
+    var name = cached(svg, "label", "text.g-label");
+    if (!value) {
+      if (text) {
+        text.remove();
+        nodeCache(svg).value = null;
+      }
+      if (name) {
+        frameText(name, "unavailable");
+        frameAttr(name, "y", "70");
+      }
+      return;
+    }
+    if (!text) {
+      text = svgNode("text");
+      text.setAttribute("class", "g-value");
+      text.setAttribute("x", "54");
+      text.setAttribute("y", "66");
+      text.appendChild(document.createTextNode(""));
+      var created = svgNode("tspan");
+      created.setAttribute("class", "g-unit");
+      created.setAttribute("dx", "2.5");
+      text.appendChild(created);
+      if (name) svg.insertBefore(text, name);
+      else svg.appendChild(text);
+      nodeCache(svg).value = text;
+    }
+    var cache = nodeCache(text);
+    if (cache.value !== value) {
+      cache.value = value;
+      text.firstChild.nodeValue = value;
+    }
+    frameText(cached(text, "unit", "tspan.g-unit"), unit);
+    if (name) {
+      frameText(name, label);
+      frameAttr(name, "y", "78");
+    }
+  }
+
+  // The big value inside a gauge's readout: the template's
+  // <b>value<i>unit</i></b><span>label</span>, or the unavailable line. The
+  // shape changes with the value's presence, so the mode decides a rebuild.
+  function setGaugeRead(read, value, unit, label) {
+    if (!read) return;
+    var cache = nodeCache(read);
+    var mode = value ? "value" : "unavailable";
+    if (cache.mode !== mode) {
+      cache.mode = mode;
+      read.innerHTML = value ? "<b></b><span></span>" : "<span></span>";
+      cache.label = read.querySelector("span");
+      if (value) {
+        var bold = read.querySelector("b");
+        cache.value = bold.appendChild(document.createTextNode(""));
+        cache.unit = bold.appendChild(document.createElement("i"));
+      } else {
+        cache.value = null;
+        cache.unit = null;
+      }
+    }
+    if (value) {
+      if (cache.value.nodeValue !== value) cache.value.nodeValue = value;
+      frameText(cache.unit, unit);
+      frameText(cache.label, label);
+    } else {
+      frameText(cache.label, "unavailable");
+    }
+  }
+
+  function setMeter(node, value) {
+    if (!node) return;
+    if (value) {
+      frameAttr(node, "style", "--value:" + value);
+      frameAttr(node, "data-state", null);
+    } else {
+      frameAttr(node, "style", null);
+      frameAttr(node, "data-state", "unavailable");
+    }
+  }
+
+  function coreLabel(name) {
+    return "C" + String(name.replace(/^cpu/, "")).padStart(2, "0");
+  }
+
+  function setCoreRow(row, name, value, display) {
+    var tip = "Core " + name + ", unit percent\n" + (value
+      ? "source: /proc/stat " + name + " line, delta\n1 s average shown by the meter and number"
+      : "unavailable: /proc/stat has no " + name + " line\nthe meter shows the unavailable state");
+    frameAttr(row, "data-tip", tip);
+    frameText(cached(row, "label", ".cl"), coreLabel(name));
+    var meter = cached(row, "meter", ".meter");
+    var cv = cached(row, "cv", ".cv");
+    var cell = cached(cv, "cell", "span[data-w]");
+    var unit = cached(cv, "unit", "i");
+    if (!value) {
+      frameAttr(row, "style", null);
+      if (meter) frameAttr(meter, "data-state", "unavailable");
+      if (unit) {
+        unit.remove();
+        nodeCache(cv).unit = null;
+      }
+      frameText(cell, "");
+      return;
+    }
+    frameAttr(row, "style", "--value:" + value);
+    if (meter) frameAttr(meter, "data-state", null);
+    if (!unit) {
+      unit = document.createElement("i");
+      unit.textContent = "%";
+      cv.appendChild(unit);
+      nodeCache(cv).unit = unit;
+    }
+    numberText(cell, display);
+  }
+
+  function newCoreRow(name, value, display) {
+    var row = document.createElement("div");
+    row.className = "core-row";
+    row.innerHTML = value
+      ? '<span class="cl"></span><span class="meter"></span><span class="cv"><span data-w="100"></span><i>%</i></span>'
+      : '<span class="cl"></span><span class="meter"></span><span class="cv"><span data-w="100"></span></span>';
+    setCoreRow(row, name, value, display);
+    return row;
+  }
+
+  // The CPU stat header's optional facts. The first page renders one only
+  // when its value is known, so a frame creates the span on the first value
+  // and removes it when the field is empty; the order is the template's.
+  var CPU_FREQUENCY_TIP = "CPU frequency, unit MHz or GHz\nsource: cpufreq policy0 scaling_cur_freq\nfalls back to the first cpuinfo cpu MHz line";
+  var CPU_TEMPERATURE_TIP = "CPU temperature, unit degrees Celsius\nsource: hwmon and thermal sysfs, m\u00b0C / 1000\nwhole degrees, btop's sensor choice";
+  var LOAD_UNAVAILABLE_TIP = "Load average, unit percent of all cores\nsource: /proc/loadavg; container: its own tasks\nunavailable: no load or core count was read";
+  var CPU_STAT_LOAD_UNAVAILABLE_TIP = "Load average, unit percent\ntasks runnable or blocked in I/O wait\naveraged over 1, 5 and 15 minutes\nsource: /proc/loadavg, not this container's";
+  var CORES_COUNT_TIP = "Core count and scale, unit percent\nsource: online cpus in /proc/stat\neach row is one core's 1 s average";
+  var CPU_CORES_TIP = "Core count, unit cores\nsource: online cpus in /proc/stat\nin a container: cpuset.cpus.effective";
+
+  function setCpuStatFacts(stat, frame) {
+    var box = cached(stat, "facts", ".stat-facts");
+    if (!box) return;
+    var frequency = frame[19];
+    var node = cached(box, "freq", '[data-field="cpu-freq"]');
+    if (frequency) {
+      if (!node) {
+        node = document.createElement("span");
+        node.setAttribute("data-field", "cpu-freq");
+        node.setAttribute("data-tip", CPU_FREQUENCY_TIP);
+        node.appendChild(document.createElement("b"));
+        box.insertBefore(node, box.querySelector('[data-field="cpu-temp"], [data-field="cpu-load"]'));
+        nodeCache(box).freq = node;
+      }
+      frameText(cached(node, "b", "b"), frequency);
+    } else if (node) {
+      node.remove();
+      nodeCache(box).freq = null;
+    }
+    var temperature = frame[20];
+    node = cached(box, "temp", '[data-field="cpu-temp"]');
+    if (temperature) {
+      if (!node) {
+        node = document.createElement("span");
+        node.className = "cpu-temp";
+        node.setAttribute("data-field", "cpu-temp");
+        node.setAttribute("data-tip", CPU_TEMPERATURE_TIP);
+        var value = document.createElement("b");
+        value.setAttribute("data-w", "100\u00b0C");
+        node.appendChild(value);
+        box.insertBefore(node, box.querySelector('[data-field="cpu-load"]'));
+        nodeCache(box).temp = node;
+      }
+      frameText(cached(node, "b", "b"), temperature);
+    } else if (node) {
+      node.remove();
+      nodeCache(box).temp = null;
+    }
+    var tip = frame[12];
+    node = cached(box, "load", '[data-field="cpu-load"]');
+    if (tip || frame[26]) {
+      if (!node) {
+        node = document.createElement("span");
+        node.setAttribute("data-field", "cpu-load");
+        box.appendChild(node);
+        nodeCache(box).load = node;
+      }
+      if (tip) {
+        if (!cached(node, "b", "b[data-num]")) {
+          node.innerHTML = 'load <b data-num></b>/1m <b data-num></b>/5m <b data-num></b>/15m';
+          // The new children void the node's text shadow and the figures list.
+          nodeCache(node).text = undefined;
+          nodeCache(node).b = node.querySelector("b");
+          nodeCache(stat).figures = undefined;
+        }
+        frameAttr(node, "data-tip", tip);
+      } else {
+        frameText(node, "load unavailable");
+        frameAttr(node, "data-tip", CPU_STAT_LOAD_UNAVAILABLE_TIP);
+        if (nodeCache(node).b) {
+          nodeCache(node).b = null;
+          nodeCache(stat).figures = undefined;
+        }
+      }
+    } else if (node) {
+      node.remove();
+      nodeCache(box).load = null;
+      nodeCache(stat).figures = undefined;
+    }
+  }
+
+  // The CPU gauge header's name and core count: the first page renders each
+  // only when the snapshot carries it.
+  function setCpuGaugeHeader(header, frame) {
+    var name = frame[22];
+    var node = cached(header, "name", '[data-field="cpu-name"]');
+    if (name) {
+      if (!node) {
+        node = document.createElement("div");
+        node.className = "cpu-name";
+        node.setAttribute("data-p", "3");
+        node.setAttribute("data-field", "cpu-name");
+        header.insertBefore(node, header.querySelector('[data-field="cpu-gauge-cores"]'));
+        nodeCache(header).name = node;
+      }
+      frameText(node, name);
+      frameAttr(node, "title", name);
+    } else if (node) {
+      node.remove();
+      nodeCache(header).name = null;
+    }
+    var cores = frame[21];
+    node = cached(header, "cores", '[data-field="cpu-gauge-cores"]');
+    if (cores) {
+      if (!node) {
+        node = document.createElement("span");
+        node.className = "head-right meta";
+        node.setAttribute("data-p", "3");
+        node.setAttribute("data-field", "cpu-gauge-cores");
+        node.setAttribute("data-tip", CPU_CORES_TIP);
+        header.appendChild(node);
+        nodeCache(header).cores = node;
+      }
+      frameText(node, cores + " cores");
+    } else if (node) {
+      node.remove();
+      nodeCache(header).cores = null;
+    }
+  }
+
+  // One gauge fact's value: the template's <b> with its reserved width, or
+  // the unavailable span when the field is empty.
+  function setFactValue(fact, value, reserve) {
+    if (!fact) return;
+    var b = cached(fact, "b", "b");
+    if (!value) {
+      if (!b) return;
+      b.remove();
+      nodeCache(fact).b = null;
+      var span = document.createElement("span");
+      span.textContent = "unavailable";
+      fact.appendChild(span);
+      return;
+    }
+    if (!b) {
+      var label = cached(fact, "label", "span");
+      while (label.nextSibling) label.nextSibling.remove();
+      b = document.createElement("b");
+      b.setAttribute("data-w", reserve);
+      fact.appendChild(b);
+      nodeCache(fact).b = b;
+    }
+    frameText(b, value);
+  }
+
+  // The load fact: three figures with their windows, or the template's
+  // unavailable line.
+  function setLoadFact(fact, loads, reserve, tip) {
+    if (!fact) return;
+    var b = cached(fact, "b", "b");
+    if (!tip) {
+      if (!b) return;
+      b.remove();
+      nodeCache(fact).b = null;
+      frameAttr(fact, "class", "fact");
+      var span = document.createElement("span");
+      span.textContent = "unavailable";
+      fact.appendChild(span);
+      frameAttr(fact, "data-tip", LOAD_UNAVAILABLE_TIP);
+      return;
+    }
+    if (!b) {
+      frameAttr(fact, "class", "fact load");
+      fact.innerHTML = '<span>load</span><b><span class="load-cell"><span data-num></span>/1m</span> <span class="load-cell"><span data-num></span>/5m</span> <span class="load-cell"><span data-num></span>/15m</span></b>';
+      b = nodeCache(fact).b = fact.querySelector("b");
+    }
+    frameAttr(fact, "data-tip", tip);
+    var cells = cachedList(b, "cells", "[data-num]");
+    for (var index = 0; index < cells.length; index += 1) {
+      if (reserve) frameAttr(cells[index], "data-w", reserve);
+      numberText(cells[index], loads[index]);
+    }
+  }
+
+  function applyCpuFrame(frame) {
+    if (frame[0] !== "c1") return;
+    var total = frame[5];
+    var band = frame[6];
+    var bandGauge = frame[7];
+    var loads = [frame[13], frame[14], frame[15]];
+    var reserve = frame[11];
+    var loadTip = frame[12];
+    var stat = document.getElementById("p-cpu-stat");
+    var gaugePanel = document.getElementById("p-cpu-gauge");
+    if (stat) {
+      setCpuStatFacts(stat, frame);
+      setStatTile(cached(stat, "tile", ".stat-tile"), total, band);
+      var figures = cachedList(stat, "figures", "[data-num]");
+      for (var index = 0; index < figures.length; index += 1) {
+        numberText(figures[index], loads[index]);
+        if (reserve) frameAttr(figures[index], "data-w", reserve);
+      }
+      setChart(cached(stat, "chart", '[data-chart="cpu"]'), frame[frame.length - 2], frame[frame.length - 1], Number(frame[4]));
+    }
+    if (gaugePanel) {
+      var header = cached(gaugePanel, "header", "header.ph");
+      if (header) setCpuGaugeHeader(header, frame);
+      var gauge = cached(gaugePanel, "gauge", '[data-gauge="cpu"]');
+      if (gauge) {
+        var circle = cached(gauge, "circle", "svg.g-circle");
+        var squircle = cached(gauge, "squircle", "svg.g-squircle");
+        setGaugeAria(gauge, total ? "CPU total " + total + " percent" : "", "CPU unavailable");
+        setGaugePath(circle, frame[8], bandGauge);
+        setGaugePath(squircle, frame[9], bandGauge);
+        setWideFill(gauge, bandGauge, frame[10]);
+        setGaugeValue(circle, total, "%", "total");
+        setGaugeValue(squircle, total, "%", "total");
+        setGaugeRead(cached(gauge, "read", ".g-read"), total, "%", "total");
+      }
+      var facts = cachedList(gaugePanel, "facts", ".facts .fact");
+      if (facts.length) {
+        setLoadFact(facts[0], loads, reserve, loadTip);
+        var values = [frame[16], frame[17], frame[18]];
+        var reserves = ["100%", "100%", "100.00%"];
+        for (index = 0; index < values.length; index += 1) {
+          setFactValue(facts[index + 1], values[index], reserves[index]);
+        }
+      }
+    }
+    var cores = document.getElementById("p-cores");
+    if (cores) {
+      var coresHeader = cached(cores, "header", "header.ph");
+      var body = cached(cores, "body", ".cores-body");
+      var count = coresHeader ? cached(coresHeader, "count", ".head-right.meta[data-tip]") : null;
+      var withheld = coresHeader ? cached(coresHeader, "withheld", "[data-withheld]") : null;
+      if (frame[24]) {
+        // A container without a cpuset names no cores: the template draws the
+        // header's unavailable state and no rows.
+        if (body) {
+          body.remove();
+          nodeCache(cores).body = null;
+        }
+        if (count) {
+          count.remove();
+          nodeCache(coresHeader).count = null;
+        }
+        if (coresHeader && !withheld) {
+          withheld = document.createElement("span");
+          withheld.className = "head-right meta";
+          withheld.setAttribute("data-withheld", "");
+          withheld.setAttribute("title", "No cgroup v2 cpuset names this container's cores");
+          withheld.textContent = "unavailable";
+          coresHeader.appendChild(withheld);
+          nodeCache(coresHeader).withheld = withheld;
+        }
+      } else {
+        if (withheld) {
+          withheld.remove();
+          nodeCache(coresHeader).withheld = null;
+        }
+        if (!body) {
+          body = document.createElement("div");
+          body.className = "cores-body";
+          cores.appendChild(body);
+          nodeCache(cores).body = body;
+        }
+        var rows = Number(frame[25]);
+        frameAttr(body, "style", "--rows:" + frame[23]);
+        var nodes = cachedList(body, "rows", ".core-row");
+        for (index = 0; index < rows; index += 1) {
+          var node = nodes[index];
+          var name = frame[27 + index * 3];
+          var value = frame[28 + index * 3];
+          var display = frame[29 + index * 3];
+          if (!node) {
+            node = newCoreRow(name, value, display);
+            body.appendChild(node);
+            nodeCache(body).rows = undefined;
+          } else {
+            setCoreRow(node, name, value, display);
+          }
+        }
+        nodes = cachedList(body, "rows", ".core-row");
+        if (rows < nodes.length) {
+          for (index = rows; index < nodes.length; index += 1) nodes[index].remove();
+          nodeCache(body).rows = undefined;
+        }
+        if (rows > 0) {
+          if (!count && coresHeader) {
+            count = document.createElement("span");
+            count.className = "head-right meta";
+            count.setAttribute("data-tip", CORES_COUNT_TIP);
+            coresHeader.appendChild(count);
+            nodeCache(coresHeader).count = count;
+          }
+          frameText(count, frame[25] + " \u00b7 0\u2013100%");
+        } else if (count) {
+          count.remove();
+          nodeCache(coresHeader).count = null;
+        }
+      }
+    }
+  }
+
+  // The memory gauge header's total, rendered only when the snapshot has one.
+  function setMemGaugeTotal(gaugePanel, frame) {
+    var header = cached(gaugePanel, "header", "header.ph");
+    if (!header) return;
+    var total = frame[9];
+    var node = cached(header, "total", '[data-field="mem-gauge-total"]');
+    if (!total) {
+      if (node) {
+        node.remove();
+        nodeCache(header).total = null;
+      }
+      return;
+    }
+    if (!node) {
+      node = document.createElement("span");
+      node.className = "head-right meta";
+      node.setAttribute("data-p", "3");
+      node.setAttribute("data-field", "mem-gauge-total");
+      var inner = document.createElement("span");
+      inner.appendChild(document.createTextNode("of total "));
+      var value = document.createElement("span");
+      value.className = "meta-value";
+      inner.appendChild(value);
+      node.appendChild(inner);
+      header.appendChild(node);
+      nodeCache(header).total = node;
+    }
+    var body = cached(node, "body", "span");
+    var meta = cached(body, "meta", ".meta-value");
+    frameText(meta, total);
+    var suffix = nodeCache(body).suffix;
+    if (suffix === undefined) {
+      var last = body.lastChild;
+      suffix = last && last !== meta && last.nodeType === 3 ? last : null;
+      nodeCache(body).suffix = suffix;
+    }
+    if (frame[10]) {
+      if (!suffix) {
+        suffix = document.createTextNode("");
+        body.appendChild(suffix);
+        nodeCache(body).suffix = suffix;
+      }
+      if (suffix.nodeValue !== frame[10]) suffix.nodeValue = frame[10];
+    } else if (suffix && suffix.nodeValue !== "") {
+      suffix.nodeValue = "";
+    }
+    frameAttr(node, "data-tip", frame[11]);
+  }
+
+  // One Memory stat header fact: the template's <b> with its 100% width, or
+  // no span at all when the value is unavailable.
+  function setMemStatFact(facts, field, value, tip, label) {
+    var key = "fact-" + field;
+    var node = cached(facts, key, '[data-field="' + field + '"]');
+    if (!value) {
+      if (node) {
+        node.remove();
+        nodeCache(facts)[key] = null;
+      }
+      return;
+    }
+    if (!node) {
+      node = document.createElement("span");
+      node.setAttribute("data-field", field);
+      var b = document.createElement("b");
+      b.setAttribute("data-w", "100%");
+      node.appendChild(b);
+      node.appendChild(document.createTextNode(" " + label));
+      facts.insertBefore(node, field === "mem-used-fact" ? facts.firstChild : null);
+      nodeCache(facts)[key] = node;
+    }
+    frameText(cached(node, "b", "b"), value);
+    frameAttr(node, "data-tip", tip);
+  }
+
+  function setMemStatHeader(stat, frame) {
+    var header = cached(stat, "header", "header.ph .head-right");
+    if (!header) return;
+    var node = cached(header, "total", '[data-field="mem-stat-total"]');
+    if (frame[9]) {
+      if (!node) {
+        node = document.createElement("span");
+        node.className = "meta";
+        node.setAttribute("data-field", "mem-stat-total");
+        header.insertBefore(node, cached(header, "facts", '[data-field="mem-stat-facts"]'));
+        nodeCache(header).total = node;
+      }
+      frameText(node, "of " + frame[9] + frame[10]);
+      frameAttr(node, "data-tip", frame[11]);
+    } else if (node) {
+      node.remove();
+      nodeCache(header).total = null;
+    }
+    var facts = cached(header, "facts", '[data-field="mem-stat-facts"]');
+    if (!facts) return;
+    setMemStatFact(facts, "mem-used-fact", frame[5], frame[12], "used");
+    setMemStatFact(facts, "mem-avail-fact", frame[6], frame[13], "available");
+  }
+
+  var MEM_ROW_ORDER = ["used", "cache", "other", "other-cache", "free", "free-cache", "swap"];
+
+  function newMemRow(kind, size, pct, label, tip) {
+    var row = document.createElement("div");
+    row.className = kind === "swap" ? "mem-row swap" : "mem-row";
+    row.setAttribute("data-row", kind);
+    var head = document.createElement("span");
+    if (kind !== "free-cache") {
+      var key = document.createElement("i");
+      key.className = "mem-key";
+      key.setAttribute("data-seg", kind);
+      head.appendChild(key);
+    }
+    head.appendChild(document.createTextNode(label));
+    var value = document.createElement("b");
+    if (kind !== "swap") value.setAttribute("data-w", "0000 MiB");
+    var share = document.createElement("span");
+    share.className = "pct";
+    share.setAttribute("data-w", "100%");
+    row.appendChild(head);
+    row.appendChild(value);
+    row.appendChild(share);
+    setMemRow(row, size, pct, label, tip);
+    return row;
+  }
+
+  function setMemRow(row, size, pct, label, tip) {
+    frameAttr(row, "data-tip", tip);
+    var head = cached(row, "head", "span");
+    var text = nodeCache(head).label;
+    if (text === undefined) {
+      var last = head.lastChild;
+      text = last && last.nodeType === 3 ? last : null;
+      nodeCache(head).label = text;
+    }
+    if (text && text.nodeValue !== label) text.nodeValue = label;
+    frameText(cached(row, "size", "b"), size);
+    frameText(cached(row, "pct", ".pct"), pct);
+  }
+
+  // Where a created row belongs: before the first row the frame lists after
+  // it, or last. Only a changed set reaches this, so the scan costs nothing
+  // on the steady-state path.
+  function memRowAnchor(panel, kind) {
+    var at = MEM_ROW_ORDER.indexOf(kind);
+    var rows = panel.querySelectorAll(".mem-row[data-row]");
+    for (var index = 0; index < rows.length; index += 1) {
+      if (MEM_ROW_ORDER.indexOf(rows[index].getAttribute("data-row")) > at) return rows[index];
+    }
+    return null;
+  }
+
+  function newMount(label) {
+    var node = document.createElement("div");
+    node.className = "mount";
+    var head = document.createElement("div");
+    head.className = "mount-head";
+    var name = document.createElement("span");
+    name.className = "mount-label";
+    name.textContent = label;
+    name.setAttribute("title", label);
+    head.appendChild(name);
+    node.appendChild(head);
+    var used = document.createElement("div");
+    used.className = "mount-row";
+    used.innerHTML = '<span class="mount-key">used</span><span class="meter meter-used"></span><span class="mount-pct"></span><span class="mount-size"></span>';
+    var free = document.createElement("div");
+    free.className = "mount-row free";
+    free.innerHTML = '<span class="mount-key">free</span><span class="meter meter-free"></span><span class="mount-pct"></span><span class="mount-size"></span>';
+    node.appendChild(used);
+    node.appendChild(free);
+    return node;
+  }
+
+  // One mount block; the IO share and the total are rendered only when the
+  // record carries them, in the template's order.
+  function setMount(node, frame, at, tip) {
+    frameAttr(node, "data-tip", tip);
+    var label = frame[at];
+    var name = cached(node, "name", ".mount-label");
+    frameText(name, label);
+    frameAttr(name, "title", label);
+    var io = frame[at + 1];
+    var ioNode = cached(node, "io", ".mount-io");
+    if (io) {
+      if (!ioNode) {
+        var head = cached(node, "head", ".mount-head");
+        ioNode = document.createElement("span");
+        ioNode.className = "mount-io";
+        ioNode.appendChild(document.createTextNode("IO "));
+        var ioValue = document.createElement("span");
+        ioValue.setAttribute("data-w", "100%");
+        ioNode.appendChild(ioValue);
+        head.insertBefore(ioNode, cached(head, "b", "b"));
+        nodeCache(node).io = ioNode;
+      }
+      frameText(cached(ioNode, "value", "span"), io);
+    } else if (ioNode) {
+      ioNode.remove();
+      nodeCache(node).io = null;
+    }
+    var total = frame[at + 2];
+    var totalNode = cached(node, "total", ".mount-head b");
+    if (total) {
+      if (!totalNode) {
+        var mountHead = cached(node, "head", ".mount-head");
+        totalNode = document.createElement("b");
+        mountHead.appendChild(totalNode);
+        nodeCache(node).total = totalNode;
+        nodeCache(mountHead).b = totalNode;
+      }
+      frameText(totalNode, total);
+    } else if (totalNode) {
+      totalNode.remove();
+      nodeCache(node).total = null;
+      nodeCache(cached(node, "head", ".mount-head")).b = null;
+    }
+    var rows = cachedList(node, "rows", ".mount-row");
+    if (rows[0]) {
+      setMeter(cached(rows[0], "meter", ".meter-used"), frame[at + 3]);
+      frameText(cached(rows[0], "pct", ".mount-pct"), frame[at + 4]);
+      frameText(cached(rows[0], "size", ".mount-size"), frame[at + 5]);
+    }
+    if (rows[1]) {
+      setMeter(cached(rows[1], "meter", ".meter-free"), frame[at + 6]);
+      frameText(cached(rows[1], "pct", ".mount-pct"), frame[at + 7]);
+      frameText(cached(rows[1], "size", ".mount-size"), frame[at + 8]);
+    }
+  }
+
+  function applyMemFrame(frame) {
+    if (frame[0] !== "m1") return;
+    var seq = Number(frame[1]);
+    // Parse every field first: the panels below are independent, and the
+    // storage records follow the gauge's variable-length lists.
+    var at = 15;
+    var spans = Number(frame[at]);
+    at += 1;
+    var names = [];
+    var circle = [];
+    var squircle = [];
+    var froms = [];
+    var tos = [];
+    for (var index = 0; index < spans; index += 1) {
+      names.push(frame[at]);
+      circle.push(frame[at + 1]);
+      squircle.push(frame[at + 2]);
+      froms.push(frame[at + 3]);
+      tos.push(frame[at + 4]);
+      at += 5;
+    }
+    var segments = Number(frame[at]);
+    at += 1;
+    var barNames = [];
+    var barWidths = [];
+    for (index = 0; index < segments; index += 1) {
+      barNames.push(frame[at]);
+      barWidths.push(frame[at + 1]);
+      at += 2;
+    }
+    var rows = Number(frame[at]);
+    at += 1;
+    var rowData = [];
+    for (index = 0; index < rows; index += 1) {
+      rowData.push([frame[at], frame[at + 1], frame[at + 2], frame[at + 3], frame[at + 4]]);
+      at += 5;
+    }
+    var mountCount = Number(frame[at]);
+    at += 1;
+    var stat = document.getElementById("p-mem-stat");
+    var gaugePanel = document.getElementById("p-mem-gauge");
+    var storage = document.getElementById("p-storage");
+    if (stat) {
+      setMemStatHeader(stat, frame);
+      var tile = cached(stat, "tile", ".stat-tile");
+      var span = tile ? cached(tile, "value", ".stat-value") : null;
+      if (tile && frame[2]) {
+        if (!span) {
+          tile.innerHTML = '<span class="stat-value" data-w="0000" id="mem-used"></span><span class="stat-unit"></span>';
+          span = nodeCache(tile).value = tile.querySelector(".stat-value");
+          nodeCache(tile).unit = tile.querySelector(".stat-unit");
+        }
+        numberText(span, frame[2]);
+        frameAttr(span, "data-range", frame[4]);
+        frameText(cached(tile, "unit", ".stat-unit"), frame[3]);
+      } else if (tile && span) {
+        tile.innerHTML = '<span class="stat-na">unavailable</span>';
+        nodeCache(tile).value = null;
+        nodeCache(tile).unit = null;
+      }
+      setChart(cached(stat, "chart", '[data-chart="mem"]'), frame[frame.length - 2], frame[frame.length - 1], seq);
+    }
+    if (gaugePanel) {
+      setMemGaugeTotal(gaugePanel, frame);
+      var gauge = cached(gaugePanel, "gauge", '[data-gauge="mem"]');
+      if (gauge) {
+        var aria = frame[7] ? "Memory " + frame[7] + " used, " + frame[5].replace("%", "") + " percent" : "";
+        setGaugeAria(gauge, aria, "Memory unavailable");
+        frameAttr(gauge, "data-tip", frame[8]);
+        var shapes = [cached(gauge, "circle", "svg.g-circle"), cached(gauge, "squircle", "svg.g-squircle")];
+        for (var shape = 0; shape < shapes.length; shape += 1) {
+          var paths = cachedList(shapes[shape], "fills", "path.g-fill");
+          var madePath = false;
+          for (index = 0; index < spans; index += 1) {
+            var path = paths[index];
+            if (!path) {
+              path = svgNode("path");
+              shapes[shape].insertBefore(path, cached(shapes[shape], "tick", "path.g-tick"));
+              madePath = true;
+            }
+            frameAttr(path, "class", "g-fill");
+            frameAttr(path, "data-seg", names[index]);
+            frameAttr(path, "d", shape === 0 ? circle[index] : squircle[index]);
+          }
+          if (madePath || spans < paths.length) {
+            for (index = spans; index < paths.length; index += 1) paths[index].remove();
+            nodeCache(shapes[shape]).fills = undefined;
+          }
+        }
+        var wide = cached(gauge, "wide", "svg.g-wide");
+        var uses = cachedList(wide, "uses", "use.g-fill");
+        var madeUse = false;
+        for (index = 0; index < spans; index += 1) {
+          var use = uses[index];
+          if (!use) {
+            use = svgNode("use");
+            wide.appendChild(use);
+            madeUse = true;
+          }
+          frameAttr(use, "class", "g-fill");
+          frameAttr(use, "data-seg", names[index]);
+          frameAttr(use, "href", "#g-wide-arc");
+          frameAttr(use, "style", "--from:" + froms[index] + ";--to:" + tos[index]);
+        }
+        if (madeUse || spans < uses.length) {
+          for (index = spans; index < uses.length; index += 1) uses[index].remove();
+          nodeCache(wide).uses = undefined;
+        }
+        setGaugeValue(cached(gauge, "circle", "svg.g-circle"), frame[2], frame[3], "used");
+        setGaugeValue(cached(gauge, "squircle", "svg.g-squircle"), frame[2], frame[3], "used");
+        setGaugeRead(cached(gauge, "read", ".g-read"), frame[2], frame[3], "used");
+        var bar = cached(gaugePanel, "bar", ".mem-bar");
+        frameAttr(bar, "data-state", segments === 0 ? "unavailable" : null);
+        var bars = cachedList(bar, "segs", ".mem-seg");
+        var madeSeg = false;
+        for (index = 0; index < segments; index += 1) {
+          var segment = bars[index];
+          if (!segment) {
+            segment = document.createElement("span");
+            bar.appendChild(segment);
+            madeSeg = true;
+          }
+          frameAttr(segment, "class", "mem-seg");
+          frameAttr(segment, "data-seg", barNames[index]);
+          frameAttr(segment, "style", "width:" + barWidths[index] + "%");
+        }
+        if (madeSeg || segments < bars.length) {
+          for (index = segments; index < bars.length; index += 1) bars[index].remove();
+          nodeCache(bar).segs = undefined;
+        }
+        var rowsPanel = cached(gaugePanel, "rows", '[data-field="mem-gauge-facts"]');
+        if (rowsPanel) {
+          var rowMap = nodeCache(rowsPanel).rowMap;
+          if (rowMap === undefined) {
+            rowMap = {};
+            var listed = rowsPanel.querySelectorAll(".mem-row[data-row]");
+            for (index = 0; index < listed.length; index += 1) rowMap[listed[index].getAttribute("data-row")] = listed[index];
+            nodeCache(rowsPanel).rowMap = rowMap;
+          }
+          var sig = "";
+          for (index = 0; index < rowData.length; index += 1) sig += rowData[index][0] + "|";
+          if (nodeCache(rowsPanel).sig !== sig) {
+            nodeCache(rowsPanel).sig = sig;
+            var seen = {};
+            for (index = 0; index < rowData.length; index += 1) {
+              var kind = rowData[index][0];
+              seen[kind] = true;
+              var row = rowMap[kind];
+              if (!row) {
+                row = newMemRow(kind, rowData[index][1], rowData[index][2], rowData[index][3], rowData[index][4]);
+                rowsPanel.insertBefore(row, memRowAnchor(rowsPanel, kind));
+                rowMap[kind] = row;
+              } else {
+                setMemRow(row, rowData[index][1], rowData[index][2], rowData[index][3], rowData[index][4]);
+              }
+            }
+            for (var gone in rowMap) {
+              if (!seen[gone]) {
+                rowMap[gone].remove();
+                delete rowMap[gone];
+              }
+            }
+          } else {
+            for (index = 0; index < rowData.length; index += 1) {
+              var current = rowMap[rowData[index][0]];
+              if (current) setMemRow(current, rowData[index][1], rowData[index][2], rowData[index][3], rowData[index][4]);
+            }
+          }
+        }
+      }
+    }
+    if (storage) {
+      var body = cached(storage, "body", ".storage-body");
+      var mountTip = frame[14];
+      var mounts = body ? cachedList(body, "mounts", ".mount") : [];
+      for (var mount = 0; mount < mountCount; mount += 1) {
+        var node = mounts[mount];
+        if (!node) {
+          node = newMount(frame[at]);
+          if (body) {
+            body.appendChild(node);
+            mounts.push(node);
+          }
+        }
+        setMount(node, frame, at, mountTip);
+        at += 9;
+      }
+      if (body && mountCount < mounts.length) {
+        for (index = mountCount; index < mounts.length; index += 1) mounts[index].remove();
+        nodeCache(body).mounts = undefined;
+      }
+    }
+  }
+
+  // The syncs the htmx:sseMessage handler runs after an out-of-band frame.
+  // A data frame is applied here instead, so htmx cancels the swap and never
+  // fires its own message event.
+  function afterValueFrame(type) {
+    syncRescale();
+    fitChangedGauges();
+    if (type === "mem") syncBandsIfChanged();
+    syncMotion();
+    syncNumbers();
+    refreshTip();
+  }
 
   /* ---------- plot motion on its own clock (ACC-GRAPH-98-ANIM-CLOCK) ---------- */
 
@@ -471,6 +1551,15 @@
     detailAnchor = null;
   }
 
+  // ACC-PERF-220-FPS-CAP: a pass shows at most 25 steps a second, one step per
+  // 40 ms at least. The count comes from the pass's own duration, so the same
+  // displacement is still travelled inside the same time.
+  var STEP_MS = 40;
+
+  function shiftSteps(ms) {
+    return Math.max(1, Math.floor(ms / STEP_MS));
+  }
+
   // A CSS animation, as a panel chart's, with its start set to the pass's time,
   // so the new path and the new phase land in one frame on the same compositor
   // layer. A paused or hidden page, the motion toggle off, a body that says
@@ -489,6 +1578,7 @@
     if (at !== null) {
       svg.style.setProperty("--shift-to", (-100 * DETAIL_RUN_MS / windowMs).toFixed(3) + "%");
       svg.style.animationDuration = DETAIL_RUN_MS + "ms";
+      svg.style.setProperty("--shift-steps", String(shiftSteps(DETAIL_RUN_MS)));
       svg.style.animationName = "chart-shift-a";
     }
     var run = svg.getAnimations()[0];
@@ -553,6 +1643,7 @@
       svg._flip = !svg._flip;
       svg.style.setProperty("--shift-to", (-100 * slowMs / windowMs).toFixed(3) + "%");
       svg.style.animationDuration = slowMs + "ms";
+      svg.style.setProperty("--shift-steps", String(shiftSteps(slowMs)));
       svg.style.animationDelay = -phase + "ms";
       svg.style.animationName = svg._flip ? "chart-shift-b" : "chart-shift-a";
       svg.style.animationPlayState = "running";
@@ -738,6 +1829,10 @@
     if (!state) return;
     state.el.textContent = state.text;
     state.el.removeAttribute("data-num-host");
+    // Only a node the applier writes carries a text shadow; an out-of-band
+    // panel's node is read back on the next sync.
+    var cache = state.el._cache;
+    if (cache && typeof cache.text === "string") cache.text = state.text;
   }
 
   // A spring count-up: the text is rewritten from a critically damped spring,
@@ -1007,6 +2102,14 @@
     numRuns = {};
   }
 
+  // A frame-applied value node carries the last text written to it; every
+  // other host (a proc row, a mount the applier has not written yet) has no
+  // shadow, so its text is read once.
+  function hostText(el) {
+    var cache = el._cache;
+    return cache && cache.gen === cacheGen && typeof cache.text === "string" ? cache.text : el.textContent;
+  }
+
   // After each frame, pair the values by document order. A change starts an
   // effect; the same text does nothing, so a replaced node with an unchanged
   // value stays still and a hidden tab records the truth without replaying.
@@ -1017,14 +2120,16 @@
       cancelNumberRuns();
       numStates = [];
       for (var fresh = 0; fresh < hosts.length; fresh += 1) {
-        numStates.push({ el: hosts[fresh], text: hosts[fresh].textContent, history: [] });
+        hosts[fresh]._num = fresh;
+        numStates.push({ el: hosts[fresh], text: hostText(hosts[fresh]), history: [] });
       }
       return;
     }
     var states = [];
     for (var index = 0; index < hosts.length; index += 1) {
       var el = hosts[index];
-      var text = el.textContent;
+      el._num = index;
+      var text = hostText(el);
       var previous = numStates[index];
       if (numRuns[index] && previous) {
         if (previous.el === el) {
@@ -1655,6 +2760,9 @@
       if (!document.body.contains(latest[index].target)) continue;
       htmx.swap(latest[index].target, latest[index].data, { swapStyle: "innerHTML" });
     }
+    if (pendingFrames.cpu) applyCpuFrame(pendingFrames.cpu);
+    if (pendingFrames.mem) applyMemFrame(pendingFrames.mem);
+    pendingFrames = {};
     afterFrames();
   }
 
@@ -2772,6 +3880,9 @@
     var target = event.detail.target;
     var source = event.detail.fragment;
     if (!event.detail.shouldSwap || !target || !source) return;
+    // htmx edits the panel's own nodes, so every reference the applier cached
+    // for them may now be stale.
+    if (DATA_PANELS[target.id]) cacheGen += 1;
     numberEffects = numMode !== "none" || Object.keys(numRuns).length > 0;
     if (source.nodeType === 1) {
       patchChildren(target, source);

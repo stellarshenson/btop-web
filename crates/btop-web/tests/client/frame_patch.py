@@ -3,10 +3,13 @@ page. A kept node keeps its identity, the panel ends equal to the fragment, and
 what the page owns survives: a chart's animation and a gauge text's fitted size.
 DEF-GRAPH-125-TAIL-GAP: every curve reaches its plot's right edge in every frame.
 
-python3 -I frame_patch.py URL
+python3 -I frame_patch.py URL [CLIENT_URL]
 
 `make test-client` runs it through the ignored e2e test, against the recorded
-tree tests/fixtures/proc-gpu. Needs Playwright with its bundled chromium.
+tree tests/fixtures/proc-gpu. Needs Playwright with its bundled chromium. A
+client-mode page is rendered from the default snapshot; the second URL makes
+the script check that the cpu and mem records create the members that page
+lacks, and that a running number effect ends on the newest reading.
 """
 
 import sys
@@ -14,6 +17,79 @@ import sys
 from playwright.sync_api import sync_playwright
 
 URL = sys.argv[1]
+CLIENT_URL = sys.argv[2] if len(sys.argv) > 2 else None
+
+
+def cpu_record(total, one="10%"):
+    """A complete c1 record: two cores, a load, a frequency and no temperature."""
+    fields = [
+        "c1", "250", "1000", "1000", "1", str(total), "ok", "ok",
+        "M0 0", "M0 0", "61.00", "100%",
+        "Load average, unit percent\\nsource: /proc/loadavg",
+        one, "20%", "30%", "20%", "10%", "1.25%",
+        "3.20 GHz", "", "4", "Test CPU", "8", "", "2", "",
+        "cpu4", "42.4", "42", "cpu9", "", "",
+        "", "",
+    ]
+    return "|".join(fields)
+
+
+def mem_record():
+    """A complete m1 record: a total, seven rows (two created) and one mount."""
+    fields = [
+        "m1", "1", "5.0", "GiB", "8", "63%", "37%", "5.0 GiB",
+        "Memory shares, unit percent\\nsource: /proc/meminfo",
+        "8.00 GiB", " (container limit)",
+        "Memory total, unit bits\\nsource: cgroup",
+        "Memory used, unit percent\\nsource: cgroup",
+        "Memory available, unit percent\\nsource: rows",
+        "Mount space, unit bytes and percent\\nsource: statvfs\\nused = total - free\\nIO: block stat",
+        "1",
+        "used", "M0 0", "M0 0", "0.00", "63.00",
+        "2", "used", "63.000", "free", "37.000",
+        "7",
+        "used", "5.0 GiB", "63%", "used", "Memory used\\nsource: cgroup",
+        "cache", "1.0 GiB", "12%", "reclaimable", "Reclaimable cache\\nsource: cgroup",
+        "other", "0.5 GiB", "6%", "other used", "Other used\\nsource: host",
+        "other-cache", "0.2 GiB", "3%", "other reclaimable", "Other reclaimable\\nsource: host",
+        "free", "1.3 GiB", "16%", "container free", "Free memory\\nsource: cgroup",
+        "free-cache", "1.5 GiB", "19%", "free + reclaimable", "Free + reclaimable\\nsource: rows",
+        "swap", "0.1 / 2 GiB", "5%", "swap", "Swap used\\nsource: cgroup",
+        "1",
+        "data\\|disk", "12%", "1.00 TB", "63", "63%", "630 GB", "37", "37%", "370 GB",
+        "", "",
+    ]
+    return "|".join(fields)
+
+
+# A client page is rendered from the default snapshot: no CPU name, core rows,
+# memory total, extra memory rows or mount exists. Dispatching the same events
+# the agent sends must create them, and a number under a running spring must
+# finish on the newest reading rather than the one it started from.
+CLIENT_CHECKS = """([one, two, mem]) => {
+  const send = (type, data) => document.body.dispatchEvent(new CustomEvent('htmx:sseBeforeMessage', { bubbles: true, cancelable: true, detail: { type, data } }));
+  const text = (selector) => {
+    const el = document.querySelector(selector);
+    return el ? el.textContent : null;
+  };
+  const out = {};
+  send('cpu', one);
+  out.cpuFactCreated = text('#p-cpu-stat [data-field="cpu-freq"] b') === '3.20 GHz';
+  out.cpuNameCreated = text('#p-cpu-gauge [data-field="cpu-name"]') === 'Test CPU';
+  out.coresCreated = document.querySelectorAll('#p-cores .core-row').length === 2 && text('#p-cores .core-row .cl') === 'C04';
+  out.firstNumber = text('#cpu-total') === '37';
+  out.cpuGaugeRead = text('#p-cpu-gauge .g-read b') === '37%';
+  send('mem', mem);
+  out.memGaugeRead = text('#p-mem-gauge .g-read b') === '5.0GiB';
+  out.mountCreated = text('#p-storage .mount .mount-label') === 'data|disk';
+  out.mountTitleUnescaped = document.querySelector('#p-storage .mount .mount-label').getAttribute('title') === 'data|disk';
+  out.rowsCreated = !!document.querySelector('#p-mem-gauge .mem-row[data-row="other"]') && !!document.querySelector('#p-mem-gauge .mem-row[data-row="swap"]');
+  out.totalCreated = text('#p-mem-gauge [data-field="mem-gauge-total"] .meta-value') === '8.00 GiB';
+  out.usedFactCreated = text('#p-mem-stat [data-field="mem-used-fact"] b') === '63%';
+  send('cpu', two);
+  out.springStarted = document.getElementById('cpu-total').hasAttribute('data-num-host');
+  return out;
+}"""
 
 # One task, so a live frame cannot land between a swap and its check. The sink
 # is a page element htmx swaps a frame into; the wrapper's id picks the panel.
@@ -85,6 +161,29 @@ with sync_playwright() as play:
         assert seen["shift"] > 0, f"{name} did not scroll: {seen}"
         assert seen["gap"] <= 0, f"{name} stops short of its plot's edge: {seen}"
     result = page.evaluate(CHECKS)
+    if CLIENT_URL:
+        client = browser.new_page(viewport={"width": 1440, "height": 900})
+        client.on("pageerror", lambda error: errors.append(str(error)))
+        client.goto(CLIENT_URL, wait_until="load")
+        client.evaluate("localStorage.setItem('btop-web-num-motion', 'spring')")
+        client.reload(wait_until="load")
+        client.wait_for_selector("#p-cpu-stat .stat-tile", state="attached", timeout=10000)
+        result.update(
+            client.evaluate(
+                CLIENT_CHECKS,
+                [cpu_record(37), cpu_record(61, "15%"), mem_record()],
+            )
+        )
+        # The spring settles 800 ms after the reading; the extra time covers a
+        # slow first frame.
+        client.wait_for_timeout(1500)
+        result["springFinal"] = client.evaluate(
+            """() => {
+              const el = document.getElementById('cpu-total');
+              return !!el && !el.hasAttribute('data-num-host') && el.textContent === '61';
+            }"""
+        )
+        client.close()
     browser.close()
 
 failed = [name for name, passed in result.items() if not passed]

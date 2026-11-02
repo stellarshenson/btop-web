@@ -1,9 +1,11 @@
 //! Server-sent events: one named event per collector for each published frame.
 //!
-//! Each event body is a list of out-of-band wrappers, one per panel the
-//! collector feeds (`hx-swap-oob="innerHTML"` on the panel's id), so one event
-//! updates panels in different bands. The page's hidden `sse-swap` sinks
-//! receive the events and htmx moves each wrapper's content into its panel.
+//! The cpu and mem bodies are pipe-delimited data records the client writes
+//! into the page's nodes (ACC-PERF-133-PAGE-COST); net, proc and gpu carry a
+//! list of out-of-band wrappers, one per panel the collector feeds
+//! (`hx-swap-oob="innerHTML"` on the panel's id), so one event updates panels
+//! in different bands. The page's hidden `sse-swap` sinks receive the events;
+//! htmx moves the wrappers' content into their panels.
 
 use std::convert::Infallible;
 use std::time::Duration;

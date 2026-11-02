@@ -5,8 +5,8 @@
 //! attached (ACC-NET-207-CLIENT-IDLE) and shared by every browser
 //! (ACC-PERF-16-NO-OVERHEAD): N viewers cost one stream and one collection per
 //! agent tick, never one per viewer. The relay
-//! forwards each event in arrival order and parses nothing inside a fragment
-//! but the advertised interval - the same `data-update-ms` attribute
+//! forwards each event in arrival order and parses nothing inside an event
+//! but the advertised interval - field 1 of the cpu data frame, the value
 //! `assets/app.js` reads - so each agent's sample age and stale mark are
 //! truthful.
 //!
@@ -530,11 +530,12 @@ fn parse_record(record: &[u8]) -> Option<Fragment> {
         .map(|data| Fragment { name, data })
 }
 
-/// The interval the cpu fragment advertises, the same `data-update-ms`
-/// attribute `assets/app.js` reads; `None` when the fragment carries none.
+/// The interval the cpu data frame advertises, field 1 after the `c1` version
+/// token; `None` when the frame is not one the page knows.
 fn advertised_interval(data: &str) -> Option<u64> {
-    let value = data.split_once("data-update-ms=\"")?.1;
-    value.split_once('"')?.0.parse().ok()
+    let mut fields = data.split('|');
+    (fields.next()? == "c1").then_some(())?;
+    fields.next()?.parse().ok()
 }
 
 /// The sample age as the strip shows it: one decimal under ten seconds.
@@ -587,14 +588,12 @@ mod tests {
         assert!(viewer.try_recv().is_err());
     }
 
-    /// ACC-PERF-149-SPLIT-CADENCE: the advertised interval comes from the
-    /// fragment the page already reads it from.
+    /// ACC-PERF-149-SPLIT-CADENCE: the advertised interval comes from the cpu
+    /// data frame's second field.
     #[test]
     fn advertised_interval_is_read() {
-        assert_eq!(
-            advertised_interval(r#"<span data-update-ms="2000" data-slow-ms="2000">"#),
-            Some(2000)
-        );
+        assert_eq!(advertised_interval("c1|2000|8000|2000|3|"), Some(2000));
+        assert_eq!(advertised_interval("m1|2000|"), None);
         assert_eq!(advertised_interval("<div></div>"), None);
     }
 

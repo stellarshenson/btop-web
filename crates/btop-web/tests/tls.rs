@@ -161,7 +161,7 @@ async fn events(stream: &mut TlsStream<TcpStream>) -> String {
                 let text = String::from_utf8_lossy(&response);
                 if text.contains("HTTP/1.1 200")
                     && text.contains("event: cpu")
-                    && text.contains("data-update-ms=\"")
+                    && text.contains("data: c1|")
                 {
                     return text.into_owned();
                 }
@@ -342,7 +342,7 @@ async fn the_access_key_guards_every_request_over_tls() {
     let mut stream = connect(agent.addr, Some(&agent.fingerprint)).await;
     let fragments = events(&mut stream).await;
     assert!(fragments.contains("event: cpu"), "{fragments}");
-    assert!(fragments.contains("data-update-ms=\""), "{fragments}");
+    assert!(fragments.contains("data: c1|"), "{fragments}");
 }
 
 /// ACC-NET-145-TLS-PINNING: the first start generates the pair with the key

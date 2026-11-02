@@ -51,7 +51,6 @@ def start_server(xdg, *args):
     """Run the binary on the port the kernel gives it; returns the process and the port."""
     log = xdg / "server.log"
     env = os.environ | {
-        "BTOP_WEB_LISTEN": "127.0.0.1:0",
         "BTOP_WEB_PROC_ROOT": str(FIXTURES / "proc"),
         "BTOP_WEB_UPDATE_MS": str(UPDATE_MS),
         "XDG_CONFIG_HOME": str(xdg),
@@ -59,7 +58,7 @@ def start_server(xdg, *args):
     }
     with log.open("w") as output:
         server = subprocess.Popen(
-            [BINARY, *args], env=env, stdout=output, stderr=subprocess.STDOUT
+            [BINARY, "--port", "0", *args], env=env, stdout=output, stderr=subprocess.STDOUT
         )
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline and server.poll() is None:

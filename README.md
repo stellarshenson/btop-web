@@ -59,13 +59,14 @@ btop-web is optimised for performance, and it delivers.
 
 ```sh
 make docker SKIP_VERSION_INCREMENT=1
-docker run --rm -p 40290:40290 -e BTOP_WEB_LISTEN=0.0.0.0:40290 btop-web:dev
+printf 'listen = 0.0.0.0:40290\n' > container.conf
+docker run --rm -p 40290:40290 -v "$PWD/container.conf:/btop-web.conf:ro" btop-web:dev -c /btop-web.conf
 ```
 
 Open <http://127.0.0.1:40290>. A container shows only its own telemetry.
 
 - **Image** - distroless, user `nonroot`, port 40290
-- **Bind** - loopback by default; `BTOP_WEB_LISTEN=0.0.0.0:40290` lets the published port reach it
+- **Bind** - loopback by default; the `listen` key at `0.0.0.0:40290` in the mounted configuration lets the published port reach it
 - **Scope** - cgroup v2 CPU, memory, swap, processes, cpuset cores and passed-in GPUs
 - **Unavailable** - CPU frequency, temperature, disk IO and network on a shared host namespace
 - **Detection** - the log prints `scope=container` with runtime, signal, cgroup and network, or `scope=host`; a CONTAINER chip names them
@@ -80,7 +81,7 @@ target/release/btop-web
 
 Open <http://127.0.0.1:40290>.
 
-Port 40290 is `btop-web` folded (`v = (v * 256 + byte) mod 64512`) plus 1024; `--config` or `BTOP_WEB_LISTEN` overrides it.
+Port 40290 is `btop-web` folded (`v = (v * 256 + byte) mod 64512`) plus 1024; `--port` sets another port and `--config` sets another address.
 
 ## Configuration
 
@@ -88,7 +89,7 @@ The file uses btop's `key = value` dialect, and `#` starts a comment.
 
 | Key | Default | Variable | Effect |
 |---|---|---|---|
-| `listen` | `127.0.0.1:40290` | `BTOP_WEB_LISTEN` | bind address |
+| `listen` | `127.0.0.1:40290` | - | bind address; `--port` overrides the port alone |
 | `mode` | `standalone` | - | `standalone`, `agent` or `client`; `--agent` and `--client` outrank it |
 | `connect` | - | - | `NAME=http://HOST:PORT`, one line per agent; client mode |
 | `connect_key` | - | - | `NAME=/PATH` or `NAME=fd:N`, the access key for each client agent |
@@ -105,6 +106,7 @@ Unknown keys are ignored; an invalid value stops startup with file and line. Oth
 | Flag | Effect |
 |---|---|
 | `-c, --config PATH` | read PATH after the embedded defaults |
+| `--port PORT` | listening port, 0 for a kernel-chosen port; outranks the `listen` key's port; an invalid value stops startup naming `--port` |
 | `-d, --debug`; `-f, --filter TEXT`; `-u, --update MS` | debug log; initial process filter; interval 100 to 86400000 ms |
 | `--theme N` | 0 Default, 1 Everforest Medium, 2 Flexoki, 3 Gruvbox, 4 Solarized, 5 Synthwave, 6 Terracotta, 7 Ultraviolet, 8 Cyberpunk, 9 Steel; any other value stops startup |
 | `--proc-view VIEW` | `top`, `all` or `tree`; a stored choice outranks it, else `tree` when `proc_tree` is set, else `top`; an invalid or missing value exits 2 |
