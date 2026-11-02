@@ -2,6 +2,7 @@
 
 [![GitHub Actions](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml/badge.svg)](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml)
 ![Version 1.0.3](https://img.shields.io/badge/version-1.0.3-blue?style=flat)
+[![Downloads](https://img.shields.io/crates/d/btop-web?style=flat)](https://crates.io/crates/btop-web)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue?style=flat)](LICENSE)
 [![Rust 1.99.1](https://img.shields.io/badge/rust-1.99.1-orange?style=flat)](rust-toolchain.toml)
 [![Brought To You By KOLOMOLO](https://img.shields.io/badge/Brought%20To%20You%20By-KOLOMOLO-00ffff?style=flat)](https://kolomolo.com)
