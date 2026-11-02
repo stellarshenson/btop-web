@@ -111,6 +111,11 @@ The release build and the CI gate that admits it
   - test: run make sbom; the file matches Cargo.lock and names each component's licence
   - log: 2026-10-28T22:54:28Z @kj added
   - log: 2026-10-29T19:16:18Z @kj closed
+- [x] `ACC-BUILD-221-INSTALL-LATEST` **A release installs the latest version** - HIGH; Every release installs the just-published version everywhere a shell or a service resolves btop-web from, /usr/local/bin included, so no command stays behind the release.
+  - evidence: Release 1.0.4: /usr/local/bin/btop-web and ~/.cargo/bin/btop-web report 1.0.4 in login, interactive and non-interactive shells
+  - test: btop-web --version in a login shell, an interactive shell and a non-interactive shell reports the released version
+  - log: 2026-11-02T19:46:22Z @kj added
+  - log: 2026-11-02T19:46:37Z @kj closed
 
 ## Collection parity `PARITY`
 
