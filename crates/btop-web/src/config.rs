@@ -630,9 +630,11 @@ pub struct Config {
     /// ACC-NET-144-ACCESS-KEY: the key file for each `connect` agent, by
     /// name; a client with no readable key for an agent refuses to start.
     pub connect_keys: Vec<ConnectKey>,
-    /// ACC-NET-145-TLS-PINNING: the operator's certificate and key for the
-    /// agent listener, `--tls-cert` and `--tls-key`; both or neither, and a
-    /// pair given here is never written to the state directory.
+    /// ACC-NET-145-TLS-PINNING, ACC-NET-213-PAGE-TLS: the operator's
+    /// certificate and key for the listeners, `--tls-cert` and `--tls-key`;
+    /// both or neither, and a pair given here is never written to the state
+    /// directory. Agent mode generates the pair when neither is given; the
+    /// page listener serves TLS only with the pair.
     /// ACC-NET-146-SECRET-INPUT: each is a path or `fd:N`.
     pub tls_cert: Option<SecretSource>,
     pub tls_key: Option<SecretSource>,

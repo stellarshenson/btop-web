@@ -56,9 +56,9 @@ This section defines the three roles the binary can take, which process samples,
 
 | Role | Selection | Samples its host | Serves | Listens with |
 |---|---|:-:|---|---|
-| Standalone | no mode flag | yes | page, assets, `/config`, `/events` | plain HTTP, `listen` |
+| Standalone | no mode flag | yes | page, assets, `/config`, `/events` | TLS 1.3 with `--tls-cert`/`--tls-key`, else plain HTTP, `listen` |
 | Agent | `--agent` | yes | `/events`, `/agent`, `/healthz` | TLS 1.3 and the access key |
-| Client | `--client` plus one or more `--connect NAME=URL` | no | page, assets, `/config`, `/events?agent=NAME` | plain HTTP, `listen` |
+| Client | `--client` plus one or more `--connect NAME=URL` | no | page, assets, `/config`, `/events?agent=NAME` | TLS 1.3 with `--tls-cert`/`--tls-key`, else plain HTTP, `listen` |
 
 ### 2.1 Standalone, the default
 
@@ -101,7 +101,7 @@ This table states every request each role accepts and who may read the answer.
 | Client | `GET /events?agent=` | the selected agent's fragments, re-emitted verbatim | none |
 | Client | `GET /assets/*`, `POST /config` | unchanged | unchanged |
 
-The client's browser listener is plain HTTP, as standalone is today. TLS protects the agent link; it does not protect the browser link, and a client exposed beyond loopback needs the operator's own access layer.
+The client's browser listener serves TLS 1.3 when `--tls-cert` and `--tls-key` are given, and plain HTTP without them, as standalone does. A client exposed beyond loopback needs the operator's own access layer.
 
 ### 2.5 Fit with the SSE fragments
 
@@ -380,5 +380,5 @@ Order and blast radius:
 - **Agent page** - should an agent also serve the dashboard to a browser, so one host is usable without a client? I recommend no: one renderer and one page, and a browser at an agent cannot select a second host
 - **Agent strip age** - read literally, ACC-NET-143 asks the strip to show each agent's sample age, but only the selected agent has a stream, so the others read `idle`; a live age for every configured agent costs one permanent stream per agent, which keeps every agent awake and turns the client into a poller. I read the criterion as the selected agent's age and recommend the current rule; if the owner reads it as every chip, the cost is one stream per agent
 - **Multi-agent page** - one selected agent per page. Showing two hosts at once needs a second layout and breaks the panel ids; I recommend against it inside this criterion family
-- **Client deployment** - the client's own listener is plain HTTP; if it must serve beyond loopback, that is a second TLS listener and a second design
+- **Client deployment** - the client's own listener serves TLS 1.3 with `--tls-cert` and `--tls-key`, and plain HTTP without them; one exposed beyond loopback needs the operator's own access layer
 - **State directory in a container** - the distroless image has no writable home, so `BTOP_WEB_STATE_DIR` or `--state-dir` is required; the Dockerfile note belongs to the implementation

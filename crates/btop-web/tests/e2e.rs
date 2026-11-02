@@ -1287,3 +1287,36 @@ fn an_encrypted_key_names_its_passphrase_source_and_serves_tls_when_it_is_right(
     let response = tls_response_with_key(address, "/healthz", &access_key, "ok");
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
 }
+
+/// ACC-NET-213-PAGE-TLS: a standalone page listener started with a given
+/// pair speaks TLS 1.3 and serves the page, while a plaintext request to the
+/// same port gets no HTTP response.
+#[test]
+fn the_page_listener_serves_tls_13_with_a_given_pair() {
+    let dir = xdg_home("page-tls");
+    let cert = dir.join("page.crt");
+    let key = dir.join("page.key");
+    btop_web::tls::identity_at(&cert, &key).expect("page certificate pair");
+    let (_server, address) = start_in(
+        &dir,
+        None,
+        &[
+            "--tls-cert",
+            cert.to_str().expect("utf-8 certificate path"),
+            "--tls-key",
+            key.to_str().expect("utf-8 key path"),
+        ],
+    );
+
+    // tls_get connects with the TLS 1.3-only client configuration, so the
+    // response proves the handshake version as well as the page content.
+    let page = tls_get(address, "/", None).expect("TLS page");
+    assert!(page.starts_with("HTTP/1.1 200"), "{page}");
+    assert!(page.contains("<title>btop-web</title>"), "{page}");
+
+    let plaintext = get(address, "/").unwrap_or_default();
+    assert!(
+        !plaintext.contains("HTTP/"),
+        "a plaintext request got an HTTP response: {plaintext}"
+    );
+}

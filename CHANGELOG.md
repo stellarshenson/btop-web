@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The page listener serves TLS 1.3 when started with `--tls-cert` and `--tls-key`, in standalone and client mode; without the pair it keeps serving plain HTTP
+
 ## [1.0.3] - 2026-11-01
 
 ### Added

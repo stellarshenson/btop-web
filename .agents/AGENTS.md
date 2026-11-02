@@ -74,7 +74,10 @@ count; read it before collector or UI work.
   accepts btop's config, update, filter, debug and theme flags; btop's terminal-only flags exit 2
 - Every text token reaches 4.5:1 on the layers it sits on, composed (chip tints, zebra and hover rows
   included), and `tests/theme_contrast.rs` enforces it for all ten pairs in dark and light
-- The release is prepared but not yet committed, tagged or published
+- Version 1.0.3 is released on tag `RELEASE_1.0.3` and published on crates.io
+- The page listener serves TLS 1.3 when `--tls-cert` and `--tls-key` are given, in standalone and
+  client mode, and plain HTTP without the pair; the browser-cost work is measured with
+  ACC-PERF-215 open pending the owner's decision
 
 ## Journal Rules (Project-Specific)
 

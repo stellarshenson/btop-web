@@ -21,10 +21,11 @@ class ClientError(Exception):
 def frames(url, key_file=None, pin=None, timeout=45.0):
     """Yield one parsed frame per line of the /events.json stream under ``url``.
 
-    ``url`` is the base URL of the server. A standalone server takes ``http://``. An agent takes
-    ``https://``, the path of its access key file and the ``sha256:`` fingerprint of its
-    certificate; the fingerprint is checked before the key is sent. ``timeout`` bounds the
-    connection and each read, in seconds.
+    ``url`` is the base URL of the server. A standalone server or a client takes ``http://``, or
+    ``https://`` with the ``sha256:`` fingerprint of its certificate when its listener was given
+    a pair. An agent takes ``https://``, the path of its access key file and the ``sha256:``
+    fingerprint of its certificate; the fingerprint is checked before the key is sent. ``timeout``
+    bounds the connection and each read, in seconds.
     """
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -61,7 +62,8 @@ def frames(url, key_file=None, pin=None, timeout=45.0):
             if pin is None:
                 raise ClientError(
                     f"no pin given: {url} presented {presented}; "
-                    "compare it with the agent's log line 'agent TLS certificate', then pin it"
+                    "compare it with the 'agent TLS certificate' or "
+                    "'page TLS certificate' log line, then pin it"
                 )
             if presented != pin:
                 raise ClientError(

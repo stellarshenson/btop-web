@@ -550,6 +550,34 @@ Sampling cost, render cost, and the dashboard's effect on the host it measures
   - log: 2026-10-29T10:08:47Z @kj added
   - log: 2026-10-29T11:05:10Z @kj one-viewer baseline measures 36.8 MB by the harness, not 41.2; best combination tokio2+arena1+strip saves 7.5 percent (8.2 fresh) off 36.8 and 17.5 off the literal 41.2; strip moves RSS not at all; NVIDIA release is the remaining lever
   - log: 2026-10-29T13:19:33Z @kj closed
+- [x] `ACC-PERF-214-BROWSER-COST` **Browser cost baseline** - MEDIUM; a headless Chromium run at the 250 ms interval records the page's renderer CPU per 60 s, main-thread task time, frame rate and the requests after load as the baseline
+  - evidence: 60 s headless Chromium run at 1440x900 on the current build recorded renderer CPU 12.81 s, TaskDuration 7.581 s, Layout 0.948 s, RecalcStyle 1.694 s, 60.0 fps and 2 requests after load; numbers in tmp/workflows/criteria-closeout/evidence.json
+  - related: ACC-PERF-133-PAGE-COST
+  - test: run the browser-cost measurement against the current build in headless Chromium at 1440x900 software rasterisation, assert it writes the four numbers
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-01T13:55:13Z @kj added
+  - log: 2026-11-02T09:06:39Z @kj closed
+- [-] `ACC-PERF-215-COST-DROP` **Browser cost falls** - HIGH; the measured renderer CPU per 60 s is below the baseline recorded before the change, in the same headless run
+  - related: ACC-PERF-133-PAGE-COST
+  - test: rerun the same measurement after the change, assert renderer CPU per 60 s is below the baseline and every panel still updates
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-01T13:55:13Z @kj added
+  - log: 2026-11-02T09:06:48Z @kj measured; reason: three low-risk cuts measured +0.176 s per 60 s against a 0.5 s bar over eight paired 30 s rounds, 4 of 8 won, sd 0.668: no drop demonstrated. Remaining lever: the 64-row cores panel, 5.6 s of 13.6 s, needs a canvas renderer and the owner's decision
+  - log: 2026-11-02T10:02:06Z @kj rejected: rejected; reason: owner decision: the canvas redesign measured 0.58 s of 14.22 s per 60 s (4 percent, 7 of 8 paired rounds) and would render core text with grayscale instead of subpixel antialiasing, so the DOM panel stays
+- [x] `ACC-PERF-216-NO-ARTEFACT` **No visual artefact** - HIGH; the optimised page renders as the page did before: panel-by-panel screenshots at the same viewport, theme and fixture state match, with the clock and sample age masked
+  - evidence: HEAD and working-tree builds served the same recorded proc fixture, screenshotted at 1040x760 with device scale factor 1.75, dark, galaxatron, every animation paused at currentTime 0: 0 differing pixels outside 78 masked time-driven regions, the mask built from each page's own two-shot 3 s diff; images in tmp/workflows/criteria-closeout/screens/
+  - related: ACC-PERF-215-COST-DROP
+  - test: serve the pre-change and post-change builds the same fixture tree, screenshot both after the ring window fills, mask the clock and sample age, compare pixels
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-01T14:28:46Z @kj added
+  - log: 2026-11-02T09:06:42Z @kj closed
+- [x] `ACC-PERF-217-SAME-CADENCE` **Update cadences unchanged** - HIGH; every panel keeps its pre-change cadence: the values tick at 250 ms and the slow panels at 1 s
+  - evidence: /events over 10 s carried cpu 40, mem 40, net 40 and gpu 40 at the 250 ms DEFAULT_UPDATE_MS and proc 10 at the 1000 ms DEFAULT_PROC_REFRESH_MS; cargo test --test perf passed 7, 0 failed, 1 ignored, including the split-cadence assertion; counts in tmp/workflows/criteria-closeout/evidence.json
+  - related: ACC-PERF-215-COST-DROP
+  - test: in the browser, timestamp the DOM changes per panel over 4 s, assert the value panels change every tick and the slow panels once per second
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-01T14:28:46Z @kj added
+  - log: 2026-11-02T09:06:42Z @kj closed
 
 ## Graphs and sparklines `GRAPH`
 
@@ -1728,6 +1756,12 @@ Agent and client modes: transport, authentication, certificates and the secrets 
   - mechanism: 2026-10-31T18:50:11Z @kj each upstream task waits for a viewer count above 0 and leaves when it reaches 0
   - log: 2026-10-31T18:50:11Z @kj added
   - log: 2026-10-31T21:25:29Z @kj closed; reason: evidence names the ticks, the chips and the suite
+- [x] `ACC-NET-213-PAGE-TLS` **Page listener TLS** - HIGH; the page listener serves TLS 1.3 with the --tls-cert and --tls-key pair in standalone and client mode; a plaintext request to that port gets no HTTP response
+  - evidence: make ci exit 0 with the patch applied: 424 tests, 0 failed (280 library, 14 e2e, 4 font, 98 HTTP, 7 performance, 14 theme contrast, 7 TLS); e2e the_page_listener_serves_tls_13_with_a_given_pair ok; with main.rs reverted the same test fails at the TLS handshake
+  - test: start standalone with a temp cert pair, complete a TLS 1.3 handshake on the page port, send plaintext and assert no HTTP response
+  - test-tags: UNIT, FUNCTIONAL
+  - log: 2026-11-01T13:32:17Z @kj added
+  - log: 2026-11-01T13:50:39Z @kj closed: verified in make ci
 
 ## Companion client `CLIENT`
 

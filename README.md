@@ -91,7 +91,7 @@ The file uses btop's `key = value` dialect, and `#` starts a comment.
 | `mode` | `standalone` | - | `standalone`, `agent` or `client`; `--agent` and `--client` outrank it |
 | `connect` | - | - | `NAME=http://HOST:PORT`, one line per agent; client mode |
 | `connect_key` | - | - | `NAME=/PATH` or `NAME=fd:N`, the access key for each client agent |
-| `tls_cert`, `tls_key` | generated pair | - | the agent listener's PEM certificate and key; both or neither |
+| `tls_cert`, `tls_key` | generated pair (agent) | - | the listeners' PEM certificate and key; both or neither; the agent listener generates and reuses one, the page listener serves TLS only with the pair |
 | `theme` | `0` | - | first-paint theme |
 | `update_ms` | `250` | `BTOP_WEB_UPDATE_MS` | sample interval in ms; btop's is 2000 |
 | `window_s` | `180` | - | chart span in seconds: 60, 120, 180, 300 or 600 |
@@ -111,7 +111,7 @@ Unknown keys are ignored; an invalid value stops startup with file and line. Oth
 | `--readonly` | refuse every mutating request; without it the server is read-write |
 | `--agent`; `--client` | telemetry only, or the dashboard from `--connect` agents; the two are exclusive |
 | `--connect NAME=URL` | `NAME=http://HOST:PORT`; repeats; client mode; a bad name or URL stops startup |
-| `--tls-cert PATH`; `--tls-key PATH`; `--tls-cert-fd N`; `--tls-key-fd N` | the agent listener's PEM pair, from a path or an inherited descriptor; both or neither; without them the agent generates and reuses its own |
+| `--tls-cert PATH`; `--tls-key PATH`; `--tls-cert-fd N`; `--tls-key-fd N` | the listeners' PEM pair, from a path or an inherited descriptor; both or neither; without them the agent listener generates and reuses its own, and the page listener keeps plain HTTP |
 | `--access-key-file PATH`; `--access-key-fd N`; `--tls-key-passphrase-env VAR`; `--tls-key-passphrase-file PATH`; `--tls-key-passphrase-fd N`; `--known-agents PATH` | the agent's access key, the encrypted key's passphrase and the client's pin file; a secret value is never a flag value |
 | `--default-config`; `-h, --help`; `-v, -V, --version` | print embedded config; usage; version |
 | `-b/--boxes`, `-l/--low-color`, `-p/--preset`, `-t/--tty_on`, `--utf-force` | btop's terminal-only flags; exit 2 with `btop-web: <flag> is terminal-only and not applicable` |
@@ -234,7 +234,7 @@ stream = frames("https://host:40290", key_file="/keys/access-key", pin="sha256:<
 ```
 
 - **Install** - `pip install .` from a clone; the `pyproject.toml` at the root builds this client, not the server
-- **Agent** - an `https://` URL needs a pin: the `sha256:` fingerprint in the agent's `agent TLS certificate` log line. The client checks it before it sends the key and refuses any other certificate, naming both fingerprints
+- **Agent** - an `https://` URL needs a pin: the `sha256:` fingerprint in the `agent TLS certificate` or `page TLS certificate` log line. The client checks it before it sends the key and refuses any other certificate, naming both fingerprints
 - **Reconnect** - `frames()` and the CLI stop when the stream closes; a new call gets the next frame
 - **Skill** - the agent skill is `.agents/skills/btop-web-client/SKILL.md`; the wheel installs it at `<sys.prefix>/share/jupyter/agents/skills/btop-web-client/`, outside the Python package
 
@@ -298,7 +298,7 @@ The crate holds the collectors, routes, templates and assets; the support files 
 ## Exposure
 
 > [!WARNING]
-> btop-web has no authentication for the page and binds loopback by default. The page shows process names, command lines, users and endpoints. Remote access needs a TLS proxy with access control. By default anyone who reaches the page can change options and the btop-web.conf file; `--readonly` refuses those changes but adds no authentication. Agent-to-client traffic carries TLS 1.3 and an access key; a viewer of the page carries neither.
+> btop-web has no authentication for the page and binds loopback by default. The page shows process names, command lines, users and endpoints. Remote access needs access control, which the page listener's own TLS 1.3 does not provide. By default anyone who reaches the page can change options and the btop-web.conf file; `--readonly` refuses those changes but adds no authentication. The page listener serves TLS 1.3 when given a certificate pair with `--tls-cert` and `--tls-key`, in standalone and client mode, and still has no authentication; without the pair it serves plain HTTP. Agent-to-client traffic carries TLS 1.3 and an access key; a viewer of the page carries neither.
 
 ## Licence and attribution
 

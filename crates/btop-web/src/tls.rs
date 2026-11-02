@@ -1,5 +1,5 @@
-//! ACC-NET-145-TLS-PINNING: TLS 1.3 on every agent listener, and a pinned
-//! certificate fingerprint on the client.
+//! ACC-NET-145-TLS-PINNING: TLS 1.3 on every agent and page listener, and a
+//! pinned certificate fingerprint on the client.
 //!
 //! The agent's pair is generated on the first start with a random ECDSA P-256
 //! key and reused on every later start; `--tls-cert` and `--tls-key` (config
@@ -9,7 +9,7 @@
 //! refused with both values named.
 //!
 //! Both roles configure TLS 1.3 alone through rustls with the ring provider;
-//! there is no branch that speaks plain HTTP on an agent listener, and no
+//! there is no branch that speaks plain HTTP on a TLS listener, and no
 //! fallback that accepts a certificate other than the pinned one.
 
 use std::collections::BTreeMap;
@@ -308,7 +308,7 @@ fn read_key(
         .with_context(|| format!("cannot parse TLS key from {}", source.describe()))
 }
 
-/// The agent listener's configuration: TLS 1.3 alone through ring, with
+/// The TLS listener's configuration: TLS 1.3 alone through ring, with
 /// `http/1.1` as the only ALPN protocol. A TLS 1.2 hello is not answered with
 /// a version it can use, so there is no downgrade path.
 pub fn server_config(
@@ -604,7 +604,7 @@ pub async fn serve(
     loop {
         let (stream, _) = tokio::select! {
             _ = &mut shutdown => return Ok(()),
-            accepted = listener.accept() => accepted.context("accept on the agent listener")?,
+            accepted = listener.accept() => accepted.context("accept on the listener")?,
         };
         let acceptor = acceptor.clone();
         let app = app.clone();

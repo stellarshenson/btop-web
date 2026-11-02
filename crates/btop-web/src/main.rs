@@ -34,12 +34,13 @@ Options:
                         An agent the client shows, as NAME=http://HOST:PORT;
                         repeatable, NAME matches [A-Za-z0-9._-] and is unique;
                         the first agent is selected, the strip switches
-      --tls-cert <PATH>  The agent listener's certificate in PEM, with
-                        --tls-key; without both, the agent generates a pair on
+      --tls-cert <PATH>  A listener's certificate in PEM, with --tls-key.
+                        Without both, the agent listener generates a pair on
                         its first start at $XDG_CONFIG_HOME/btop-web/agent.crt
-                        and agent.key and reuses it afterwards
+                        and agent.key and reuses it afterwards; the page
+                        listener serves plain HTTP
       --tls-cert-fd <N>  Read that certificate once from inherited descriptor N
-      --tls-key <PATH>   The agent listener's private key in PEM, with
+      --tls-key <PATH>   A listener's private key in PEM, with
                         --tls-cert; a given pair is never written to disk. An
                         encrypted PKCS#8 key needs a passphrase source
       --tls-key-fd <N>   Read that private key once from inherited descriptor N
@@ -515,27 +516,14 @@ async fn run() -> Result<()> {
 
     // ACC-NET-145-TLS-PINNING: the agent's listener speaks TLS 1.3 only. The
     // pair is generated on the first start, reused afterwards, and replaced
-    // by --tls-cert/--tls-key when both are given. Standalone and client mode
-    // keep the plain HTTP loopback listener exactly as before.
+    // by --tls-cert/--tls-key when both are given. ACC-NET-213-PAGE-TLS: a
+    // page listener (standalone or client) serves TLS 1.3 only when the same
+    // pair is given, and keeps the plain HTTP loopback listener otherwise; it
+    // never generates or writes a pair.
     let tls = if config.mode == Mode::Agent {
-        let identity = btop_web::tls::identity(
-            config.tls_cert.as_ref(),
-            config.tls_key.as_ref(),
-            config.tls_key_passphrase_env.as_deref(),
-            config.tls_key_passphrase_file.as_ref(),
-        )
-        .context("agent TLS certificate")?;
-        tracing::info!(
-            cert = %identity.cert_source,
-            key = %identity.key_source,
-            fingerprint = %identity.fingerprint,
-            created = identity.created,
-            "agent TLS certificate"
-        );
-        Some(
-            btop_web::tls::server_config(identity.certs, identity.key)
-                .context("agent TLS configuration")?,
-        )
+        Some(listener_tls(&config, "agent")?)
+    } else if config.tls_cert.is_some() && config.tls_key.is_some() {
+        Some(listener_tls(&config, "page")?)
     } else {
         None
     };
@@ -573,6 +561,30 @@ async fn run() -> Result<()> {
             .await
             .context("server failed"),
     }
+}
+
+/// ACC-NET-145-TLS-PINNING, ACC-NET-213-PAGE-TLS: the TLS 1.3 configuration
+/// a listener serves with, from the given pair. Agent mode calls it with no
+/// pair on the first start, where [`btop_web::tls::identity`] generates and
+/// stores one; the page listener calls it only when both flags are set, so a
+/// page never writes a certificate.
+fn listener_tls(config: &Config, role: &str) -> Result<Arc<rustls::ServerConfig>> {
+    let identity = btop_web::tls::identity(
+        config.tls_cert.as_ref(),
+        config.tls_key.as_ref(),
+        config.tls_key_passphrase_env.as_deref(),
+        config.tls_key_passphrase_file.as_ref(),
+    )
+    .with_context(|| format!("{role} TLS certificate"))?;
+    tracing::info!(
+        cert = %identity.cert_source,
+        key = %identity.key_source,
+        fingerprint = %identity.fingerprint,
+        created = identity.created,
+        "{role} TLS certificate"
+    );
+    btop_web::tls::server_config(identity.certs, identity.key)
+        .with_context(|| format!("{role} TLS configuration"))
 }
 
 /// ACC-NET-146-SECRET-INPUT: one form per secret on the command line; the
