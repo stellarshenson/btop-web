@@ -75,7 +75,7 @@ pub async fn events(
                 if slow && asks_telemetry {
                     let text = frame
                         .telemetry
-                        .get_or_init(|| telemetry::frame_json(&frame.snapshot));
+                        .get_or_init(|| telemetry::frame_json(&frame.raw));
                     yield Ok(Event::default().event("telemetry").data(text));
                 }
                 slow_seq = Some(frame.snapshot.slow_seq);

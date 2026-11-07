@@ -1686,10 +1686,10 @@ mod tests {
         assert_eq!(snapshot.power_percent, Some(0.0));
         for device in &snapshot.devices {
             eprintln!(
-                "{}: util {}, vram {}, power {}, temp {}",
+                "{}: util {}, vram {:?}, power {}, temp {}",
                 device.name,
                 device.utilization_label(),
-                device.vram_label(),
+                device.vram_labels(&crate::collector::Shown::default(), 0),
                 device.power_label(),
                 device.temperature_label()
             );

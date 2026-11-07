@@ -27,8 +27,11 @@
 //! window. A value the host cannot supply stays `None`, which renders as
 //! unavailable, never as zero.
 //!
-//! Byte sizes and rates use [`human`], which is local: no maintained crate
-//! reproduces btop 1.3.0's `floating_humanizer` output byte for byte.
+//! The process table's and detail's byte sizes use [`human`], which is
+//! local: no maintained crate reproduces btop 1.3.0's `floating_humanizer`
+//! output byte for byte. The panels' byte and rate readouts use [`Shown`]:
+//! one decimal and a unit that switches with hysteresis
+//! (ACC-VIEW-230-STEADY-READOUT).
 //!
 //! Tests point `BTOP_WEB_PROC_ROOT` at a recorded tree; sysfs is then read from
 //! the sibling `sys` directory, so `tests/fixtures/proc` pairs with
@@ -51,6 +54,7 @@ pub mod proc;
 pub use frame::Frame;
 
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -91,6 +95,9 @@ pub struct Snapshot {
     /// btop-web runs in a container: the panels without a container source
     /// render as withheld (ACC-SCOPE-64-CONTAINER).
     pub container: bool,
+    /// The unit each byte and rate readout showed last, lent by the sampler
+    /// to every snapshot it takes (ACC-VIEW-230-STEADY-READOUT).
+    pub shown: Shown,
 }
 
 impl Snapshot {
@@ -241,21 +248,11 @@ impl CpuSnapshot {
             figure: format!("{:.0}%", percent[index]),
             window,
         };
-        let cores = self.cores_label().unwrap_or_default();
         let tip = match self.load_scale {
-            LoadScale::Normalised => format!(
-                "Load average, unit percent of all cores\n\
-                 tasks runnable or blocked in I/O wait\n\
-                 1, 5 and 15 minute averages divided by {cores} cores\n\
-                 source: /proc/loadavg; container: its own tasks"
-            ),
-            LoadScale::Aggregate => format!(
-                "Load average, unit percent of one core\n\
-                 summed over all cores; {cores} cores cap it at {reserve}\n\
-                 1, 5 and 15 minute averages, times 100\n\
-                 source: /proc/loadavg; container: its own tasks"
-            ),
-        };
+            LoadScale::Normalised => LOAD_TIP,
+            LoadScale::Aggregate => LOAD_AGGREGATE_TIP,
+        }
+        .to_string();
         Some(LoadReadout {
             one: cell(0, "1m"),
             five: cell(1, "5m"),
@@ -317,7 +314,7 @@ pub struct LoadReadout {
     /// (ACC-VIEW-131-LOAD-WIDTH): `100%` normalised, the core count times
     /// 100 aggregate.
     pub reserve: String,
-    /// The stat tooltip: the value's name, then its source lines.
+    /// The tooltip: what the load is a percent of (ACC-VIEW-223-TIP-MINIMAL).
     pub tip: String,
 }
 
@@ -394,29 +391,43 @@ pub struct MemSnapshot {
     pub used_chart: ChartPath,
 }
 
+/// The [`Shown`] keys of the memory legend's cache, other used, other
+/// reclaimable and free rows, in [`MemSnapshot::ram_legend`]'s order.
+const LEGEND_KEYS: [&str; 4] = ["mem cache", "mem other", "mem other cache", "mem free"];
+
 impl MemSnapshot {
-    pub fn ram_label(&self) -> String {
-        usage(self.ram_used, self.ram_total)
+    pub fn ram_label(&self, shown: &Shown) -> String {
+        match (self.ram_used, self.ram_total) {
+            (Some(_), Some(_)) => format!(
+                "{} / {}",
+                self.ram_used_label(shown),
+                self.ram_total_label(shown)
+            ),
+            _ => "unavailable".to_string(),
+        }
     }
 
-    /// The used RAM at stat size as its number and unit, `("23.8", "GiB")`,
-    /// for the two readouts that set the unit smaller than the value: the
-    /// Memory gauge's readout and the Memory tile's big value. One decimal
-    /// while the integer part is below three digits, none at three
-    /// (ACC-VIEW-161-MEM-SIZE); every other memory label keeps btop's
-    /// [`human`] form.
-    pub fn ram_used_parts(&self) -> Option<(String, String)> {
-        let label = stat_human(self.ram_used?);
-        let (value, unit) = label.split_once(' ')?;
-        Some((value.to_string(), unit.to_string()))
+    pub fn ram_used_label(&self, shown: &Shown) -> String {
+        shown.bytes("mem used", self.ram_used)
+    }
+
+    pub fn ram_total_label(&self, shown: &Shown) -> String {
+        shown.bytes("mem total", self.ram_total)
+    }
+
+    /// The used RAM as its number and unit, `("23.8", "GiB")`, for the two
+    /// readouts that set the unit smaller than the value: the Memory gauge's
+    /// readout and the Memory tile's big value. The used row shares its unit.
+    pub fn ram_used_parts(&self, shown: &Shown) -> Option<(String, &'static str)> {
+        shown.byte_parts("mem used", self.ram_used)
     }
 
     /// The Memory tile's full scale in the unit [`Self::ram_used_parts`]
     /// prints, for the number effect's rate threshold (ACC-VIEW-126): the
     /// effective total, so a change under one percent of it updates the text
     /// without starting an effect. Empty when the value is unavailable.
-    pub fn ram_used_range(&self) -> String {
-        let Some((_, unit)) = self.ram_used_parts() else {
+    pub fn ram_used_range(&self, shown: &Shown) -> String {
+        let Some((_, unit)) = self.ram_used_parts(shown) else {
             return String::new();
         };
         let Some(total) = self.ram_total else {
@@ -432,8 +443,8 @@ impl MemSnapshot {
         bar(self.ram_percent)
     }
 
-    pub fn ram_free_label(&self) -> String {
-        bytes(self.ram_legend()[3])
+    pub fn ram_free_label(&self, shown: &Shown) -> String {
+        shown.bytes(LEGEND_KEYS[3], self.ram_legend(shown)[3])
     }
 
     /// ACC-VIEW-195-MEM-SUM: the free row plus every reclaimable row the table
@@ -441,50 +452,50 @@ impl MemSnapshot {
     /// when a part is unreadable, never a partial sum. `ram_available` is the
     /// same rows' exact bytes (ACC-VIEW-212-MEM-MATCH), so this figure differs
     /// from it only by the rounding of the printed rows.
-    fn ram_free_reclaimable(&self) -> Option<u64> {
-        let printed = match self.ram_legend() {
+    fn ram_free_reclaimable(&self, shown: &Shown) -> Option<u64> {
+        let printed = |index: usize, value: u64| shown.printed(LEGEND_KEYS[index], value as f64).0;
+        let sum = match self.ram_legend(shown) {
             [Some(cache), Some(_), Some(other_cache), Some(free)] => {
-                shown(cache).0 + shown(other_cache).0 + shown(free).0
+                printed(0, cache) + printed(2, other_cache) + printed(3, free)
             }
-            [Some(cache), None, _, Some(free)] => shown(cache).0 + shown(free).0,
+            [Some(cache), None, _, Some(free)] => printed(0, cache) + printed(3, free),
             _ => return None,
         };
-        // human truncates, so half its step first prints the nearer figure.
-        Some((printed + shown(printed.ceil() as u64).1 / 2.0).ceil() as u64)
+        Some(sum.round() as u64)
     }
 
-    pub fn ram_free_reclaimable_label(&self) -> String {
-        bytes(self.ram_free_reclaimable())
+    pub fn ram_free_reclaimable_label(&self, shown: &Shown) -> String {
+        shown.bytes("mem free cache", self.ram_free_reclaimable(shown))
     }
 
     /// The share of the total of the figure the row prints.
-    pub fn ram_free_reclaimable_percent(&self) -> Option<f64> {
-        Some((shown(self.ram_free_reclaimable()?).0 * 100.0 / self.ram_total? as f64).round())
+    pub fn ram_free_reclaimable_percent(&self, shown: &Shown) -> Option<f64> {
+        let sum = self.ram_free_reclaimable(shown)? as f64;
+        Some((shown.printed("mem free cache", sum).0 * 100.0 / self.ram_total? as f64).round())
     }
 
-    pub fn ram_cache_label(&self) -> String {
-        bytes(self.ram_legend()[0])
+    pub fn ram_cache_label(&self, shown: &Shown) -> String {
+        shown.bytes(LEGEND_KEYS[0], self.ram_legend(shown)[0])
     }
 
-    pub fn ram_other_label(&self) -> String {
-        bytes(self.ram_legend()[1])
+    pub fn ram_other_label(&self, shown: &Shown) -> String {
+        shown.bytes(LEGEND_KEYS[1], self.ram_legend(shown)[1])
     }
 
-    pub fn ram_other_cache_label(&self) -> String {
-        bytes(self.ram_legend()[2])
+    pub fn ram_other_cache_label(&self, shown: &Shown) -> String {
+        shown.bytes(LEGEND_KEYS[2], self.ram_legend(shown)[2])
     }
 
     /// The cache, other used, other reclaimable and free values the legend
-    /// prints. btop's strings truncate to their last digit, so five parts can
-    /// print up to 2 GiB less than the total. The bytes the truncations drop
-    /// go back one step at a time to the part that dropped the most (largest
-    /// remainder) while half that part's step is left, so the printed parts
-    /// add up to the total within one step and each part stays within one
-    /// step of its value (DEF-VIEW-50-MEM-TERMS). used keeps btop's string, as
-    /// the gauge and the Memory tile print it. Own code: apportionment crates
-    /// split one integer by weights, and these parts have floating_humanizer's
-    /// mixed steps.
-    fn ram_legend(&self) -> [Option<u64>; 4] {
+    /// prints. Each part rounds to its last digit, so five parts can print a
+    /// few steps more or less than the total. The difference goes back one
+    /// step at a time to the part that rounded furthest the other way while
+    /// half that part's step is left, so the printed parts add up to the
+    /// total within one step and each part stays within one step of its
+    /// value (DEF-VIEW-50-MEM-TERMS). used keeps its own figure, as the gauge
+    /// and the Memory tile print it. Own code: apportionment crates split one
+    /// integer by weights, and these parts have mixed steps.
+    fn ram_legend(&self, shown: &Shown) -> [Option<u64>; 4] {
         let parts = [
             self.ram_cache,
             self.ram_other,
@@ -496,21 +507,24 @@ impl MemSnapshot {
         else {
             return parts;
         };
-        let mut left = total as f64 - shown(used).0;
+        let mut left = total as f64 - shown.printed("mem used", used as f64).0;
         let mut order = Vec::new();
         for (index, part) in parts.iter().enumerate() {
             if let Some(value) = *part {
-                let (printed, step) = shown(value);
+                let (printed, step) = shown.printed(LEGEND_KEYS[index], value as f64);
                 left -= printed;
-                order.push((value as f64 - printed, printed + step, step, index));
+                order.push((value as f64 - printed, printed, step, index));
             }
         }
-        order.sort_by(|a, b| b.0.total_cmp(&a.0));
+        // Printed short of the total: a step up for the parts rounded down
+        // most; printed over it: a step down for the parts rounded up most.
+        let sign = if left < 0.0 { -1.0 } else { 1.0 };
+        order.sort_by(|a, b| (sign * b.0).total_cmp(&(sign * a.0)));
         let mut legend = parts;
-        for (_, up, step, index) in order {
-            if left >= step / 2.0 {
-                left -= step;
-                legend[index] = Some(up.ceil() as u64);
+        for (_, printed, step, index) in order {
+            if sign * left >= step / 2.0 {
+                left -= sign * step;
+                legend[index] = Some((printed + sign * step).round() as u64);
             }
         }
         legend
@@ -548,181 +562,53 @@ impl MemSnapshot {
             .collect()
     }
 
-    /// The gauge tooltip's share in whole percent: all the arc draws.
-    pub fn gauge_share(&self) -> f64 {
-        self.gauge_spans().last().map_or(0.0, |span| span.2).round()
-    }
-
-    /// The Memory gauge's tooltip, in the page's `data-tip` text. The SSE
-    /// data frame carries the same text, so the template and the frame read
-    /// it from here.
-    pub fn gauge_tip(&self, container: bool) -> String {
-        let total = if self.ram_limit.is_some() {
-            "memory.max"
-        } else {
-            "MemTotal"
-        };
-        let source = if container {
-            "cgroup and /proc/meminfo"
-        } else {
-            "/proc/meminfo"
-        };
-        let arc = if self.gauge_segments.is_empty() {
-            "arc: unavailable".to_string()
+    /// The Memory headers' total tooltip; both headers and the page's tip sets
+    /// read it from here (ACC-VIEW-223-TIP-MINIMAL).
+    pub fn total_tip(container: bool, limited: bool) -> &'static str {
+        if limited {
+            "Memory limit of this container"
         } else if container {
-            let share = self.gauge_share();
-            format!("arc: container used and reclaimable {share:.0}%, 1 s EMA")
+            "Total memory of the host"
         } else {
-            let share = self.gauge_share();
-            format!("arc: used and reclaimable {share:.0}%, 1 s EMA")
-        };
-        format!(
-            "Memory shares, unit percent of {total}\n\
-             source: {source}\n\
-             {arc}\n\
-             readout: used; the rest is the bare track"
-        )
-    }
-
-    /// The Memory header's total tooltip, in the page's `data-tip` text. Both
-    /// Memory headers and the data record read it from here.
-    pub fn total_tip(&self, container: bool) -> String {
-        let total = if self.ram_limit.is_some() {
-            "cgroup memory.max"
-        } else {
-            "/proc/meminfo MemTotal"
-        };
-        let scope = if self.ram_limit.is_some() {
-            "this container's memory limit"
-        } else if container {
-            "the host's total; memory.max is unlimited"
-        } else {
-            "the host's total"
-        };
-        format!("Memory total, unit KiB, MiB or GiB\nsource: {total}\n{scope}")
-    }
-
-    /// The Memory stat header's used tooltip.
-    pub fn used_tip(&self, container: bool) -> String {
-        let total = if self.ram_limit.is_some() {
-            "memory.max"
-        } else {
-            "MemTotal"
-        };
-        let (source, scope) = if container {
-            (
-                "cgroup memory.current - inactive_file",
-                "this container's working set",
-            )
-        } else {
-            (
-                "/proc/meminfo, btop's rounding",
-                "used = MemTotal - MemAvailable",
-            )
-        };
-        format!("Memory used, unit percent of {total}\nsource: {source}\n{scope}")
-    }
-
-    /// One Memory gauge row's tooltip; the gauge's rows and the record share
-    /// it.
-    pub fn row_tip(&self, kind: &str, container: bool) -> String {
-        let limited = self.ram_limit.is_some();
-        match kind {
-            "cache" => format!(
-                "Reclaimable cache, unit KiB, MiB or GiB\nsource: {}\n{}",
-                if container {
-                    "cgroup memory.stat inactive_file"
-                } else {
-                    "MemAvailable - MemFree"
-                },
-                if container {
-                    "this container's reclaimable file cache\nnot swap; swap has its own row"
-                } else {
-                    "percent of MemTotal"
-                }
-            ),
-            "free" => format!(
-                "Free memory, unit KiB, MiB or GiB\nsource: {}\n{}",
-                if limited {
-                    "cgroup memory.max - memory.current"
-                } else {
-                    "/proc/meminfo MemFree"
-                },
-                if limited {
-                    "this container's room under its limit"
-                } else if container {
-                    "the host's free memory"
-                } else {
-                    "percent of MemTotal"
-                }
-            ),
-            "free-cache" => format!(
-                "Free + reclaimable, unit KiB, MiB or GiB\nsource: {}\ntheir sum, percent of {}",
-                if limited {
-                    "the container free and reclaimable rows"
-                } else if self.ram_other.is_some() {
-                    "the free, reclaimable and other reclaimable rows"
-                } else {
-                    "the free and reclaimable rows"
-                },
-                if limited { "memory.max" } else { "MemTotal" }
-            ),
-            _ => format!(
-                "Memory used, unit KiB, MiB or GiB\nsource: {}\n{}",
-                if container {
-                    "cgroup memory.current - inactive_file"
-                } else {
-                    "MemTotal - MemAvailable"
-                },
-                if container {
-                    "this container's working set\ninactive_file comes from cgroup memory.stat"
-                } else {
-                    "percent of MemTotal"
-                }
-            ),
+            "Total memory"
         }
     }
 
-    /// The Memory stat header's available tooltip.
-    pub fn available_tip(&self, container: bool) -> String {
-        let total = if self.ram_limit.is_some() {
-            "memory.max"
+    /// The Memory stat header's used tooltip.
+    pub fn used_tip(container: bool) -> &'static str {
+        if container {
+            "Share of memory this container uses"
         } else {
-            "MemTotal"
-        };
-        let rows = self.ram_free_reclaimable_percent().is_some();
-        let source = if rows {
-            "the free and reclaimable rows"
-        } else {
-            "/proc/meminfo MemAvailable"
-        };
-        let scope = if self.ram_limit.is_some() {
-            "free plus reclaimable under this limit"
-        } else if container {
-            "free plus reclaimable, this container's and the rest of the host's"
-        } else if rows {
-            "free plus reclaimable, the host's"
-        } else {
-            "memory the kernel can reclaim, the host's"
-        };
-        format!("Memory available, unit percent of {total}\nsource: {source}\n{scope}")
+            "Share of memory in use"
+        }
+    }
+
+    /// One Memory gauge row's tooltip; the gauge's rows, the stat tile and the
+    /// page's tip sets share it.
+    pub fn row_tip(kind: &str, container: bool, limited: bool) -> &'static str {
+        match kind {
+            "cache" if container => "This container's file cache that can be freed",
+            "cache" => "Cache the system can free when needed",
+            "free" if limited => "Room left under the container limit",
+            "free" if container => "Free memory of the host",
+            "free" => "Memory not in use",
+            "free-cache" => "Free memory plus reclaimable cache",
+            _ if container => "Memory this container uses",
+            _ => "Memory in use",
+        }
     }
 
     /// The swap row's tooltip.
-    pub fn swap_tip(&self, container: bool) -> String {
-        let (source, scope) = if container {
-            (
-                "cgroup memory.swap.current",
-                "this container's swap use\ntotal: min(memory.swap.max, SwapTotal)",
-            )
+    pub fn swap_tip(container: bool) -> &'static str {
+        if container {
+            "Swap this container uses"
         } else {
-            ("/proc/meminfo SwapTotal - SwapFree", "the host's swap use")
-        };
-        format!("Swap used, unit GiB\nsource: {source}\n{scope}")
+            "Swap in use"
+        }
     }
 
     /// The swap row in the panel's GiB (DEF-VIEW-106-SWAP-UNITS): a tiny
-    /// usage reads `0`, not a KiB figure, and both figures share one unit.
+    /// usage reads `0.0`, not a KiB figure, and both figures share one unit.
     pub fn swap_label(&self) -> String {
         match (self.swap_used, self.swap_total) {
             (Some(used), Some(total)) => format!("{} / {} GiB", gib(used).1, gib(total).1),
@@ -731,7 +617,7 @@ impl MemSnapshot {
     }
 
     /// The swap row's percent, of the figure the row prints, so a usage that
-    /// reads `0` reads 0 percent. `swap_percent` keeps btop's value.
+    /// reads `0.0` reads 0 percent. `swap_percent` keeps btop's value.
     pub fn swap_row_percent(&self) -> Option<f64> {
         self.swap_percent?;
         let total = self.swap_total.filter(|total| *total > 0)?;
@@ -781,6 +667,12 @@ impl DiskUsage {
 
     pub fn bar(&self) -> Option<u8> {
         bar(self.used_percent)
+    }
+
+    /// One of the mount's `total`, `used` and `free` figures, named by
+    /// `which`, in the readout form; each figure keeps its own unit.
+    pub fn size_label(&self, shown: &Shown, which: &str, value: Option<u64>) -> String {
+        shown.bytes(&format!("{} {which}", self.mount), value)
     }
 }
 
@@ -931,14 +823,6 @@ pub struct NetInterface {
 impl NetInterface {
     pub fn ip_label(&self) -> &str {
         self.ip.as_deref().unwrap_or("unavailable")
-    }
-
-    pub fn down_label(&self) -> String {
-        rate(self.down_rate)
-    }
-
-    pub fn up_label(&self) -> String {
-        rate(self.up_rate)
     }
 }
 
@@ -1191,8 +1075,14 @@ impl GpuDevice {
         bar(self.utilization_pct)
     }
 
-    pub fn vram_label(&self) -> String {
-        usage(self.vram_used, self.vram_total)
+    /// GPU `index`'s memory used and total in the readout form; `None` when
+    /// either is unavailable.
+    pub fn vram_labels(&self, shown: &Shown, index: impl Display) -> Option<(String, String)> {
+        let (used, total) = (self.vram_used?, self.vram_total?);
+        Some((
+            shown.bytes(&format!("gpu{index} vram used"), Some(used)),
+            shown.bytes(&format!("gpu{index} vram total"), Some(total)),
+        ))
     }
 
     pub fn vram_bar(&self) -> Option<u8> {
@@ -1480,6 +1370,10 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
         // fast and the walk follows on the next tick (ACC-PERF-142-WAKE-FAST).
         let mut slow = SlowPass::default();
         let mut ticks_to_slow = 0_u64;
+        // ACC-VIEW-230-STEADY-READOUT: one unit state and one average per
+        // readout for every frame this sampler builds.
+        let shown = Shown::default();
+        let mut ema = Ema::default();
         loop {
             if sampler_wake.idle() {
                 // ACC-PERF-136-SLEEP: nothing is connected, so no timer stays
@@ -1502,6 +1396,9 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
                 // number but has new values, so the text from before the sleep
                 // is dropped.
                 slow.telemetry = Arc::default();
+                // ACC-VIEW-230-STEADY-READOUT: a sleep is a gap, so every
+                // readout starts again at its first sample after the wake.
+                ema = Ema::default();
                 sampler_wake.set_parked(true);
                 if sampler_wake.idle() {
                     // Subscribe first, then check again: a change before the
@@ -1569,6 +1466,7 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
             let mut gpu = gpu_latest.clone();
             gpu::attach_charts(&proc_root, &mut gpu.devices, update_ms, config.window_ms());
             let mut snapshot = collect_fast(&proc_root, &config, &mut mem, gpu);
+            snapshot.shown = shown.clone();
             // ACC-PERF-149-SPLIT-CADENCE: the slow pass rebuilds the process
             // walk and the chart paths; a slow pass never outruns a tick, so
             // its period is at least `update_ms` and lands on a tick boundary,
@@ -1595,11 +1493,15 @@ pub fn spawn(mut config_updates: watch::Receiver<Config>) -> Sampler {
             snapshot.slow_ms = slow.period_ms;
             snapshot.slow_seq = slow.seq;
             sampler_wake.sampled();
+            // ACC-VIEW-230-STEADY-READOUT: the panels show a smoothed copy;
+            // `/events.json` serializes the sample as collected.
+            let mut smoothed = snapshot.clone();
+            ema.smooth(&mut smoothed, Ema::alpha(update_ms, config.smoothing_ms));
             // ACC-PERF-16-NO-OVERHEAD: the fragments are rendered once, here,
             // and every client shares them, so a viewer adds no render work.
             let frame = Frame {
                 telemetry: Arc::clone(&slow.telemetry),
-                ..Frame::new(snapshot)
+                ..Frame::smoothed(smoothed, snapshot)
             };
             if sender.send(Some(Arc::new(frame))).is_err() {
                 break;
@@ -1734,33 +1636,68 @@ pub fn bytes(value: Option<u64>) -> String {
     value.map_or_else(|| "unavailable".to_string(), human)
 }
 
-/// The storage mount's tooltip; inside a container `io.stat` has no busy
-/// time. The storage template and the memory record read it from here.
-pub fn mount_tip(container: bool) -> String {
-    let io = if container {
-        "IO unavailable: io.stat has no busy time"
-    } else {
-        "IO: block stat io_ticks delta / uptime"
-    };
-    format!(
-        "Mount space, unit bytes and percent\n\
-         source: statvfs(3) blocks × frsize\n\
-         used = total - free (f_bavail)\n\
-         {io}"
-    )
-}
+// DEF-VIEW-148-TIP-COPIES: each tooltip text below has one source. The
+// templates render it from here, and so does the page's `#tips`, where
+// `assets/app.js` reads the text for a node it creates.
+
+/// The storage mount's tooltip; the IO share carries its own.
+pub const MOUNT_TIP: &str = "Space used and free on this mount";
+
+/// The storage mount's IO share.
+pub const MOUNT_IO_TIP: &str = "Share of time the disk was busy";
+
+/// The Memory gauge's tooltip.
+pub const GAUGE_TIP: &str = "Memory used; the arc adds reclaimable cache";
+
+/// The Memory stat header's available tooltip.
+pub const AVAILABLE_TIP: &str = "Share of memory free or reclaimable";
 
 /// The host's use outside this container that `MemAvailable` does not count.
-pub const OTHER_TIP: &str = "Other used, unit KiB, MiB or GiB\n\
-     source: MemTotal - the other four rows\n\
-     the host's use outside this container\n\
-     that MemAvailable does not count";
+pub const OTHER_TIP: &str = "Memory the rest of the host uses";
 
 /// The host's reclaimable memory outside this container.
-pub const OTHER_CACHE_TIP: &str = "Other reclaimable, unit KiB, MiB or GiB\n\
-     source: MemAvailable - MemFree - container's\n\
-     inactive_file, active_file, slab_reclaimable\n\
-     the host's reclaimable memory outside it";
+pub const OTHER_CACHE_TIP: &str = "Cache the rest of the host can free";
+
+/// DEF-PERF-147-TIP-FRAMES: the memory tooltips' wordings as `(name,
+/// container, limited)`: a host, a container, and a container under a memory
+/// limit. The page renders every set once on `#tips` and the mem record names
+/// the one that applies, so a client page shows its agent's wording.
+pub const TIP_SETS: [(&str, bool, bool); 3] = [
+    ("host", false, false),
+    ("container", true, false),
+    ("limit", true, true),
+];
+
+/// The CPU gauge's and the CPU stat tile's tooltip.
+pub const CPU_TOTAL_TIP: &str = "CPU use of all cores";
+
+/// The CPU stat header's frequency fact.
+pub const CPU_FREQUENCY_TIP: &str = "CPU frequency";
+
+/// The CPU stat header's temperature fact.
+pub const CPU_TEMPERATURE_TIP: &str = "CPU temperature";
+
+/// The normalised load's tooltip; the CPU gauge's unavailable load fact shows
+/// it too.
+pub const LOAD_TIP: &str = "Load average, percent of all cores";
+
+/// The aggregate load's tooltip.
+pub const LOAD_AGGREGATE_TIP: &str = "Load average, percent of one core";
+
+/// The CPU stat header's load in a container that cannot read it.
+pub const LOAD_CONTAINER_TIP: &str = "Load average, not readable in a container";
+
+/// The CPU gauge header's core count.
+pub const CPU_CORES_TIP: &str = "CPU cores available";
+
+/// The Cores header's count and scale.
+pub const CORES_COUNT_TIP: &str = "Number of cores and the scale of each row";
+
+/// One core row's tooltip, followed by the core's number.
+pub const CORE_TIP: &str = "Use of CPU core";
+
+/// The Cores header in a container without a cpuset.
+pub const CORES_WITHHELD_TIP: &str = "Core list not readable in a container";
 
 /// The process table's shortened byte form, `floating_humanizer(value, true)`.
 pub fn bytes_short(value: Option<u64>) -> String {
@@ -1801,25 +1738,11 @@ fn gib_exact(value: u64) -> f64 {
     value as f64 / (1u64 << 30) as f64
 }
 
-/// `value` in GiB at three significant digits, as [`human`] prints a value,
-/// with the rounded number; below 0.005 GiB it is `0`.
+/// `value` in GiB with one decimal, as every byte readout prints it
+/// (ACC-VIEW-230-STEADY-READOUT), with the rounded number.
 fn gib(value: u64) -> (f64, String) {
-    let exact = gib_exact(value);
-    match exact {
-        _ if exact < 0.005 => (0.0, "0".to_string()),
-        _ if exact < 9.995 => {
-            let text = format!("{exact:.2}");
-            (text.parse().unwrap_or(exact), text)
-        }
-        _ if exact < 99.95 => {
-            let text = format!("{exact:.1}");
-            (text.parse().unwrap_or(exact), text)
-        }
-        _ => {
-            let text = format!("{exact:.0}");
-            (text.parse().unwrap_or(exact), text)
-        }
-    }
+    let rounded = (gib_exact(value) * 10.0).round() / 10.0;
+    (rounded, format!("{rounded:.1}"))
 }
 
 fn usage(used: Option<u64>, total: Option<u64>) -> String {
@@ -1864,17 +1787,6 @@ fn human_short(value: u64) -> String {
 const UNITS: [&str; 11] = [
     "Byte", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "BiB", "GEB",
 ];
-
-/// A [`human`] string's value and the step of its last digit, in bytes:
-/// `13.1 GiB` is 13.1 GiB with a 0.1 GiB step.
-fn shown(value: u64) -> (f64, f64) {
-    let label = human(value);
-    let (number, unit) = label.split_once(' ').unwrap_or_default();
-    let scale = 1024_f64.powi(UNITS.iter().position(|name| *name == unit).unwrap_or(0) as i32);
-    let decimals = number.split_once('.').map_or(0, |(_, digits)| digits.len());
-    let step = scale / 10_f64.powi(decimals as i32);
-    (number.parse::<f64>().unwrap_or(0.0) * scale, step)
-}
 
 fn human_with(value: u64, shorten: bool) -> String {
     let mut value = u128::from(value) * 100;
@@ -1922,35 +1834,192 @@ fn human_with(value: u64, shorten: bool) -> String {
     out
 }
 
-/// The stat-size memory form (ACC-VIEW-161-MEM-SIZE): one decimal while the
-/// integer part is below three digits, none at three, so `23.8 GiB` and
-/// `99.9 GiB` keep the tenth and `100 GiB` and `123 GiB` drop it. Only the
-/// Memory gauge's readout and the Memory tile's big value use it; btop's
-/// [`human`] still prints the table cells, legend rows, tooltips and the
-/// header's total. Rounds rather than truncates, so the printed value is the
-/// nearest tenth and stays within the four-character reserve.
-fn stat_human(value: u64) -> String {
-    let mut start = 0;
-    let mut scaled = value as f64;
-    loop {
-        while scaled >= 1024.0 && start + 1 < UNITS.len() {
-            scaled /= 1024.0;
-            start += 1;
+/// ACC-VIEW-230-STEADY-READOUT: the unit a byte or rate readout shows
+/// `value` in, given the unit it showed last. It steps up while the value
+/// rounds to 1000.0 or more of the unit and down while the value is below 800
+/// of the next lower one, so a value near a boundary keeps its unit instead
+/// of switching back and forth; a readout with no history starts at `Byte`.
+/// Own code: a hysteresis rule over a unit index is two loops, and no
+/// formatting crate keeps per-readout state.
+fn step_unit(value: f64, mut unit: usize) -> usize {
+    let scaled = |unit: usize| value / 1024_f64.powi(unit as i32);
+    while unit + 1 < UNITS.len() && (scaled(unit) * 10.0).round() >= 10_000.0 {
+        unit += 1;
+    }
+    while unit > 0 && scaled(unit - 1) < 800.0 {
+        unit -= 1;
+    }
+    unit
+}
+
+/// ACC-VIEW-230-STEADY-READOUT: the unit each byte and rate readout showed
+/// last, by readout name, for [`step_unit`]. The sampler holds one and lends
+/// it to every snapshot it takes, so the state is per series on the server
+/// and every viewer sees the same unit; a snapshot built elsewhere starts
+/// with an empty one, and rendering one snapshot twice changes nothing.
+/// The values and `/events.json` stay raw: only the printed text uses it.
+#[derive(Debug, Clone, Default)]
+pub struct Shown(Arc<Mutex<BTreeMap<String, usize>>>);
+
+impl Shown {
+    fn unit(&self, key: &str, value: f64) -> usize {
+        let mut units = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        let unit = units.entry(key.to_string()).or_default();
+        *unit = step_unit(value, *unit);
+        *unit
+    }
+
+    /// `value` as readout `key` prints it, in bytes, and its last digit's
+    /// step: one decimal of the readout's unit, rounded half away from zero.
+    fn printed(&self, key: &str, value: f64) -> (f64, f64) {
+        let scale = 1024_f64.powi(self.unit(key, value) as i32);
+        ((value / scale * 10.0).round() * scale / 10.0, scale / 10.0)
+    }
+
+    /// `value` bytes, or bytes per second, as readout `key` prints it: the
+    /// number with one decimal and the unit's name, `("430.5", "KiB")`;
+    /// `None` when the value is unavailable.
+    pub fn parts(&self, key: &str, value: Option<f64>) -> Option<(String, &'static str)> {
+        let value = value?;
+        let unit = self.unit(key, value);
+        let scaled = (value / 1024_f64.powi(unit as i32) * 10.0).round() / 10.0;
+        Some((format!("{scaled:.1}"), UNITS[unit]))
+    }
+
+    /// [`Self::parts`] for a byte count.
+    pub fn byte_parts(&self, key: &str, value: Option<u64>) -> Option<(String, &'static str)> {
+        self.parts(key, value.map(|value| value as f64))
+    }
+
+    /// [`Self::parts`] for a byte count as one string, `430.5 KiB`, or
+    /// `unavailable`.
+    pub fn bytes(&self, key: &str, value: Option<u64>) -> String {
+        self.byte_parts(key, value).map_or_else(
+            || "unavailable".to_string(),
+            |(number, unit)| format!("{number} {unit}"),
+        )
+    }
+}
+
+/// ACC-VIEW-230-STEADY-READOUT: each live readout's exponential moving
+/// average, `y += alpha (x - y)` with `alpha = 1 - exp(-update_ms / tau)` and
+/// tau the CONFIG `smoothing` time. The sampler holds one and smooths a copy
+/// of each sample for the panels; the collected values, the plots (their own
+/// 1 s EMA in [`crate::chart`]), the process table and `/events.json` stay
+/// raw. A readout starts at its first sample, and one that was unavailable or
+/// absent on the previous tick starts again. Own code: an EMA is one line, and
+/// no crate keeps one per named readout.
+#[derive(Debug, Default)]
+pub struct Ema {
+    alpha: f64,
+    last: BTreeMap<String, f64>,
+    next: BTreeMap<String, f64>,
+}
+
+impl Ema {
+    /// The weight of a new sample at `update_ms` per tick and time constant
+    /// `tau_ms`.
+    pub fn alpha(update_ms: u64, tau_ms: u64) -> f64 {
+        1.0 - (-(update_ms as f64) / tau_ms as f64).exp()
+    }
+
+    /// Readout `key`'s average after sample `x`.
+    fn step(&mut self, key: String, x: f64) -> f64 {
+        let y = self.last.get(&key).map_or(x, |y| y + self.alpha * (x - y));
+        self.next.insert(key, y);
+        y
+    }
+
+    fn value(&mut self, key: String, value: &mut Option<f64>) {
+        if let Some(x) = value {
+            *x = self.step(key, *x);
         }
-        // The tenth is rounded before the width is chosen, so 99.96 prints
-        // `100` and not the five-character `100.0`.
-        let text = if start == 0 || (scaled * 10.0).round() >= 1000.0 {
-            format!("{scaled:.0}")
-        } else {
-            format!("{scaled:.1}")
-        };
-        if text != "1024" || start + 1 == UNITS.len() {
-            return format!("{text} {}", UNITS[start]);
+    }
+
+    fn bytes(&mut self, key: String, value: &mut Option<u64>) {
+        if let Some(x) = value {
+            *x = self.step(key, *x as f64).round() as u64;
         }
-        // A value rounding up to the next unit's base takes the step rather
-        // than printing `1024 GiB`.
-        scaled /= 1024.0;
-        start += 1;
+    }
+
+    /// One tick: replace every readout of `snapshot` with its average at
+    /// weight `alpha`.
+    pub fn smooth(&mut self, snapshot: &mut Snapshot, alpha: f64) {
+        self.alpha = alpha;
+        let cpu = &mut snapshot.cpu;
+        self.value("cpu total".into(), &mut cpu.total_pct);
+        self.value("cpu pressure".into(), &mut cpu.pressure_pct);
+        self.value("cpu temperature".into(), &mut cpu.temperature_c);
+        for (name, value) in &mut cpu.fields {
+            self.value(format!("cpu {name}"), value);
+        }
+        if let Some(load) = &mut cpu.load_avg {
+            for (index, value) in load.iter_mut().enumerate() {
+                *value = self.step(format!("cpu load {index}"), *value);
+            }
+        }
+        if let Some(mhz) = &mut cpu.frequency_mhz {
+            let hz = self.step("cpu frequency".into(), *mhz as f64);
+            *mhz = hz.round() as u64;
+            cpu.cpu_hz = Some(cpu::format_hz(hz));
+        }
+        // The core cells show this average in place of the plots' 1 s one.
+        for core in &mut cpu.cores {
+            core.smoothed_pct = core.usage_pct;
+            self.value(format!("core {}", core.name), &mut core.smoothed_pct);
+        }
+        let mem = &mut snapshot.mem;
+        for (key, value) in [
+            ("mem total", &mut mem.ram_total),
+            ("mem used", &mut mem.ram_used),
+            ("mem free", &mut mem.ram_free),
+            ("mem available", &mut mem.ram_available),
+            ("mem cache", &mut mem.ram_cache),
+            ("mem other", &mut mem.ram_other),
+            ("mem other cache", &mut mem.ram_other_cache),
+            ("swap total", &mut mem.swap_total),
+            ("swap used", &mut mem.swap_used),
+        ] {
+            self.bytes(key.into(), value);
+        }
+        for (key, value) in [
+            ("mem percent", &mut mem.ram_percent),
+            ("mem free percent", &mut mem.ram_free_percent),
+            ("mem available percent", &mut mem.ram_available_percent),
+            ("mem cache percent", &mut mem.ram_cache_percent),
+            ("mem other percent", &mut mem.ram_other_percent),
+            ("mem other cache percent", &mut mem.ram_other_cache_percent),
+            ("swap percent", &mut mem.swap_percent),
+        ] {
+            self.value(key.into(), value);
+        }
+        for disk in &mut mem.disks {
+            let mount = &disk.mount;
+            self.bytes(format!("disk {mount} total"), &mut disk.total);
+            self.bytes(format!("disk {mount} used"), &mut disk.used);
+            self.bytes(format!("disk {mount} free"), &mut disk.free);
+            self.value(format!("disk {mount} used percent"), &mut disk.used_percent);
+            self.value(format!("disk {mount} free percent"), &mut disk.free_percent);
+            self.value(format!("disk {mount} io"), &mut disk.io_activity);
+        }
+        for interface in &mut snapshot.net.interfaces {
+            let name = &interface.name;
+            self.value(format!("net {name} down"), &mut interface.down_rate);
+            self.value(format!("net {name} up"), &mut interface.up_rate);
+            self.value(format!("net {name} top down"), &mut interface.top_down);
+            self.value(format!("net {name} top up"), &mut interface.top_up);
+            self.bytes(format!("net {name} total down"), &mut interface.total_down);
+            self.bytes(format!("net {name} total up"), &mut interface.total_up);
+        }
+        for (index, device) in snapshot.gpu.devices.iter_mut().enumerate() {
+            self.value(format!("gpu{index} load"), &mut device.utilization_pct);
+            self.bytes(format!("gpu{index} vram used"), &mut device.vram_used);
+            self.bytes(format!("gpu{index} vram total"), &mut device.vram_total);
+            self.value(format!("gpu{index} power"), &mut device.power_w);
+            self.value(format!("gpu{index} temperature"), &mut device.temperature_c);
+        }
+        // A readout not seen on this tick starts again at its next sample.
+        self.last = std::mem::take(&mut self.next);
     }
 }
 
@@ -2120,52 +2189,155 @@ mod tests {
         assert_eq!(rate(Some(1024.0)), "1.00 KiB/s");
     }
 
-    /// ACC-VIEW-161-MEM-SIZE: the stat-size memory form behind the gauge
-    /// readout and the Memory tile keeps one decimal while the integer part
-    /// is below three digits and drops it at three, so the value never
-    /// outgrows the four-character reserve; every other label keeps btop's
-    /// truncated humanizer form.
+    /// ACC-VIEW-230-STEADY-READOUT: every unit prints one decimal; a readout
+    /// steps up when its value rounds to 1000.0 of its unit and down only
+    /// below 800 of the lower one, so a value between keeps the unit it showed
+    /// last; an unavailable value prints unavailable and leaves the unit.
     #[test]
-    fn stat_size_memory_drops_the_decimal_at_three_digits() {
-        fn gib(value: f64) -> u64 {
-            (value * 1024.0 * 1024.0 * 1024.0) as u64
-        }
-        for (value, expected) in [
-            (23.8, "23.8 GiB"),
-            (99.9, "99.9 GiB"),
-            (100.0, "100 GiB"),
-            (123.4, "123 GiB"),
-        ] {
-            assert_eq!(stat_human(gib(value)), expected, "{value} GiB");
-        }
-        // the table cells, legend rows, tooltips and the header's total keep
-        // btop's truncation
-        assert_eq!(human(gib(23.8)), "23.7 GiB");
-        assert_eq!(human(gib(99.9)), "99.8 GiB");
-        // a tenth that rounds into three digits drops the fraction instead of
-        // printing `100.0`, and a value that rounds to the next unit's base
-        // takes the step instead of printing `1024 GiB`
-        assert_eq!(stat_human(gib(99.96)), "100 GiB");
-        assert_eq!(stat_human(gib(1023.99)), "1.0 TiB");
-        // below the base unit the number stays an integer byte count
-        assert_eq!(stat_human(512), "512 Byte");
-        // the two call sites read the stat form through ram_used_parts
+    fn readouts_print_one_decimal_and_switch_unit_with_hysteresis() {
+        const KIB: f64 = 1024.0;
+        const MIB: f64 = KIB * KIB;
+        const GIB: f64 = MIB * KIB;
+        let shown = Shown::default();
+        let show = |key: &str, value: f64| {
+            let (number, unit) = shown.parts(key, Some(value)).expect("a value");
+            format!("{number} {unit}")
+        };
+        assert_eq!(show("zero", 0.0), "0.0 Byte");
+        assert_eq!(show("base", 512.0), "512.0 Byte");
+        // just under and over 1000 of the lower unit on the way up
+        assert_eq!(show("edge", 999.9 * KIB), "999.9 KiB");
+        assert_eq!(show("edge", 999.94 * KIB), "999.9 KiB");
+        assert_eq!(show("edge", 999.95 * KIB), "1.0 MiB");
+        assert_eq!(show("edge", 1000.0 * KIB), "1.0 MiB");
+        // between 800 and 1000 the unit stays MiB, at 800 too
+        assert_eq!(show("edge", 999.0 * KIB), "1.0 MiB");
+        assert_eq!(show("edge", 800.0 * KIB), "0.8 MiB");
+        // just under 800 on the way down, then the unit stays KiB above 800
+        assert_eq!(show("edge", 799.9 * KIB), "799.9 KiB");
+        assert_eq!(show("edge", 900.0 * KIB), "900.0 KiB");
+        // a readout with no history starts in the lowest unit under 1000
+        assert_eq!(show("fresh", 900.0 * KIB), "900.0 KiB");
+        assert_eq!(show("fresh mib", 900.0 * MIB), "900.0 MiB");
+        // a climb across two units, one sample at a time and in one sample
+        let climb = [
+            500.0 * KIB,
+            1000.0 * KIB,
+            999.0 * MIB,
+            1000.0 * MIB,
+            900.0 * MIB,
+        ];
+        assert_eq!(
+            climb.map(|value| show("climb", value)),
+            ["500.0 KiB", "1.0 MiB", "999.0 MiB", "1.0 GiB", "0.9 GiB"]
+        );
+        assert_eq!(show("jump", 10.0 * KIB), "10.0 KiB");
+        assert_eq!(show("jump", 5.0 * GIB), "5.0 GiB");
+        // the fall back across two units, one sample at a time and in one
+        let fall = [799.0 * MIB, 850.0 * KIB, 700.0 * KIB, 700.0];
+        assert_eq!(
+            fall.map(|value| show("climb", value)),
+            ["799.0 MiB", "0.8 MiB", "700.0 KiB", "700.0 Byte"]
+        );
+        assert_eq!(show("jump", 500.0 * KIB), "500.0 KiB");
+        // unavailable prints unavailable and keeps the last unit for later
+        assert_eq!(shown.parts("edge", None), None);
+        assert_eq!(shown.bytes("edge", None), "unavailable");
+        assert_eq!(show("edge", 900.0 * KIB), "900.0 KiB");
+        // rendering one value twice changes nothing
+        assert_eq!(show("edge", 950.0 * KIB), show("edge", 950.0 * KIB));
+        assert_eq!(shown.bytes("edge", Some(3 << 30)), "3.0 GiB");
+        // the used figure: the gauge, the tile and the used row share a unit
         let snapshot = MemSnapshot {
-            ram_used: Some(gib(123.4)),
+            ram_used: Some((123.4 * GIB) as u64),
             ..MemSnapshot::default()
         };
         assert_eq!(
-            snapshot.ram_used_parts(),
-            Some(("123".to_string(), "GiB".to_string()))
+            snapshot.ram_used_parts(&shown),
+            Some(("123.4".to_string(), "GiB"))
         );
-        // every value the formatter prints fits the four-character reserve
-        // and carries at most one decimal
-        for tenths in 1..=12_000 {
-            let label = stat_human(tenths * (1 << 30) / 10);
-            let number = label.split_once(' ').expect("a unit").0;
-            assert!(number.len() <= 4, "{label}");
-            assert!(number.matches('.').count() <= 1, "{label}");
+        assert_eq!(snapshot.ram_used_label(&shown), "123.4 GiB");
+    }
+
+    /// ACC-VIEW-230-STEADY-READOUT: S, M and L weigh a 250 ms sample by
+    /// 1 - exp(-250 / tau) for tau 1, 2 and 4 s.
+    #[test]
+    fn each_smoothing_setting_weighs_a_250_ms_sample() {
+        let alphas =
+            crate::config::SMOOTHING.map(|(label, tau_ms)| (label, Ema::alpha(250, tau_ms)));
+        let expected = [
+            ("S", 0.221_199_216_928_595_12),
+            ("M", 0.117_503_097_415_404_54),
+            ("L", 0.060_586_937_186_524_19),
+        ];
+        for ((label, alpha), (want_label, want)) in alphas.into_iter().zip(expected) {
+            assert_eq!(label, want_label);
+            assert!((alpha - want).abs() < 1e-15, "{label}: {alpha}");
         }
+    }
+
+    /// ACC-VIEW-230-STEADY-READOUT: a readout's average starts at its first
+    /// sample, holds a steady input, reaches 1 - 1/e of a step after one time
+    /// constant and settles on the new value; after an unavailable sample, or
+    /// a tick the readout is absent from, it starts again at the next sample.
+    #[test]
+    fn readouts_show_an_ema_that_starts_again_after_a_gap() {
+        let alpha = Ema::alpha(250, 2000);
+        let mut ema = Ema::default();
+        let mut tick = |total: Option<f64>, eth0: Option<f64>| {
+            let mut snapshot = Snapshot::default();
+            snapshot.cpu.total_pct = total;
+            snapshot.net.interfaces = eth0
+                .map(|rate| NetInterface {
+                    name: "eth0".into(),
+                    up_rate: Some(rate),
+                    total_up: Some(rate as u64 + 1),
+                    ..NetInterface::default()
+                })
+                .into_iter()
+                .collect();
+            ema.smooth(&mut snapshot, alpha);
+            let up = snapshot.net.interfaces.first();
+            (
+                snapshot.cpu.total_pct,
+                up.and_then(|up| up.up_rate),
+                up.and_then(|up| up.total_up),
+            )
+        };
+        assert_eq!(
+            tick(Some(40.0), Some(1000.0)),
+            (Some(40.0), Some(1000.0), Some(1001))
+        );
+        for _ in 0..20 {
+            assert_eq!(
+                tick(Some(40.0), Some(1000.0)).0,
+                Some(40.0),
+                "a steady input"
+            );
+        }
+        // Eight 250 ms ticks are one 2 s time constant.
+        let mut shown = (None, None, None);
+        for _ in 0..8 {
+            shown = tick(Some(100.0), Some(1000.0));
+        }
+        let want = 40.0 + 60.0 * (1.0 - (-1.0_f64).exp());
+        assert!((shown.0.unwrap() - want).abs() < 1e-9, "{shown:?}");
+        for _ in 0..400 {
+            shown = tick(Some(100.0), Some(1000.0));
+        }
+        assert!((shown.0.unwrap() - 100.0).abs() < 1e-9, "{shown:?}");
+        // Unavailable stays unavailable, and the next sample is shown as read.
+        assert_eq!(tick(None, None), (None, None, None));
+        assert_eq!(
+            tick(Some(10.0), Some(5000.0)),
+            (Some(10.0), Some(5000.0), Some(5001))
+        );
+        assert_eq!(tick(Some(10.0), Some(5000.0)).1, Some(5000.0));
+        // eth0 is absent for one tick; total_pct keeps averaging.
+        let (total, up, _) = tick(Some(20.0), None);
+        assert!((total.unwrap() - (10.0 + 10.0 * alpha)).abs() < 1e-9);
+        assert_eq!(up, None);
+        assert_eq!(tick(Some(20.0), Some(300.0)).1, Some(300.0));
     }
 
     /// ACC-VIEW-126: the Memory tile's animation range is the effective total
@@ -2179,22 +2351,24 @@ mod tests {
             ram_total: Some(16 * gib),
             ..MemSnapshot::default()
         };
+        let shown = Shown::default();
         assert_eq!(
-            snapshot.ram_used_parts(),
-            Some(("9.0".to_string(), "GiB".to_string()))
+            snapshot.ram_used_parts(&shown),
+            Some(("9.0".to_string(), "GiB"))
         );
-        assert_eq!(snapshot.ram_used_range(), "16");
+        assert_eq!(snapshot.ram_used_range(&shown), "16");
         let snapshot = MemSnapshot {
             ram_used: Some(300 * (1 << 20)),
             ram_total: Some(2 * gib),
             ..MemSnapshot::default()
         };
+        let shown = Shown::default();
         assert_eq!(
-            snapshot.ram_used_parts(),
-            Some(("300".to_string(), "MiB".to_string()))
+            snapshot.ram_used_parts(&shown),
+            Some(("300.0".to_string(), "MiB"))
         );
-        assert_eq!(snapshot.ram_used_range(), "2048");
-        assert_eq!(MemSnapshot::default().ram_used_range(), "");
+        assert_eq!(snapshot.ram_used_range(&shown), "2048");
+        assert_eq!(MemSnapshot::default().ram_used_range(&shown), "");
     }
 
     /// Expected strings are emitted by
@@ -2334,8 +2508,8 @@ mod tests {
         assert_eq!(GpuDevice::default().temperature_label(), "unavailable");
     }
 
-    /// DEF-VIEW-106-SWAP-UNITS: the owner's 284 KiB of 128 GiB reads 0 of 128
-    /// GiB at 0 percent; the percent follows the printed figure wherever the
+    /// DEF-VIEW-106-SWAP-UNITS: the owner's 284 KiB of 128 GiB reads 0.0 of
+    /// 128.0 GiB at 0 percent; the percent follows the printed figure wherever the
     /// figure hides the usage, and stays btop's value otherwise.
     #[test]
     fn swap_row_prints_gib_and_a_percent_of_that_figure() {
@@ -2349,24 +2523,25 @@ mod tests {
             };
             (mem.swap_label(), mem.swap_row_percent().expect("percent"))
         };
-        assert_eq!(row(284 * 1024, 128 * GIB), ("0 / 128 GiB".into(), 0.0));
-        assert_eq!(row(0, 128 * GIB), ("0 / 128 GiB".into(), 0.0));
-        assert_eq!(row(512 << 20, 128 * GIB), ("0.50 / 128 GiB".into(), 0.0));
-        assert_eq!(row(32 * GIB, 128 * GIB), ("32.0 / 128 GiB".into(), 25.0));
-        assert_eq!(row(GIB / 2, 2 * GIB), ("0.50 / 2.00 GiB".into(), 25.0));
-        // 4 MiB of 100 MiB is btop's 4 percent, and the row prints 0 of 0.10.
-        assert_eq!(row(4 << 20, 100 << 20), ("0 / 0.10 GiB".into(), 0.0));
+        assert_eq!(row(284 * 1024, 128 * GIB), ("0.0 / 128.0 GiB".into(), 0.0));
+        assert_eq!(row(0, 128 * GIB), ("0.0 / 128.0 GiB".into(), 0.0));
+        assert_eq!(row(512 << 20, 128 * GIB), ("0.5 / 128.0 GiB".into(), 0.0));
+        assert_eq!(row(32 * GIB, 128 * GIB), ("32.0 / 128.0 GiB".into(), 25.0));
+        assert_eq!(row(GIB / 2, 2 * GIB), ("0.5 / 2.0 GiB".into(), 25.0));
+        // 4 MiB of 100 MiB is btop's 4 percent, and the row prints 0.0 of 0.1.
+        assert_eq!(row(4 << 20, 100 << 20), ("0.0 / 0.1 GiB".into(), 0.0));
         let unavailable = MemSnapshot::default();
         assert_eq!(unavailable.swap_label(), "unavailable");
         assert_eq!(unavailable.swap_row_percent(), None);
     }
 
-    /// DEF-VIEW-50-MEM-TERMS: btop's truncated strings alone printed
-    /// 13.1 + 37.4 + 225 + 226 GiB of a 503.2 GiB total.
+    /// DEF-VIEW-50-MEM-TERMS: each row rounded alone can print the rows more
+    /// than one step away from the total; the legend gives the difference
+    /// back one step at a time.
     #[test]
     fn memory_legend_adds_up_to_the_total_within_one_step() {
         let total: u64 = 540_312_911_872;
-        let mut short_by_more_than_a_step = 0;
+        let mut off_by_more_than_a_step = 0;
         for i in 0..400_u64 {
             let used = 14_000_000_000 + i * 7_919_113;
             let cache = 40_000_000_000 + i * 104_729_011;
@@ -2383,25 +2558,26 @@ mod tests {
                 ram_available: Some(free + cache),
                 ..MemSnapshot::default()
             };
-            let truncated: f64 = [Some(used), Some(cache), other, other_cache, Some(free)]
-                .into_iter()
-                .flatten()
-                .map(|value| shown(value).0)
+            let shown = Shown::default();
+            let keys = ["mem used"].into_iter().chain(LEGEND_KEYS);
+            let rounded: f64 = keys
+                .zip([Some(used), Some(cache), other, other_cache, Some(free)])
+                .filter_map(|(key, value)| Some(shown.printed(key, value? as f64).0))
                 .sum();
-            if total as f64 - truncated > (1u64 << 30) as f64 {
-                short_by_more_than_a_step += 1;
+            if (total as f64 - rounded).abs() > (1u64 << 30) as f64 / 10.0 {
+                off_by_more_than_a_step += 1;
             }
-            let legend = mem.ram_legend();
-            let mut printed = shown(used).0;
-            let mut largest_step = shown(used).1;
-            for (part, value) in legend
+            let legend = mem.ram_legend(&shown);
+            let (mut printed, mut largest_step) = shown.printed("mem used", used as f64);
+            for ((part, value), key) in legend
                 .iter()
                 .zip([Some(cache), other, other_cache, Some(free)])
+                .zip(LEGEND_KEYS)
             {
                 let (Some(part), Some(value)) = (*part, value) else {
                     continue;
                 };
-                let (part_printed, step) = shown(part);
+                let (part_printed, step) = shown.printed(key, part as f64);
                 assert!(
                     (part_printed - value as f64).abs() < step,
                     "{i}: {part} vs {value}"
@@ -2413,14 +2589,24 @@ mod tests {
                 (total as f64 - printed).abs() < largest_step,
                 "{i}: {printed}"
             );
-            assert_eq!(mem.ram_free_label(), human(legend[3].unwrap()));
-            let sum = shown(legend[0].unwrap()).0
-                + other.map_or(0.0, |_| shown(legend[2].unwrap()).0)
-                + shown(legend[3].unwrap()).0;
-            let (printed, step) = shown(mem.ram_free_reclaimable().unwrap());
+            assert_eq!(
+                mem.ram_free_label(&shown),
+                shown.bytes("mem free", legend[3])
+            );
+            let sum = shown.printed("mem cache", legend[0].unwrap() as f64).0
+                + other.map_or(0.0, |_| {
+                    shown
+                        .printed("mem other cache", legend[2].unwrap() as f64)
+                        .0
+                })
+                + shown.printed("mem free", legend[3].unwrap() as f64).0;
+            let (printed, step) = shown.printed(
+                "mem free cache",
+                mem.ram_free_reclaimable(&shown).unwrap() as f64,
+            );
             assert!((printed - sum).abs() <= step / 2.0 + 1.0, "{i}: {printed}");
         }
-        assert!(short_by_more_than_a_step > 0);
+        assert!(off_by_more_than_a_step > 0);
     }
 
     /// ACC-VIEW-195-MEM-SUM: free plus every reclaimable row shown, in each
@@ -2436,8 +2622,9 @@ mod tests {
             ram_available: Some(12 * GIB),
             ..MemSnapshot::default()
         };
-        assert_eq!(host.ram_free_reclaimable_label(), "12.0 GiB");
-        assert_eq!(host.ram_free_reclaimable_percent(), Some(75.0));
+        let shown = Shown::default();
+        assert_eq!(host.ram_free_reclaimable_label(&shown), "12.0 GiB");
+        assert_eq!(host.ram_free_reclaimable_percent(&shown), Some(75.0));
         let limit = MemSnapshot {
             ram_total: Some(8 * GIB),
             ram_limit: Some(8 * GIB),
@@ -2447,8 +2634,8 @@ mod tests {
             ram_available: Some(5 * GIB),
             ..MemSnapshot::default()
         };
-        assert_eq!(limit.ram_free_reclaimable_label(), "5.00 GiB");
-        assert_eq!(limit.ram_free_reclaimable_percent(), Some(63.0));
+        assert_eq!(limit.ram_free_reclaimable_label(&shown), "5.0 GiB");
+        assert_eq!(limit.ram_free_reclaimable_percent(&shown), Some(63.0));
         let container = MemSnapshot {
             ram_total: Some(503 * GIB),
             ram_used: Some(171 * GIB),
@@ -2459,9 +2646,9 @@ mod tests {
             ram_available: Some(457 * GIB),
             ..MemSnapshot::default()
         };
-        assert_eq!(container.ram_free_reclaimable_label(), "300 GiB");
-        assert_eq!(container.ram_free_reclaimable_percent(), Some(60.0));
-        // 81.2 + 151 + 51.7 prints the nearer figure, not btop's truncated 283.
+        assert_eq!(container.ram_free_reclaimable_label(&shown), "300.0 GiB");
+        assert_eq!(container.ram_free_reclaimable_percent(&shown), Some(60.0));
+        // The rows print 81.3, 151.0 and 51.8, and the sum row their sum.
         let nearer = MemSnapshot {
             ram_used: None,
             ram_cache: Some(81 * GIB + GIB / 4),
@@ -2469,7 +2656,8 @@ mod tests {
             ram_free: Some(51 * GIB + 3 * GIB / 4),
             ..container.clone()
         };
-        assert_eq!(nearer.ram_free_reclaimable_label(), "284 GiB");
+        assert_eq!(nearer.ram_cache_label(&shown), "81.3 GiB");
+        assert_eq!(nearer.ram_free_reclaimable_label(&shown), "284.1 GiB");
         for unreadable in [
             MemSnapshot {
                 ram_other_cache: None,
@@ -2484,8 +2672,8 @@ mod tests {
                 ..host.clone()
             },
         ] {
-            assert_eq!(unreadable.ram_free_reclaimable_label(), "unavailable");
-            assert_eq!(unreadable.ram_free_reclaimable_percent(), None);
+            assert_eq!(unreadable.ram_free_reclaimable_label(&shown), "unavailable");
+            assert_eq!(unreadable.ram_free_reclaimable_percent(&shown), None);
         }
     }
 
@@ -2511,7 +2699,10 @@ mod tests {
     /// ACC-CONF-61-CONFIG-PAGES: a new interval from the config menu reaches
     /// the snapshots within two ticks and sets the next gap. An open stream
     /// keeps the sampler awake to see it (ACC-PERF-136-SLEEP).
-    #[tokio::test]
+    /// DEF-TEST-151-INTERVAL-TIMING: the clock is paused, so the gap is the
+    /// sampler's timer period; a starved test or sampler thread cannot
+    /// shorten it.
+    #[tokio::test(start_paused = true)]
     async fn sampler_follows_a_new_update_interval() {
         let mut config = Config::defaults();
         config.proc_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/proc");
@@ -2537,7 +2728,7 @@ mod tests {
             snapshots.changed().await.expect("snapshot");
             seen += 1;
         }
-        let at = std::time::Instant::now();
+        let at = tokio::time::Instant::now();
         snapshots.changed().await.expect("next snapshot");
         assert!(
             at.elapsed() >= Duration::from_millis(250),
@@ -2575,7 +2766,7 @@ mod tests {
             .expect("the cpu record");
         assert_eq!(cpu[11], "6400%", "the reserved width");
         assert_eq!(cpu[13], "3200%", "the one minute figure");
-        assert!(cpu[12].contains("6400%"), "the load tip: {}", cpu[12]);
+        assert_eq!(cpu[12], LOAD_AGGREGATE_TIP, "the load tip");
         sampler.task.abort();
     }
 

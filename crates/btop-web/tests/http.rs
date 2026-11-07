@@ -61,6 +61,7 @@ fn recorded_snapshot_with(relative: &str, ticks: usize, config: Config) -> Snaps
             slow_ms: config.proc_refresh_ms.max(config.update_ms),
             slow_seq: 1,
             container: config.container.is_some(),
+            shown: Default::default(),
         };
     }
     snapshot
@@ -599,7 +600,7 @@ async fn live_chip_carries_the_live_paused_and_stale_hooks() {
     let chip = &page[at..at + page[at..].find("</b></span>").expect("chip end")];
     for marker in [
         r#"class="chip chip-live""#,
-        r#"data-tip="Sampler state, live, paused or stale"#,
+        r#"data-tip="Data state and the age of the last sample""#,
         r#"<i class="lamp"></i>"#,
         r#"<span class="live-word up" aria-live="polite">live</span>"#,
         r#"<b class="live-age" id="sample-age" aria-hidden="true">"#,
@@ -688,32 +689,69 @@ async fn no_text_inside_chart_boxes() {
     }
 }
 
-/// ACC-VIEW-80-STAT-TIPS: every stat carries its tooltip text from the
-/// server: at most 4 short lines, each text naming a unit and a source; no
-/// plot box carries one; one shared tip element serves the page.
+/// ACC-VIEW-223-TIP-MINIMAL: every tooltip, house box and browser title
+/// alike, names its element in one line, two at most, with no source, formula
+/// or mechanism and no full stop; no plot box carries one; one shared tip
+/// element serves the page.
 #[tokio::test]
-async fn stat_tips_are_short_and_name_unit_and_source() {
+async fn tips_are_minimal() {
     let snapshot = fixture_snapshot();
-    let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
-        .expect("utf-8 page");
+    // DEF-VIEW-149-HOST-CUT: a 60-character host name, not the live host's;
+    // the tip names the label and shows the full name the label may cut.
+    let host = "build-agent-000042.eu-central-1.compute.internal.example.org";
+    let render = async |snapshot: Snapshot| {
+        let (_sender, receiver) = watch::channel(Some(Arc::new(Frame::new(snapshot))));
+        let mut state = AppState::new(receiver, true);
+        state.host = Some(host.into());
+        String::from_utf8(get(&btop_web::app(state), "/").await.2).expect("utf-8 page")
+    };
+    let page = render(snapshot.clone()).await;
+    assert!(
+        page.contains(&format!(r#"data-tip="Host name&#10;{host}">{host}</span>"#)),
+        "the host tip does not show the full host name"
+    );
     let mut documents = vec![("page", page)];
     documents.extend(
         fragments(&snapshot)
             .into_iter()
             .filter(|(name, _)| !matches!(*name, "cpu" | "mem")),
     );
-    // The container tooltips add the scope lines; they hold the same budget.
+    // The container tooltips name the container scope; they hold the same budget.
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/container/proc");
     let mut config = Config::load(None).expect("config");
     config.container = btop_web::collector::container::detect(&tree);
     let container = recorded_snapshot_with("tests/fixtures/container/proc", 1, config);
-    let page = String::from_utf8(get(&app(Some(container.clone()), true), "/").await.2)
-        .expect("utf-8 page");
+    let page = render(container).await;
     documents.push(("container page", page));
+    // A template writes its line breaks as &#10;; a tip built in Rust carries
+    // them as newlines.
+    fn minimal<'a>(name: &str, value: &'a str) -> Vec<&'a str> {
+        let lines: Vec<&str> = value
+            .split("&#10;")
+            .flat_map(|line| line.split('\n'))
+            .collect();
+        assert!(
+            (1..=2).contains(&lines.len()),
+            "{name}: {} lines: {value}",
+            lines.len()
+        );
+        let lower = value.to_lowercase();
+        for word in [
+            "source", "unit", "/proc", "/sys", "sysfs", "nvml", "cgroup", "meminfo", "statvfs",
+            "btop", "delta",
+        ] {
+            assert!(
+                !lower.contains(word),
+                "{name}: names a source or mechanism ({word}): {value}"
+            );
+        }
+        assert!(!value.ends_with('.'), "{name}: full stop: {value}");
+        lines
+    }
     for (name, html) in &documents {
         let tips = elements_with(html, "data-tip");
-        assert!(!tips.is_empty(), "{name} has no stat tooltip");
-        for (tag, _) in tips {
+        assert!(!tips.is_empty(), "{name} has no tooltip");
+        for (tag, label) in tips {
             assert!(
                 !tag.contains("data-chart"),
                 "{name}: a plot carries a tooltip"
@@ -726,25 +764,19 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
             );
             let value = &tag[tag.find("data-tip=\"").expect("tip") + 10..];
             let value = &value[..value.find('"').expect("tip end")];
-            // A template writes its line breaks as &#10;; a tip built in Rust
-            // carries them as newlines.
-            let lines: Vec<&str> = value
-                .split("&#10;")
-                .flat_map(|line| line.split('\n'))
-                .collect();
-            assert!(
-                (1..=4).contains(&lines.len()),
-                "{name}: {} lines: {value}",
-                lines.len()
-            );
-            let lower = value.to_lowercase();
-            assert!(lower.contains("unit"), "{name}: no unit: {value}");
-            assert!(lower.contains("source:"), "{name}: no source: {value}");
-            for line in lines {
+            for line in minimal(name, value) {
                 let text = line.replace("&lt;", "<").replace("&gt;", ">");
                 assert!(!text.is_empty(), "{name}: empty line: {value}");
-                assert!(text.chars().count() <= 48, "{name}: long line: {text}");
+                // ACC-VIEW-223: the full value of a label that may be cut has no length budget.
+                assert!(
+                    line == label || text.chars().count() <= 48,
+                    "{name}: long line: {text}"
+                );
             }
+        }
+        for (at, _) in html.match_indices(" title=\"") {
+            let value = &html[at + 8..];
+            minimal(name, &value[..value.find('"').expect("title end")]);
         }
     }
     let page = &documents[0].1;
@@ -756,42 +788,126 @@ async fn stat_tips_are_short_and_name_unit_and_source() {
     );
 }
 
+/// DEF-PERF-147-TIP-FRAMES, DEF-VIEW-148-TIP-COPIES: the page renders each
+/// tooltip text `app.js` writes once, on `#tips`. The script holds none of
+/// them, and the mem record carries none, only the name of the memory tip set.
+/// The cpu record carries only the short load tip (DEF-VIEW-152-LOAD-TIP). The
+/// templates write each literal tip once.
+#[tokio::test]
+async fn tip_texts_have_one_source_on_the_page() {
+    let snapshot = fixture_snapshot();
+    let app = app(Some(snapshot.clone()), true);
+    let page = String::from_utf8(get(&app, "/").await.2).expect("utf-8 page");
+    let script = String::from_utf8(get(&app, "/assets/app.js").await.2).expect("utf-8 script");
+    let events = fragments(&snapshot);
+    let record = |kind: &str| {
+        events
+            .iter()
+            .find(|(name, _)| *name == kind)
+            .expect("the record")
+            .1
+            .clone()
+    };
+    let (cpu, mem) = (record("cpu"), record("mem"));
+    // DEF-VIEW-152-LOAD-TIP: a 1.0.4 page writes slot 12 into the load
+    // tooltips and reads an empty slot as load unavailable.
+    let load_tip = "Load average, percent of all cores";
+    assert_eq!(
+        cpu.split('|').nth(12),
+        Some(load_tip),
+        "the cpu record's load tip"
+    );
+    // DEF-VIEW-150-MIXED-TIP: a 1.0.4 page writes slots 8 and 11-14 into
+    // data-tip, so the set sits third from the end, where it reads no tip.
+    let fields: Vec<&str> = mem.split('|').collect();
+    assert_eq!(
+        [fields[8], fields[11], fields[12], fields[13], fields[14]],
+        [""; 5]
+    );
+    assert_eq!(fields[fields.len() - 3], "host", "the mem record's tip set");
+    let at = page
+        .find(r#"<div id="tips" hidden"#)
+        .expect("the page renders no #tips");
+    let tag = &page[at..at + page[at..].find('>').expect("tag end")];
+    // The first value is the id.
+    let texts: Vec<String> = tag
+        .split("=\"")
+        .skip(2)
+        .map(|value| value[..value.find('"').expect("value end")].replace("&#39;", "'"))
+        .collect();
+    assert!(texts.len() > 30, "#tips holds {} texts: {tag}", texts.len());
+    for text in &texts {
+        assert!(!script.contains(text.as_str()), "app.js holds {text}");
+        assert!(
+            text == load_tip || !cpu.contains(text.as_str()),
+            "the cpu record carries {text}"
+        );
+        assert!(
+            !mem.contains(text.as_str()),
+            "the mem record carries {text}"
+        );
+    }
+    // A fact whose value branches keeps one tip; only the value branches.
+    let templates = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates");
+    let mut literal = Vec::new();
+    for dir in [templates.clone(), templates.join("partials")] {
+        for entry in std::fs::read_dir(dir).expect("templates") {
+            let path = entry.expect("template entry").path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "html")
+            {
+                let text = std::fs::read_to_string(&path).expect("template");
+                literal.extend(
+                    text.split("data-tip=\"")
+                        .skip(1)
+                        .map(|value| value[..value.find('"').expect("tip end")].to_string())
+                        .filter(|tip| !tip.contains('{')),
+                );
+            }
+        }
+    }
+    literal.sort();
+    for pair in literal.windows(2) {
+        assert_ne!(pair[0], pair[1], "the templates write this tip twice");
+    }
+}
+
 /// ACC-VIEW-80-STAT-TIPS: the anchors batch 3 gave a tooltip each still carry
 /// one: the top-bar chips, every stat tile and gauge, the memory bar and its
 /// rows, the network header, interface and legend, the GPU header, legend
 /// value and bars, every core row and the four numeric process column
-/// headers. The tip text itself is held by
-/// `stat_tips_are_short_and_name_unit_and_source`; this test holds presence,
-/// which a dropped attribute would otherwise take with it.
+/// headers. The tip text itself is held by `tips_are_minimal`; this test
+/// holds presence, which a dropped attribute would otherwise take with it.
 #[tokio::test]
 async fn stat_tips_sit_on_every_tip_anchor() {
     let page = String::from_utf8(get(&app(Some(fixture_snapshot()), true), "/").await.2)
         .expect("utf-8 page");
     for anchor in [
-        r#"id="tier-chip" data-tip="Priority tiers on screen"#,
-        r#"id="live-chip" data-tip="Sampler state"#,
+        r#"class="up tier-4" data-tip="Priority levels shown"#,
+        r#"id="live-chip" data-tip="Data state"#,
         r#"data-tip="Copy telemetry as JSON"#,
-        r#"data-tip="Server mode, no unit"#,
-        r#"class="stat-tile" data-tip="CPU total"#,
-        r#"class="stat-tile" data-tip="Memory used"#,
-        r#"class="stat-tile" data-tip="Process total"#,
-        r#"data-gauge="cpu" data-tip="CPU total"#,
-        r#"data-gauge="mem" data-tip="Memory shares"#,
-        r#"class="mem-bar" data-tip="Memory bar"#,
-        r#"class="mem-row" data-row="used" data-tip="Memory used"#,
-        r#"class="mem-row" data-row="cache" data-tip="Reclaimable cache"#,
-        r#"data-field="net-interface" data-tip="Selected interface"#,
-        r#"data-field="net-axis-note" data-tip="Plot scale"#,
+        r#"data-tip="This server refuses changes"#,
+        r#"class="stat-tile" data-tip="CPU use of all cores"#,
+        r#"class="stat-tile" data-tip="Memory in use"#,
+        r#"class="stat-tile" data-tip="Number of processes"#,
+        r#"data-gauge="cpu" data-tip="CPU use of all cores"#,
+        r#"data-gauge="mem" data-tip="Memory used"#,
+        r#"class="mem-bar" data-tip="Memory split"#,
+        r#"class="mem-row" data-row="used" data-tip="Memory in use"#,
+        r#"class="mem-row" data-row="cache" data-tip="Cache the system can free"#,
+        r#"data-field="net-interface" data-tip="Network interface"#,
+        r#"data-field="net-axis-note" data-tip="Download ▼ and upload ▲ plot scales"#,
         r#"class="legend-item" data-tip="Download rate"#,
         r#"class="legend-item" data-tip="Upload rate"#,
-        r#"data-field="gpu-count" data-tip="GPU count"#,
-        r#"class="legend-value" data-tip="GPU 0 utilisation"#,
-        r#"class="gpu-bars" data-tip="GPU 0 bars"#,
-        r#"class="core-row" data-tip="Core cpu0"#,
-        r#"id="proc-count" data-tip="Shown / total processes"#,
-        r#"<th class="num" scope="col" data-tip="Pid"#,
+        r#"data-field="gpu-count" data-tip="GPUs on this host"#,
+        r#"class="legend-value" data-tip="GPU 0 load"#,
+        r#"class="gpu-bars" data-tip="GPU 0 load"#,
+        r#"class="core-row" data-tip="Use of CPU core 0"#,
+        r#"id="proc-count" data-tip="Processes in the list now / all processes""#,
+        r#"<th class="num" scope="col" data-tip="Process ID"#,
         r#"data-field="proc-threads" scope="col" data-tip="Threads"#,
-        r#"<th class="num" scope="col" data-tip="Resident memory"#,
+        r#"<th class="num" scope="col" data-tip="Memory the process holds"#,
         r#"<th class="num" scope="col" data-tip="CPU use of the process"#,
     ] {
         assert!(page.contains(anchor), "no tooltip on {anchor}");
@@ -802,8 +918,14 @@ async fn stat_tips_sit_on_every_tip_anchor() {
         .expect("sampling interval");
     let span = &page[at..at + page[at..].find("</span>").expect("span end")];
     assert!(
-        span.contains(r#"data-tip="Sampling interval"#),
+        span.contains(r#"data-tip="Time between samples""#),
         "the sampling interval carries no tooltip: {span}"
+    );
+    // ACC-VIEW-225-PROC-TIP: the rows stay hidden until app.js applies the
+    // view, so the count stays empty until app.js writes shown/total.
+    assert!(
+        page.contains(r#"data-tip="Processes in the list now / all processes"></span>"#),
+        "the server writes a process count before app.js applies the list"
     );
 }
 
@@ -958,6 +1080,48 @@ async fn network_legend_states_the_link_and_no_rate_in_bits() {
     assert!(page(&snapshot).contains(
         r#"up</span><span class="chip up">err 3</span><span class="chip up">drop 9</span></div>"#
     ));
+}
+
+/// ACC-VIEW-230-STEADY-READOUT and ACC-LAYOUT-74-RESERVED-WIDTH: each network
+/// rate, top and total prints one decimal right-aligned in the width of
+/// 999.9 with its unit after it, so the decimal point keeps its place.
+#[tokio::test]
+async fn network_readouts_print_one_decimal_in_a_reserved_width() {
+    let snapshot = fixture_snapshot();
+    let net = fragments(&snapshot)
+        .into_iter()
+        .find(|(name, _)| *name == "net")
+        .expect("net fragment")
+        .1;
+    let selected = snapshot.net.selected_iface.as_ref().expect("an interface");
+    let interface = snapshot
+        .net
+        .interfaces
+        .iter()
+        .find(|interface| &interface.name == selected)
+        .expect("the selected interface");
+    let readouts = [
+        interface.down_rate.is_some(),
+        interface.up_rate.is_some(),
+        interface.top_down.is_some(),
+        interface.top_up.is_some(),
+        interface.total_down.is_some(),
+        interface.total_up.is_some(),
+    ];
+    let numbers: Vec<&str> = net
+        .split(r#"<span data-w="000.0">"#)
+        .skip(1)
+        .map(|rest| &rest[..rest.find("</span>").expect("span end")])
+        .collect();
+    assert!(numbers.len() >= 2, "{net}");
+    assert_eq!(
+        numbers.len(),
+        readouts.iter().filter(|shown| **shown).count()
+    );
+    for number in numbers {
+        let (whole, tenth) = number.split_once('.').expect("a decimal point");
+        assert!(whole.len() <= 3 && tenth.len() == 1, "{number}");
+    }
 }
 
 /// DEF-GRAPH-63-GRID-UNITS: every plot labels its grid lines with their value
@@ -1559,7 +1723,12 @@ async fn gpu_panel_draws_one_lane_per_device() {
             // DEF-VIEW-46-LEGEND-SHIFT: the load and the temperature reserve
             // their widest forms, so the VRAM and the power keep their place.
             r#"<span data-w="100%">37%</span><span class="lg-vram">"#.to_string(),
-            first.vram_label(),
+            {
+                let (used, total) = first.vram_labels(&snapshot.shown, 0).expect("vram");
+                format!(
+                    r#"<span class="lg-vram"><span data-w="000.0 Byte">{used}</span> / {total}</span>"#
+                )
+            },
             format!(
                 r#"<span data-w="100°C">{}</span> &middot; "#,
                 first.temperature_label()
@@ -1634,10 +1803,12 @@ fn page_and_event<'a>(page: &'a str, events: &'a [(&str, String)], name: &str) -
     [page, event]
 }
 
-/// ACC-GRAPH-47-GAUGE-SMOOTH: each arc and its colour band draw the 1 s EMA;
-/// the number, the aria-label and the stat tiles keep btop's raw value.
+/// ACC-GRAPH-47-GAUGE-SMOOTH: each arc and its colour band draw the 1 s EMA
+/// (`gauge_pct`); the number, the aria-label and the stat tile print the
+/// snapshot's `total_pct`, which the sampler's `Ema::smooth` sets to the CONFIG
+/// `smoothing` average (ACC-VIEW-230-STEADY-READOUT).
 #[tokio::test]
-async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
+async fn gauge_arcs_draw_the_ema_and_readouts_print_the_snapshot() {
     let mut snapshot = fixture_snapshot();
     snapshot.cpu.total_pct = Some(80.0);
     snapshot.cpu.gauge_pct = Some(50.0);
@@ -1718,7 +1889,10 @@ async fn gauge_arcs_draw_the_ema_and_readouts_stay_raw() {
             assert_eq!(html.matches(&wide).count(), 1, "{seg}");
         }
         assert_eq!(html.matches(r#"<path class="g-fill" data-seg"#).count(), 4);
-        let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
+        let (value, unit) = snapshot
+            .mem
+            .ram_used_parts(&snapshot.shown)
+            .expect("memory used");
         let readout = format!(
             r#"<text class="g-value" x="54" y="66">{}<tspan class="g-unit" dx="2.5">{}</tspan>"#,
             value, unit
@@ -1752,26 +1926,29 @@ async fn reserved_widths_sit_on_the_memory_values() {
     let snapshot = fixture_snapshot();
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
-    let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
+    let (value, unit) = snapshot
+        .mem
+        .ram_used_parts(&snapshot.shown)
+        .expect("memory used");
     let used = snapshot.mem.ram_percent.expect("used percent");
     let available = snapshot
         .mem
-        .ram_free_reclaimable_percent()
+        .ram_free_reclaimable_percent(&snapshot.shown)
         .expect("available percent");
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
         for marker in [
             format!(
-                r#"<span class="stat-value" data-w="0000" data-range="{}" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#,
-                snapshot.mem.ram_used_range()
+                r#"<span class="stat-value" data-w="000.0" data-range="{}" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#,
+                snapshot.mem.ram_used_range(&snapshot.shown)
             ),
             format!(r#"<b data-w="100%">{used:.0}%</b> used"#),
             format!(r#"<b data-w="100%">{available:.0}%</b> available"#),
             format!(
-                r#"<span>free + reclaimable</span><b data-w="0000 MiB">{}</b><span class="pct" data-w="100%">{:.0}%</span>"#,
-                snapshot.mem.ram_free_reclaimable_label(),
+                r#"<span>free + reclaimable</span><b data-w="000.0 MiB">{}</b><span class="pct" data-w="100%">{:.0}%</span>"#,
+                snapshot.mem.ram_free_reclaimable_label(&snapshot.shown),
                 snapshot
                     .mem
-                    .ram_free_reclaimable_percent()
+                    .ram_free_reclaimable_percent(&snapshot.shown)
                     .expect("sum percent")
             ),
         ] {
@@ -1815,8 +1992,8 @@ async fn cores_render_rows_with_a_meter_and_the_smoothed_number() {
         let cores = &html[html.find(r#"class="cores-body""#).expect("cores body")..];
         let cores = &cores[..cores.find("</section>").unwrap_or(cores.len())];
         for row in [
-            r#"<div class="core-row" data-tip="Core cpu0, unit percent&#10;source: /proc/stat cpu0 line, delta&#10;1 s average shown by the meter and number" style="--value:42.4"><span class="cl">C00</span><span class="meter"></span><span class="cv"><span data-w="100">42</span><i>%</i></span></div>"#,
-            r#"<div class="core-row" data-tip="Core cpu1, unit percent&#10;source: /proc/stat cpu1 line, delta&#10;1 s average shown by the meter and number" style="--value:57.6"><span class="cl">C01</span><span class="meter"></span><span class="cv"><span data-w="100">58</span><i>%</i></span></div>"#,
+            r#"<div class="core-row" data-tip="Use of CPU core 0" style="--value:42.4"><span class="cl">C00</span><span class="meter"></span><span class="cv"><span data-w="100">42</span><i>%</i></span></div>"#,
+            r#"<div class="core-row" data-tip="Use of CPU core 1" style="--value:57.6"><span class="cl">C01</span><span class="meter"></span><span class="cv"><span data-w="100">58</span><i>%</i></span></div>"#,
         ] {
             assert!(cores.contains(row), "lacks {row} in {cores}");
         }
@@ -1865,8 +2042,7 @@ async fn cpu_gauge_says_total_and_shows_the_load_triple() {
             r#"<text class="g-label" x="54" y="78">total</text>"#,
             r#"<span>load</span><b><span class="load-cell"><span data-w="100%" data-num>50%</span>/1m</span> <span class="load-cell"><span data-w="100%" data-num>25%</span>/5m</span> <span class="load-cell"><span data-w="100%" data-num>15%</span>/15m</span></b>"#,
             r#"load <b data-w="100%" data-num>50%</b>/1m <b data-w="100%" data-num>25%</b>/5m <b data-w="100%" data-num>15%</b>/15m"#,
-            "Load average, unit percent of all cores",
-            "1, 5 and 15 minute averages divided by 64 cores",
+            r#"data-tip="Load average, percent of all cores""#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
         }
@@ -1950,7 +2126,7 @@ async fn cpu_stat_header_shows_the_temperature_where_a_sensor_reads() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let marker = format!(
-        r#"<b>{}</b></span><span class="cpu-temp" data-field="cpu-temp" data-tip="CPU temperature, unit degrees Celsius&#10;source: hwmon and thermal sysfs, m°C / 1000&#10;whole degrees, btop's sensor choice"><b data-w="100°C">45°C</b></span>"#,
+        r#"<b>{}</b></span><span class="cpu-temp" data-field="cpu-temp" data-tip="CPU temperature"><b data-w="100°C">45°C</b></span>"#,
         snapshot.cpu.frequency_label()
     );
     for html in page_and_event(&page, &fragments(&snapshot), "cpu") {
@@ -2062,8 +2238,7 @@ async fn aggregate_load_renders_in_the_gauge_and_the_header() {
         for marker in [
             r#"<span>load</span><b><span class="load-cell"><span data-w="6400%" data-num>3200%</span>/1m</span> <span class="load-cell"><span data-w="6400%" data-num>1600%</span>/5m</span> <span class="load-cell"><span data-w="6400%" data-num>960%</span>/15m</span></b>"#,
             r#"load <b data-w="6400%" data-num>3200%</b>/1m <b data-w="6400%" data-num>1600%</b>/5m <b data-w="6400%" data-num>960%</b>/15m"#,
-            "Load average, unit percent of one core",
-            "summed over all cores; 64 cores cap it at 6400%",
+            r#"data-tip="Load average, percent of one core""#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
         }
@@ -2100,14 +2275,11 @@ async fn container_page_shows_only_container_values() {
         .find(r#"<span class="chip chip-container" data-p="2" data-field="container-chip""#)
         .expect("CONTAINER chip");
     let chip = &page[start..start + page[start..].find(">").expect("chip tag end")];
-    // DEF-VIEW-74: the chip's detector and cgroup path live in its one
-    // tooltip; a title would make the browser draw a second box.
-    let cgroup = container.cgroup.expect("cgroup").display().to_string();
+    // DEF-VIEW-74: the chip has one tooltip; a title would make the browser
+    // draw a second box. ACC-VIEW-223: it says what the chip means.
     assert!(
-        chip.contains(&format!(
-            "detected by 1 /.dockerenv&#10;docker container, cgroup {cgroup}"
-        )),
-        "chip tip lacks the detector and cgroup path: {chip}"
+        chip.contains(r#"data-tip="Panels show this container, not the whole host""#),
+        "chip tip does not say what the chip means: {chip}"
     );
     assert!(
         !chip.contains(" title="),
@@ -2118,7 +2290,7 @@ async fn container_page_shows_only_container_values() {
     for html in page_and_event(&page, &events, "cpu") {
         for marker in [
             r#"<span>load</span><b><span class="load-cell"><span data-w="100%" data-num>100%</span>/1m</span> <span class="load-cell"><span data-w="100%" data-num>100%</span>/5m</span> <span class="load-cell"><span data-w="100%" data-num>100%</span>/15m</span></b>"#,
-            "divided by 2 cores",
+            r#"data-tip="Load average, percent of all cores""#,
             r#">load <b data-w="100%" data-num>100%</b>/1m <b data-w="100%" data-num>100%</b>/5m <b data-w="100%" data-num>100%</b>/15m</span>"#,
             r#">2 cores</span>"#,
             // DEF-CPU-41: the cpuset 0-3 gives four core rows, named C00 to C03.
@@ -2163,8 +2335,8 @@ async fn container_page_shows_only_container_values() {
         // the header total is the container's limit, not MemTotal.
         // DEF-VIEW-97-MEM-UNITS: the tag also names whose limit it is.
         for header in [
-            ">of 8.00 GiB (container limit)</span>",
-            r#"><span>of total <span class="meta-value">8.00 GiB</span> (container limit)</span></span>"#,
+            ">of 8.0 GiB (container limit)</span>",
+            r#"><span>of total <span class="meta-value">8.0 GiB</span> (container limit)</span></span>"#,
         ] {
             assert_eq!(
                 html.matches(header).count(),
@@ -2184,29 +2356,29 @@ async fn container_page_shows_only_container_values() {
             ],
         );
         for tip in [
-            "this container's working set",
-            "this container's reclaimable file cache",
+            "Memory this container uses",
+            "This container's file cache that can be freed",
         ] {
             assert!(html.contains(tip), "a row's tooltip lost {tip}");
         }
         // ACC-VIEW-195-MEM-SUM: 4 GiB free + 1 GiB reclaimable, of 8 GiB.
         assert!(
             html.contains(
-                r#"<span>free + reclaimable</span><b data-w="0000 MiB">5.00 GiB</b><span class="pct" data-w="100%">63%</span>"#
+                r#"<span>free + reclaimable</span><b data-w="000.0 MiB">5.0 GiB</b><span class="pct" data-w="100%">63%</span>"#
             ),
             "the sum row is not free plus reclaimable with its percent"
         );
         assert!(
-            html.contains("the container free and reclaimable rows"),
-            "the sum row's tooltip does not name its source rows"
+            html.contains("Free memory plus reclaimable cache"),
+            "the sum row's tooltip does not name its rows"
         );
         assert!(
             !html.contains(r#"data-seg="other""#),
             "other is drawn under a binding limit"
         );
         // DEF-VIEW-96-MEM-WRONG: 4 GiB memory.current - 1 GiB inactive_file.
-        assert!(html.contains("3.00 GiB"), "used is not the working set");
-        assert!(html.contains("1.00 GiB"), "cache is not inactive_file");
+        assert!(html.contains("3.0 GiB"), "used is not the working set");
+        assert!(html.contains("1.0 GiB"), "cache is not inactive_file");
         assert!(
             html.contains("IO unavailable"),
             "storage IO is not withheld"
@@ -2260,21 +2432,21 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
             assert!(!html.contains(&format!(r#"class="g-fill" data-seg="{gone}""#)));
         }
         assert!(
-            html.contains("arc: container used and reclaimable 30%, 1 s EMA"),
+            html.contains("Memory used; the arc adds reclaimable cache"),
             "the gauge tooltip does not name what the arc draws"
         );
         // DEF-VIEW-106-SWAP-UNITS: the recorded 512 MiB of 128 GiB, in GiB.
         assert!(
             html.contains(
-                r#"<span>swap</span><b>0.50 / 128 GiB</b><span class="pct" data-w="100%">0%</span>"#
+                r#"<span>swap</span><b>0.5 / 128.0 GiB</b><span class="pct" data-w="100%">0%</span>"#
             ),
             "the swap row is not in GiB with its percent"
         );
         // ACC-VIEW-193-MEM-TOTAL: both headers drop the words, the tooltip keeps
         // the scope. ACC-VIEW-196-MEM-HEADER: the table panel's states the total.
         for header in [
-            ">of 503 GiB</span>",
-            r#"><span>of total <span class="meta-value">503 GiB</span></span></span>"#,
+            ">of 503.2 GiB</span>",
+            r#"><span>of total <span class="meta-value">503.2 GiB</span></span></span>"#,
         ] {
             assert_eq!(
                 html.matches(header).count(),
@@ -2287,7 +2459,7 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
             "the header names the host total"
         );
         assert_eq!(
-            html.matches("the host's total; memory.max is unlimited")
+            html.matches(r#"data-tip="Total memory of the host""#)
                 .count(),
             2,
             "a header tooltip lost whose total it is"
@@ -2304,28 +2476,24 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
         );
         // ACC-VIEW-194-MEM-WORDS: the tooltips keep the scope the words drop.
         for tip in [
-            "this container's working set",
-            "this container's reclaimable file cache",
+            "Memory this container uses",
+            "This container's file cache that can be freed",
         ] {
             assert!(html.contains(tip), "a row's tooltip lost {tip}");
         }
         // ACC-VIEW-195-MEM-SUM: the sum row adds other reclaimable here.
         let sum_row = format!(
-            r#"<span>free + reclaimable</span><b data-w="0000 MiB">{}</b><span class="pct" data-w="100%">{:.0}%</span>"#,
-            snapshot.mem.ram_free_reclaimable_label(),
+            r#"<span>free + reclaimable</span><b data-w="000.0 MiB">{}</b><span class="pct" data-w="100%">{:.0}%</span>"#,
+            snapshot.mem.ram_free_reclaimable_label(&snapshot.shown),
             snapshot
                 .mem
-                .ram_free_reclaimable_percent()
+                .ram_free_reclaimable_percent(&snapshot.shown)
                 .expect("sum percent")
         );
         assert!(html.contains(&sum_row), "lacks {sum_row}");
         assert!(
-            html.contains("the free, reclaimable and other reclaimable rows"),
-            "the sum row's tooltip does not name its source rows"
-        );
-        assert!(
-            html.contains("not swap; swap has its own row"),
-            "the cache row does not answer whether it is swap"
+            html.contains("Free memory plus reclaimable cache"),
+            "the sum row's tooltip does not name its rows"
         );
     }
 }
@@ -2340,16 +2508,19 @@ async fn memory_strip_prints_the_table_percent_at_a_rounding_boundary() {
     let mut config = Config::load(None).expect("config");
     config.container = btop_web::collector::container::detect(&tree);
     let snapshot = recorded_snapshot_with("tests/fixtures/mem/boundary/proc", 1, config);
-    assert_eq!(snapshot.mem.ram_available_percent, Some(66.0));
-    assert_eq!(snapshot.mem.ram_free_reclaimable_percent(), Some(67.0));
+    assert_eq!(snapshot.mem.ram_available_percent, Some(67.0));
+    assert_eq!(
+        snapshot.mem.ram_free_reclaimable_percent(&snapshot.shown),
+        Some(66.0)
+    );
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     for html in page_and_event(&page, &fragments(&snapshot), "mem") {
         for marker in [
-            r#"<b data-w="100%">67%</b> available"#.to_string(),
+            r#"<b data-w="100%">66%</b> available"#.to_string(),
             format!(
-                r#"<span>free + reclaimable</span><b data-w="0000 MiB">{}</b><span class="pct" data-w="100%">67%</span>"#,
-                snapshot.mem.ram_free_reclaimable_label()
+                r#"<span>free + reclaimable</span><b data-w="000.0 MiB">{}</b><span class="pct" data-w="100%">66%</span>"#,
+                snapshot.mem.ram_free_reclaimable_label(&snapshot.shown)
             ),
         ] {
             assert!(html.contains(&marker), "lacks {marker}");
@@ -2370,10 +2541,12 @@ async fn memory_strip_prints_the_table_percent_at_a_rounding_boundary() {
         ..Snapshot::default()
     };
     std::fs::remove_dir_all(&root).expect("cleanup");
-    assert_eq!(snapshot.mem.ram_free_reclaimable_percent(), None);
+    assert_eq!(
+        snapshot.mem.ram_free_reclaimable_percent(&snapshot.shown),
+        None
+    );
     let page = String::from_utf8(get(&app(Some(snapshot), true), "/").await.2).expect("utf-8 page");
     assert!(page.contains(r#"<b data-w="100%">25%</b> available"#));
-    assert!(page.contains("source: /proc/meminfo MemAvailable"));
 }
 
 /// ACC-LAYOUT-46-ADAPTIVE-PRIORITY: every field that appears once in its
@@ -2513,7 +2686,8 @@ async fn tier_markers_sit_on_single_elements() {
 }
 
 /// ACC-LAYOUT-46-ADAPTIVE-PRIORITY: the top bar names the tiers on screen
-/// (one span per tier, its title lists the drops), bands 1-3 sit in one
+/// (one span per tier, its tooltip names the levels it hides, in one or two
+/// lines per ACC-VIEW-223-TIP-MINIMAL), bands 1-3 sit in one
 /// wrapper for the two-column form, and app.css and app.js carry the tier
 /// queries in place of the old fixed breakpoints.
 #[tokio::test]
@@ -2529,37 +2703,25 @@ async fn top_bar_names_the_tiers_and_bands_1_3_share_a_wrapper() {
         chip < bar.find(r#"id="live-chip""#).expect("live chip"),
         "the tier chip follows LIVE"
     );
-    for (tier, text) in [
-        ("tier-4", "p1-p3"),
-        ("tier-3", "p1-p2"),
-        ("tier-2", "p1"),
-        ("tier-4-gpu", "p1-p3"),
-        ("tier-full-gpu", "p1-p4"),
+    for (tier, text, hidden) in [
+        ("tier-4", "p1-p3", "p4 hidden"),
+        ("tier-3", "p1-p2", "p3 and p4 hidden"),
+        ("tier-2", "p1", "p2 to p4 hidden"),
+        ("tier-4-gpu", "p1-p3", "GPU temperature and power hidden"),
+        ("tier-full-gpu", "p1-p4", "GPU temperature and power hidden"),
     ] {
         let start = bar
-            .find(&format!(r#"<span class="up {tier}" title=""#))
+            .find(&format!(r#"<span class="up {tier}" data-tip=""#))
             .expect(tier);
-        assert!(
-            bar[start..].contains(&format!(">{text}</span>")),
-            "{tier} reads {text}"
-        );
+        let span = &bar[start..start + bar[start..].find("</span>").expect("span end")];
+        assert!(span.ends_with(&format!(">{text}")), "{tier} reads {text}");
+        assert!(span.contains(hidden), "{tier} does not name {hidden}");
     }
-    let titles = &bar[chip..];
-    for drop in [
-        "Processes tile (count graph,",
-        "CPU facts (load, user, system, pressure)",
-        "memory gauge",
-        "GPU temperature and power",
-    ] {
-        assert!(titles.contains(drop), "the tier titles do not name {drop}");
-    }
-    // DEF-VIEW-37-CORE-LABEL: core labels show at every tier.
+    // DEF-VIEW-74: one tooltip per element, none on the chip around them.
     assert!(
-        !titles.contains("core labels"),
-        "a tier drops the core labels"
+        !bar[chip..].starts_with(r#"<span class="chip chip-tier" id="tier-chip" "#),
+        "the tier chip carries its own tooltip"
     );
-    // ACC-LAYOUT-62-VERSION: the version shows at every tier.
-    assert!(!titles.contains("version"), "a tier drops the version");
 
     let tele_start = page.find(r#"<div class="tele">"#).expect("tele wrapper");
     let band_4 = page
@@ -2727,7 +2889,7 @@ async fn proc_tile_gpu_fact_follows_the_devices() {
             }
             if unreadable > 0 {
                 assert!(
-                    tile.contains("processes it could not read"),
+                    tile.contains("+ means some could not be read"),
                     "the lower bound is unexplained: {tile}"
                 );
             }
@@ -4166,7 +4328,7 @@ async fn config_offers_the_live_status_choices() {
         Some("cfg-live-status-label")
     );
     assert!(
-        config.contains(r#"<span class="cfg-label" id="cfg-live-status-label">live status</span>"#),
+        config.contains(r#"<span class="cfg-label" id="cfg-live-status-label" title="how the LIVE chip shows">live status</span>"#),
         "the row is not named live status"
     );
     let options = [("on", true), ("dimmed", false), ("off", false)];
@@ -4230,10 +4392,13 @@ async fn number_effects_retarget_continuous_motion_by_display_range() {
         page.contains(r#"data-range="100" id="cpu-total""#),
         "the CPU total does not name its 100 point display range"
     );
-    let (value, unit) = snapshot.mem.ram_used_parts().expect("memory used");
+    let (value, unit) = snapshot
+        .mem
+        .ram_used_parts(&snapshot.shown)
+        .expect("memory used");
     let memory = format!(
-        r#"<span class="stat-value" data-w="0000" data-range="{}" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#,
-        snapshot.mem.ram_used_range()
+        r#"<span class="stat-value" data-w="000.0" data-range="{}" id="mem-used">{value}</span><span class="stat-unit">{unit}</span>"#,
+        snapshot.mem.ram_used_range(&snapshot.shown)
     );
     assert!(
         page.contains(&memory),
@@ -5155,16 +5320,9 @@ async fn proc_detail_serves_one_process_from_the_recorded_tree() {
         "{first}"
     );
 
-    // DEF-VIEW-115-MEM-TIP, DEF-VIEW-123-POPUP-TIP: the three facts state the
-    // process's own figure, and memory names stat before statm.
-    assert_eq!(
-        first
-            .matches("a collapsed row in the table sums its subtree")
-            .count(),
-        3,
-        "{first}"
-    );
-    assert!(first.contains("stat field 24 × page size"), "{first}");
+    // DEF-VIEW-123-POPUP-TIP: the three facts state the process's own figure;
+    // ACC-VIEW-223-TIP-MINIMAL drops the sources DEF-VIEW-115 corrected.
+    assert_eq!(first.matches("without its children").count(), 3, "{first}");
     assert!(!first.contains("the table's Cpu%"), "{first}");
     // DEF-VIEW-124-POPUP-CHIPS: the section labels are plain text; COPY stays a
     // chip.

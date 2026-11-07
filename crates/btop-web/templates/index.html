@@ -17,18 +17,18 @@
 <header class="utility">
   <span class="brand">btop<span>-web</span></span>
   <span class="u-meta u-ver">{{ version }}</span>
-  {% if let Some(host) = host %}<span class="u-meta u-host" data-p="4" data-field="host" title="{{ host }}">{{ host }}</span>{% endif %}{% if !chips.is_empty() %}{% include "partials/agents.html" %}{% endif %}
-  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" data-window-ms="{{ window_ms }}" data-slow-ms="{{ snapshot.slow_ms }}" data-slow-seq="{{ snapshot.slow_seq }}" data-tip="Sampling interval, unit milliseconds&#10;source: btop's -u flag or btop-web.conf&#10;one tick per interval feeds every panel">{{ update_ms }} ms</span>
+  {% if let Some(host) = host %}<span class="u-meta u-host" data-p="4" data-field="host" data-tip="Host name&#10;{{ host }}">{{ host }}</span>{% endif %}{% if !chips.is_empty() %}{% include "partials/agents.html" %}{% endif %}
+  <span class="u-meta u-int" id="update-interval" data-update-ms="{{ update_ms }}" data-window-ms="{{ window_ms }}" data-slow-ms="{{ snapshot.slow_ms }}" data-slow-seq="{{ snapshot.slow_seq }}" data-tip="Time between samples">{{ update_ms }} ms</span>
   <span class="utility-right">
     <span class="u-meta u-clock hdr-clock" data-p="4" data-field="clock"></span>
-    <span class="chip chip-tier" id="tier-chip" data-tip="Priority tiers on screen, no unit&#10;source: the viewport size media queries&#10;each tier's title names the fields it drops"><span class="up tier-4" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage">p1-p3</span><span class="up tier-3" title="Priority tiers shown: P1 and P2. P4 and P3 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat facts, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (load, user, system, pressure), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns COMMAND, THREADS and USER">p1-p2</span><span class="up tier-2" title="Priority tier shown: P1. P4, P3 and P2 dropped: host, clock, storage, Processes tile (count graph, running, sleeping, waiting, zombie, threads, GPU processes, top process, 80 percent cpu and mem counts), CPU and memory stat facts, network interface, axis notes and x-axis labels, network legend now, top and total, CPU name and core count, gauge scale labels, CPU facts (load, user, system, pressure), memory total, bar and legend (used, cache, other, free, available, swap), GPU count, model, temperature and power, cores panel, process columns COMMAND, THREADS and USER, CPU gauge, memory gauge, live chip sample age, agent chip sample age{% if container.is_some() %}, CONTAINER chip{% endif %}">p1</span><span class="up tier-4-gpu" title="Priority tiers shown: P1 to P3. P4 dropped: host, clock, storage. Dropped by the GPU panel height: GPU temperature and power">p1-p3</span><span class="up tier-full-gpu" title="Priority tiers shown: P1 to P4. Dropped by the GPU panel height: GPU temperature and power">p1-p4</span></span>
+    <span class="chip chip-tier" id="tier-chip"><span class="up tier-4" data-tip="Priority levels shown; p4 hidden to fit">p1-p3</span><span class="up tier-3" data-tip="Priority levels shown; p3 and p4 hidden to fit">p1-p2</span><span class="up tier-2" data-tip="Priority level shown; p2 to p4 hidden to fit">p1</span><span class="up tier-4-gpu" data-tip="Priority levels shown; p4 hidden to fit&#10;GPU temperature and power hidden to fit">p1-p3</span><span class="up tier-full-gpu" data-tip="All priority levels shown&#10;GPU temperature and power hidden to fit">p1-p4</span></span>
     {% if let Some(chip_tip) = container %}<span class="chip chip-container" data-p="2" data-field="container-chip" data-tip="{{ chip_tip|safe }}"><span class="up">container</span></span>{% endif %}
-    <span class="chip chip-live" id="live-chip" data-tip="Sampler state, live, paused or stale&#10;age unit: seconds since the last frame&#10;source: the server's SSE frames&#10;two intervals without a frame turn STALE"><i class="lamp"></i><span class="live-word up" aria-live="polite">live</span><b class="live-age" id="sample-age" aria-hidden="true"></b></span>
+    <span class="chip chip-live" id="live-chip" data-tip="Data state and the age of the last sample"><i class="lamp"></i><span class="live-word up" aria-live="polite">live</span><b class="live-age" id="sample-age" aria-hidden="true"></b></span>
     {% if readonly %}
-    <span class="chip chip-readonly" aria-describedby="readonly-reason" data-tip="Server mode, no unit&#10;source: the server's --readonly flag&#10;signals and every write are refused"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
+    <span class="chip chip-readonly" aria-describedby="readonly-reason" data-tip="This server refuses changes and process signals"><i class="lamp"></i><span class="up">READ-ONLY</span></span>
     {% endif %}
     {% if chips.is_empty() %}
-    <button class="chip chip-copy" id="copy-json" type="button" aria-label="Copy telemetry as JSON" data-tip="Copy telemetry as JSON, unit: one document&#10;source: the newest frame this page holds">
+    <button class="chip chip-copy" id="copy-json" type="button" aria-label="Copy telemetry as JSON" data-tip="Copy telemetry as JSON">
       <svg class="copy-icon" viewBox="0 0 12 12" aria-hidden="true"><rect class="copy-sheet" x="1.5" y="3.5" width="6" height="7" rx="1"></rect><rect class="copy-sheet" x="4.5" y="1.5" width="6" height="7" rx="1"></rect><path class="copy-check" d="M2.2 6.3l2.4 2.4 5-5.2"></path></svg>
       <span class="sr-only" id="copy-status" role="status" aria-live="polite"></span>
     </button>
@@ -77,7 +77,7 @@
     <section class="panel" id="p-proc" data-panel="proc" data-slot="1" data-band="4" data-proc-view="{{ initial_proc_view }}" aria-labelledby="proc-title">
       <header class="ph">
         <h2 id="proc-title">Processes</h2>
-        <span class="meta proc-count" id="proc-count" data-tip="Shown / total processes, unit count&#10;source: this sample's process rows&#10;shown follows the view and the filter">{% if let Some(total) = snapshot.proc.total %}{% if let Some(running) = snapshot.proc.running %}{{ running }}/{% endif %}{{ total }}{% endif %}</span>
+        <span class="meta proc-count" id="proc-count" data-tip="Processes in the list now / all processes"></span>
         <span class="head-right">
           <input class="opt cfg-in filter" id="filter" type="search" placeholder="filter" aria-label="Filter processes" autocomplete="off" spellcheck="false" value="{{ initial_filter }}">
         </span>
@@ -153,7 +153,7 @@
       </div>
     </div>
     <div class="cfg-row">
-      <span class="cfg-label" id="cfg-live-status-label">live status</span>
+      <span class="cfg-label" id="cfg-live-status-label" title="how the LIVE chip shows">live status</span>
       <div class="cfg-opts" data-group="live-status" role="radiogroup" aria-labelledby="cfg-live-status-label">
         <button class="opt on" type="button" role="radio" aria-checked="true" data-value="on">on</button>
         <button class="opt" type="button" role="radio" aria-checked="false" data-value="dimmed">dimmed</button>
@@ -163,7 +163,7 @@
     {% else if *page == "gpu" %}
     <span class="cfg-label">view · this browser</span>
     <div class="cfg-row">
-      <span class="cfg-label">gpu</span>
+      <span class="cfg-label" title="GPUs the GPU panel shows">gpu</span>
       <div class="cfg-opts" data-group="gpu">
         {% for device in snapshot.gpu.devices %}<button class="opt on" type="button" role="checkbox" aria-checked="true" data-value="{{ loop.index0 }}" title="{{ device.name }}">{{ loop.index0 }}</button>{% endfor %}
       </div>
@@ -179,7 +179,7 @@
       </div>
     </div>
     <div class="cfg-row">
-      <span class="cfg-label" id="proc-level-label" title="tree rows down to this depth; a node still folds on its triangle">depth</span>
+      <span class="cfg-label" id="proc-level-label" title="tree levels shown open">depth</span>
       <div class="cfg-opts" data-group="proc-level" role="radiogroup" aria-labelledby="proc-level-label">
         <button class="opt" type="button" role="radio" aria-checked="false" data-value="1">1</button>
         <button class="opt" type="button" role="radio" aria-checked="false" data-value="2">2</button>
@@ -222,7 +222,7 @@
         <div class="cfg-panel" data-panel-id="{{ id }}">
           <span class="cfg-panel-name">{{ name }}</span>
           <button class="opt on" type="button" role="checkbox" aria-checked="true" data-act="show" aria-label="Show {{ name }}">shown</button>
-          <span class="cfg-sizes" role="radiogroup" aria-label="{{ name }} size">
+          <span class="cfg-sizes" role="radiogroup" aria-label="{{ name }} size" title="Panel size">
             <button class="opt" type="button" role="radio" aria-checked="false" data-size="s" aria-label="{{ name }} small">s</button>
             <button class="opt on" type="button" role="radio" aria-checked="true" data-size="m" aria-label="{{ name }} medium">m</button>
             <button class="opt" type="button" role="radio" aria-checked="false" data-size="l" aria-label="{{ name }} large">l</button>
@@ -265,6 +265,11 @@
 </div>
 
 <div class="tip" id="tip" role="tooltip" hidden></div>
+<div id="tips" hidden data-cpu-freq="{{ crate::collector::CPU_FREQUENCY_TIP }}" data-cpu-temp="{{ crate::collector::CPU_TEMPERATURE_TIP }}" data-load="{{ crate::collector::LOAD_TIP }}" data-load-container="{{ crate::collector::LOAD_CONTAINER_TIP }}" data-cpu-cores="{{ crate::collector::CPU_CORES_TIP }}" data-cores-count="{{ crate::collector::CORES_COUNT_TIP }}" data-core="{{ crate::collector::CORE_TIP }}" data-cores-withheld="{{ crate::collector::CORES_WITHHELD_TIP }}"
+  data-avail="{{ crate::collector::AVAILABLE_TIP }}" data-row-other="{{ crate::collector::OTHER_TIP }}" data-row-other-cache="{{ crate::collector::OTHER_CACHE_TIP }}" data-mount="{{ crate::collector::MOUNT_TIP }}" data-mount-io="{{ crate::collector::MOUNT_IO_TIP }}"
+  {%- for (set, container, limited) in crate::collector::TIP_SETS %}
+  data-total-{{ set }}="{{ crate::collector::MemSnapshot::total_tip(*container, *limited) }}" data-used-{{ set }}="{{ crate::collector::MemSnapshot::used_tip(*container) }}" data-row-used-{{ set }}="{{ crate::collector::MemSnapshot::row_tip("used", *container, *limited) }}" data-row-cache-{{ set }}="{{ crate::collector::MemSnapshot::row_tip("cache", *container, *limited) }}" data-row-free-{{ set }}="{{ crate::collector::MemSnapshot::row_tip("free", *container, *limited) }}" data-row-free-cache-{{ set }}="{{ crate::collector::MemSnapshot::row_tip("free-cache", *container, *limited) }}" data-row-swap-{{ set }}="{{ crate::collector::MemSnapshot::swap_tip(*container) }}"
+  {%- endfor %}></div>
 
 <script src="assets/app.js?v={{ asset_stamp }}"></script>
 </body>

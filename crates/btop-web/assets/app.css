@@ -119,8 +119,10 @@
      narrow face's digits advance 0.655 em against the system stack's 0.636 em,
      so a value line of digits is widest under GalaxaTron; this width is
      checked with the narrow face at all three viewports and a wider value
-     ends in its ellipsis, never in a shifted neighbour (DEF-VIEW-46-LEGEND-SHIFT) */
-  --gpu-legend-w: 224px;
+     ends in its ellipsis, never in a shifted neighbour (DEF-VIEW-46-LEGEND-SHIFT).
+     The VRAM figures' one decimal and the used figure's reserve
+     (ACC-VIEW-230-STEADY-READOUT) take 10 px of it */
+  --gpu-legend-w: 234px;
   /* the plot scale gutter: four characters of fs-9 ("100%") and the 10 px gap
      to the plot box; #p-net widens it for its rate labels. Labels right-align
      on it, so a ceiling that changes width moves no plot
@@ -446,7 +448,7 @@ select.opt option {
    DEF-VIEW-84-TIP-VISIBLE: the box is an overlay on its own surface, one
    lightness step off the panel (1.25:1 or more), with a border in the accent
    token, a drop shadow, 2 px radius like the chips, and a two-tone ramp: the
-   first line strong, the source lines muted, both 4.5:1 on that fill. */
+   first line strong, a second line muted, both 4.5:1 on that fill. */
 .tip {
   position: fixed;
   z-index: 60;
@@ -460,6 +462,8 @@ select.opt option {
   font-size: var(--fs-10);
   line-height: 1.2;
   white-space: pre-line;
+  /* a long host name or mount path wraps inside the box (DEF-VIEW-149-HOST-CUT) */
+  overflow-wrap: break-word;
   pointer-events: none;
 }
 
@@ -838,9 +842,13 @@ select.opt option {
 }
 
 /* ACC-LAYOUT-157-PANEL-ORDER: the slot carries the row width from the chosen
-   05.06 page's twelve columns (band 1 4:4:4, band 3 5:4:3, band 4 12). Band 2
+   05.06 page's twelve columns (band 1 4:4:4, band 3 4.5:4.5:3, band 4 12). Band 2
    is 4:4:4: the owner chose equal panels on 2026-10-29 so the CPU and Memory
-   gauges line up (DEF-LAYOUT-88, ACC-VIEW-163). A panel takes the width of the
+   gauges line up (DEF-LAYOUT-88, ACC-VIEW-163). Band 3's first two slots share
+   the page's 5:4 so GPU and Network are equally wide and storage keeps its 3
+   (ACC-LAYOUT-228-EQUAL-WIDTH); with one of the two not shown (data-gone, set
+   by app.js), the other keeps its 5 or 4, so storage keeps its width there
+   too. A panel takes the width of the
    slot it lands in and keeps its own content, size factor and controls; app.js
    renumbers data-slot after a drag and theme.js applies the stored order. */
 .band[data-band="1"] > .panel {
@@ -859,11 +867,18 @@ select.opt option {
   --w: 4;
 }
 
-.band[data-band="3"] > .panel[data-slot="1"] {
+.band[data-band="3"] > .panel[data-slot="1"],
+.band[data-band="3"] > .panel[data-slot="2"] {
+  --w: 4.5;
+}
+
+/* :where keeps the specificity of the rule above, so the phone tier's
+   per-panel --w still wins */
+.band[data-band="3"]:where(:has(> [data-slot="2"][data-gone])) > .panel[data-slot="1"] {
   --w: 5;
 }
 
-.band[data-band="3"] > .panel[data-slot="2"] {
+.band[data-band="3"]:where(:has(> [data-slot="1"][data-gone])) > .panel[data-slot="2"] {
   --w: 4;
 }
 
@@ -993,9 +1008,10 @@ html[data-off~="proc"] [data-panel="proc"],
   white-space: nowrap;
 }
 
-/* ACC-LAYOUT-158-PANEL-SWAP: the header is the drag handle and the panel under
-   the pointer is outlined while a drag is over it. touch-action keeps a touch
-   drag from turning into a scroll or a cancel. */
+/* ACC-LAYOUT-222-DRAG-LIVE: the header is the drag handle; the dragged panel
+   is outlined, follows the pointer above the others and lets the hit test see
+   the panel below it. touch-action keeps a touch drag from turning into a
+   scroll or a cancel. */
 .panel > .ph {
   cursor: grab;
   touch-action: none;
@@ -1014,7 +1030,9 @@ select.opt.cfg-in:where(:not(:disabled)) {
   cursor: pointer;
 }
 
-.panel[data-drop] {
+.panel[data-dragging] {
+  z-index: 1;
+  pointer-events: none;
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
@@ -3527,7 +3545,7 @@ select.opt {
   }
 
   :root {
-    --gpu-legend-w: 192px;
+    --gpu-legend-w: 202px;
     --band-min-2: calc(var(--head-h) + 17px + 2 * (var(--lh-name) + var(--lh-val) + 1px) + 12px);
     --band-min-3: calc(var(--head-h) + 60px);
   }
@@ -3593,22 +3611,67 @@ select.opt {
 
 /* drop-p2, narrow: one column; the panels of a band stack */
 @media (max-width: 599px) and (min-height: 541px) {
-  :root {
-    --share-1: 152;
-    --share-2: 150;
-    --share-3: 150;
-    --share-4: 300;
-    --band-min-1: calc(2 * (var(--head-h) + var(--tile-h) + 16px) + var(--gap));
-  }
-
   .band {
     flex-direction: column;
   }
 
-  /* ACC-LAYOUT-158: with the network in band 3, band 2 can hold only dropped
-     panels; its share then goes to band 3 so the GPU and network keep theirs */
-  .tele:has(> .band[data-band="2"][hidden]) > .band[data-band="3"] {
-    flex-grow: calc((var(--share-2) + var(--share-3)) * var(--bf));
+  /* DEF-LAYOUT-145-PHONE-BANDS: in one column a panel keeps its own height
+     share wherever a drag puts it, and a band's share is the sum of the
+     panels it holds, except a panel that carries data-gone (set by
+     syncBands in app.js). Only the P1 panels show at this tier. The shares are
+     the default heights times 3: a tile 76, GPU and network 300 split 5:4,
+     processes 300. DEF-LAYOUT-146-SMALL-PHONE: the band minimum is likewise
+     the sum of its panels' minimums, each with one gap: a tile the one-tile
+     --band-min-1, the GPU its lane reservation, the network --band-min-3
+     and the processes --band-min-4 */
+  .band:has(> [data-panel="cpu-stat"]:not([data-gone])) {
+    --ph-cpu-stat: 228;
+    --pm-cpu-stat: calc(var(--band-min-1) + var(--gap));
+  }
+
+  .band:has(> [data-panel="mem-stat"]:not([data-gone])) {
+    --ph-mem-stat: 228;
+    --pm-mem-stat: calc(var(--band-min-1) + var(--gap));
+  }
+
+  .band:has(> [data-panel="gpu"]:not([data-gone])) {
+    --ph-gpu: 500;
+    --pm-gpu: calc(var(--gpu-min, 0px) + var(--gap));
+  }
+
+  .band:has(> [data-panel="net"]:not([data-gone])) {
+    --ph-net: 400;
+    --pm-net: calc(var(--band-min-3) + var(--gap));
+  }
+
+  .band:has(> [data-panel="proc"]:not([data-gone])) {
+    --ph-proc: 900;
+    --pm-proc: calc(var(--band-min-4) + var(--gap));
+  }
+
+  .band[data-band] {
+    --share: calc(var(--ph-cpu-stat, 0) + var(--ph-mem-stat, 0) + var(--ph-gpu, 0) + var(--ph-net, 0) + var(--ph-proc, 0));
+    --band-min: calc(var(--pm-cpu-stat, 0px) + var(--pm-mem-stat, 0px) + var(--pm-gpu, 0px) + var(--pm-net, 0px) + var(--pm-proc, 0px) - var(--gap));
+  }
+
+  .band[data-band] > .panel[data-panel="cpu-stat"] {
+    --w: var(--ph-cpu-stat);
+  }
+
+  .band[data-band] > .panel[data-panel="mem-stat"] {
+    --w: var(--ph-mem-stat);
+  }
+
+  .band[data-band] > .panel[data-panel="gpu"] {
+    --w: var(--ph-gpu);
+  }
+
+  .band[data-band] > .panel[data-panel="net"] {
+    --w: var(--ph-net);
+  }
+
+  .band[data-band] > .panel[data-panel="proc"] {
+    --w: var(--ph-proc);
   }
 }
 

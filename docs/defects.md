@@ -629,6 +629,44 @@ What the panels render and how an unavailable value is drawn
   - log: 2026-11-01T10:58:30Z @kj attempted: wf_75096751-886 measured a fresh client page in both scenarios - two agents on closed loopback ports, and two live agents stopped by exact pid - in the owner's conditions; #live-chip read stale at 0.5, 2, 5 and 10 s in both, so the live-after-5-s claim in repro did NOT reproduce; the word reads live only from load to 0.3 s, the 2 x 250 ms grace armStale() gives before STALE; reason: reproduction failed at the filed times; the only live window is the designed two-interval grace
   - log: 2026-11-01T10:58:36Z @kj edited test-tags added "FUNCTIONAL"; reason: a browser measurement in client mode; no automated test yet
   - log: 2026-11-01T10:59:24Z @kj rejected: not reproduced: wf_75096751-886 measured #live-chip stale at 0.5, 2, 5 and 10 s in both filed scenarios, with both agent chips and the panels unavailable; the word reads live only from load to 0.3 s, the two-interval grace armStale() gives by design; reason: the filed persistent-LIVE claim is false; the only live window is the documented 2 x 250 ms grace
+- [x] `DEF-VIEW-148-TIP-COPIES` **Tooltip texts kept in two or three copies** - MINOR; The same tooltip text is written in Rust, in templates and in app.js (app.js near 773); a wording change in one copy leaves the others stale
+  - evidence: wf_f0a2bb17-50c verify r3: each tip text has one source; http.rs tip_texts_have_one_source_on_the_page fails on the old proc_stat.html and passes now; rendered page unchanged in 9 cases
+  - root-cause: 2026-11-06T19:40:11Z @kj tip texts were written in Rust frame code, in templates and in app.js, and proc_stat.html wrote each fact's tip twice, once per value branch
+  - repro: grep one tip text across crates/btop-web/src, templates and assets: two or three hits
+  - test-tags: UNIT
+  - log: 2026-11-06T17:47:07Z @kj added
+  - log: 2026-11-06T19:40:11Z @kj closed
+- [x] `DEF-VIEW-149-HOST-CUT` **Long host name cannot be read in full** - MINOR; The top-bar host label is cut on a narrow window and its tooltip says only Host name, so a long host name cannot be read anywhere on the page
+  - evidence: wf_f0a2bb17-50c verify: 60-character host name at 1440x900 opens one tip 'Host name / <full name>'; short name: top bar rects and pixels identical before and after; no double tips, no console errors; make ci 427 passed
+  - root-cause: 2026-11-06T19:40:19Z @kj the house tip on span.u-host held only the words Host name, and the label's former title with the value was removed by the ACC-VIEW-223-TIP-MINIMAL rewrite
+  - repro: 1101x844 or wider with a 60-character host name: the label can be cut and its tip does not show the name; below 1101 px ACC-LAYOUT-21-PRIORITY drops the label by design
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T17:47:07Z @kj added
+  - log: 2026-11-06T19:40:10Z @kj edited repro "390x844 with a 60-character host name: the label is cut and its tip does not show the name" -> "1101x844 or wider with a 60-character host name: the label can be cut and its tip does not show the name; below 1101 px ACC-LAYOUT-21 drops the label by design"; reason: my repro named 390x844, where the priority tiers hide the host label, so no tip can exist there
+  - log: 2026-11-06T19:40:10Z @kj closed
+  - log: 2026-11-06T19:40:19Z @kj root-cause updated "2026-11-06T19:40:10Z @kj the house tip on span.u-host held only the words Host name, and the label's former title with the value was removed by the ACC-VIEW-223 rewrite" -> "the house tip on span.u-host held only the words Host name, and the label's former title with the value was removed by the ACC-VIEW-223-TIP-MINIMAL rewrite"
+  - log: 2026-11-06T19:40:28Z @kj edited repro "1101x844 or wider with a 60-character host name: the label can be cut and its tip does not show the name; below 1101 px ACC-LAYOUT-21 drops the label by design" -> "1101x844 or wider with a 60-character host name: the label can be cut and its tip does not show the name; below 1101 px ACC-LAYOUT-21-PRIORITY drops the label by design"
+- [x] `DEF-VIEW-150-MIXED-TIP` **Older client page shows a tip-set name as a tooltip** - MINOR; In client mode a 1.0.4 page fed by an agent of this release reads every value but shows the bare word host, container or limit as the memory gauge tooltip, because slot 8 of the m1 record now holds the tip-set name where 1.0.4 read tip text
+  - evidence: wf_2416d8ec-8cc verify: slot 8 empty, set name third from the end where 1.0.4 never reads; HEAD --client page fed this build's host, container and limit agents shows every value and no set-name tooltip; this build reads HEAD's record; host tips unchanged; make ci and make test-client green
+  - root-cause: 2026-11-06T20:53:43Z @kj the restored m1 record put the tip-set name in slot 8, which 1.0.4's applyMemFrame writes into the memory gauge data-tip
+  - repro: serve this build's mem record to a page built from HEAD 96e3d92: memory gauge tip reads host
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T20:29:34Z @kj added
+  - log: 2026-11-06T20:53:43Z @kj closed
+- [x] `DEF-VIEW-152-LOAD-TIP` **Older client page may show the load scale word as a tooltip** - MINOR; Read from code, not yet seen: cpu record slot 12 now holds the load scale word (normalised or aggregate) and 1.0.4 app.js writes frame[12] into the CPU load tooltips, so a 1.0.4 client page fed by this release may show that word; 1.0.4 treats an empty slot 12 as load unavailable
+  - evidence: wf_cbaef826-925: reproduced, HEAD page showed normalised and aggregate as load tips; slot 12 holds the short load tip again (from LOAD_TIP and LOAD_AGGREGATE_TIP); HEAD page now shows the real tip and values; this build reads HEAD records; own page tips identical; make ci and make test-client green
+  - root-cause: 2026-11-06T21:34:34Z @kj the DEF-PERF-147-TIP-FRAMES change put the scale word in c1 slot 12, which 1.0.4 writes into both load tips and reads as load unavailable when empty
+  - repro: serve this build's cpu record to a page built from HEAD 96e3d92: CPU load tip reads normalised
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T20:53:47Z @kj added; reason: the empty-slot constraint bounds any fix
+  - log: 2026-11-06T21:34:34Z @kj closed
+- [x] `DEF-VIEW-153-JUMPY-READOUT` **Live readouts jump between samples** - MEDIUM; Network rate readouts change every 250 ms sample and their decimal point and unit move (20.8 KiB/s, 428 KiB/s, 1.60 MiB/s), so the number cannot be read; other live counters do the same; the plots are fine. Likely cause: readouts show the raw per-sample rate while plots use the 1 s EMA in chart.rs
+  - evidence: ACC-VIEW-230-STEADY-READOUT closed by wf_683ea6bd-4ff: EMA at M, fixed decimal point, unit hysteresis; eth0 readout unit switches per minute at M 0 against 20 on 1.0.4 in the same 60 s
+  - root-cause: 2026-11-06T23:11:36Z @kj readouts printed the raw 250 ms sample in three significant digits with a unit step at 1024, so a 1 s periodic sender (eth0 upload 1.9 MiB/s one tick in four) flipped KiB/s and MiB/s about twice a second
+  - repro: 1440x900, Network panel with mixed traffic: DOWNLOAD and UPLOAD values change format several times a second
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T21:00:21Z @kj added; reason: the two causes, raw value and moving format, both shape the fix
+  - log: 2026-11-06T23:11:36Z @kj closed
 
 ## Process collection `PROC`
 
@@ -711,6 +749,29 @@ Recorded fixtures that stand in for the host
   - root-cause: 2026-10-31T15:12:25Z @kj The test asserts elapsed time under 250 ms after a 500 ms timeout has already bounded the same wait. ACC-PERF-136-SLEEP states no 250 ms limit, so the assert adds a limit on host speed that the criterion does not ask for.
   - log: 2026-10-31T15:12:25Z @kj added; reason: the text quotes the failure and the root cause compares the test with its criterion
   - log: 2026-10-31T15:20:20Z @kj closed; reason: states the removal, the proof the test can still fail and the repeat runs
+- [x] `DEF-TEST-143-EXIT-DEADLINE` **e2e exit check fails under host load** - MINOR; e2e::no_flag_negates_or_restates_the_read_only_mode failed once: --no-readonly did not exit in 10 s at load average about 31; by hand it exits in 6 ms and the rerun passed; likely cause: run_env gives a child 10 s, too short when the host is loaded
+  - evidence: wf_6ce1c026-f7b: run_env writes child output to files; verifier reproduced the block on an 8192 B pipe and 4096 B pipe, not at 16384 B; 20 of 20 e2e runs passed at load 26-29; make ci 426 passed, 0 failed, 4 ignored
+  - root-cause: 2026-11-06T15:23:02Z @kj run_env read the child's piped stdout and stderr only after exit; past the user's pipe-user-pages-soft limit a new pipe holds 2 pages (8192 B), the 4422-byte usage text does not fit and the child blocks in anon_pipe_write until the 10 s deadline
+  - repro: make ci while the host load average is about 30
+  - test-tags: INTEGRATION
+  - log: 2026-11-06T15:10:41Z @kj added
+  - log: 2026-11-06T15:23:02Z @kj closed
+- [x] `DEF-TEST-144-XDG-COLLIDE` **e2e start and run_env share XDG directories** - MINOR; start() and run_env() both name their XDG directory run-N from separate counters starting at 0, so a run_env call clears the config directory of a server start() is running in a parallel test
+  - evidence: wf_7daecf00-dc5: run_env names its directory run-env-N; verifier listed every xdg_home and xdg_path name, none shared; 10 of 10 e2e runs passed; make ci 426 passed, 0 failed, 4 ignored
+  - root-cause: 2026-11-06T15:26:29Z @kj start() and run_env() formatted the same run-N name from two counters that both start at 0, and xdg_home clears the directory before use
+  - repro: read crates/btop-web/tests/e2e.rs start() line 146 and run_env() line 205: both call xdg_home(run-N)
+  - test-tags: INTEGRATION
+  - log: 2026-11-06T15:23:02Z @kj added
+  - log: 2026-11-06T15:26:29Z @kj closed
+- [x] `DEF-TEST-151-INTERVAL-TIMING` **Sampler interval test fails under host load** - MINOR; collector::tests::sampler_follows_a_new_update_interval failed once with 75.8 ms against its 250 ms minimum while a live GPU test ran; likely cause: the test starts its clock when it observes the 300 ms snapshot, not when the sampler published it, so a late wake shortens the measured gap
+  - evidence: wf_cbaef826-925 fix round 1: the test runs on tokio's paused clock (start_paused, tokio test-util dev feature), so the gap is the sampler's timer period; under a load that fails the old test 11/30 it passed 30/30; fails 20/20 when the sampler keeps 100 ms
+  - root-cause: 2026-11-06T21:34:35Z @kj the test started its clock when its task saw the 300 ms snapshot while the next tick is an absolute deadline, so a late wake shortened the measured gap by the delay: 200 ms delay gave 97-100 ms
+  - repro: make ci while other tests load the host
+  - test-tags: UNIT
+  - log: 2026-11-06T20:53:43Z @kj added
+  - log: 2026-11-06T21:34:35Z @kj closed
+  - log: 2026-11-06T22:21:39Z @kj edited evidence "wf_cbaef826-925: the test measures between the sampler's own sampled_at times; 298.6-300.3 ms under 100 and 200 ms delays; fails 5 of 5 when the sampler keeps 100 ms; 40 of 40 passed at load 85.6; make ci green" -> "wf_cbaef826-925 fix round 1: the test runs on tokio's paused clock (start_paused, tokio test-util dev feature), so the gap is the sampler's timer period; under a load that fails the old test 11/30 it passed 30/30; fails 20/20 when the sampler keeps 100 ms"; reason: the first fix (sampler's sampled_at times) still failed 10/30 when the test and sampler shared one starved CPU; a parallel run of the same workflow replaced it
+  - log: 2026-11-06T22:21:39Z @kj two runs of wf_cbaef826-925 ran at once after a session interruption; review round 6 saw the sampled_at version, so the paused-clock version goes to review round 7
 
 ## Libraries `LIB`
 
@@ -840,6 +901,29 @@ Page fit, density and use of space
   - root-cause: 2026-10-31T00:09:32Z @kj The sampler drops gpu_latest when it parks, so the page's first frames carry no GPU device
   - log: 2026-10-31T00:09:32Z @kj added
   - log: 2026-10-31T16:22:26Z @kj closed; reason: measured on both builds
+- [x] `DEF-LAYOUT-145-PHONE-BANDS` **Phone layout clips a panel dragged into a short band** - MEDIUM; At 390x844 band heights follow band number (--share-1..4, app.css near 3598) while theme.js assigns bands by list position, so a drag that moves a tall panel such as GPU or Network into a short band clips its readouts until Reset layout
+  - evidence: wf_ee16d165-f59: phone shares now follow the panels a band holds; 0 of 50 single-panel moves clip at 390x844; default phone heights and 1440x900, 1024x768, 844x390 layouts unchanged; make ci green
+  - root-cause: 2026-11-06T16:42:41Z @kj in the one-column phone tier a band's height share came from its band number (--share-1..4) and panels split it by slot width, while theme.js assigns bands by list position, so GPU dragged into band 1 got a 152 share split 4:4:4 (50.7 px)
+  - repro: 390x844: drag the GPU header to the first place; GPU readouts clipped
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T15:59:38Z @kj added
+  - log: 2026-11-06T16:42:41Z @kj closed
+  - log: 2026-11-06T16:42:41Z @kj residual below the bar's 390x844 floor: at 375x667 and 360x640, 6 of 20 moves still clip up to 14.9 px (11 of 20, 28.1 px before); --band-min-N still follows band number
+- [x] `DEF-LAYOUT-146-SMALL-PHONE` **Small phones clip a panel dragged out of the first row** - MEDIUM; At 375x667 and 360x640, 6 of 20 single drags clip a panel by up to 14.9 px: band minimum heights --band-min-N still follow band number, so a lone tile left in band 1 keeps a two-tile 141 px minimum
+  - evidence: wf_f0a2bb17-50c: band minimum is the sum of per-panel minimums of panels shown; clipped single drags 375x667 6/20 to 0/20, 360x640 6/20 to 0/20, 390x844 0/20; default rectangles unchanged at 7 viewports except phone band 3 minimum 101 to 188 px
+  - root-cause: 2026-11-06T19:40:10Z @kj the phone band minimum came from the band number (--band-min-1 a two-tile 141 px, band 4 120 px, band 3 max of network and GPU) while panels move between bands by drag
+  - related: DEF-LAYOUT-145-PHONE-BANDS
+  - repro: 375x667: drag the CPU tile out of the first row; a panel in the first or third row clips
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T17:47:07Z @kj added
+  - log: 2026-11-06T19:40:10Z @kj closed
+- [x] `DEF-LAYOUT-154-BYTE-TAIL` **Mount free value moves while its average decays to 0** - MINOR; When a mount's free space falls to 0 the smoothed value prints in Byte for about 4 s, wider than the 000.0 MiB reserve, so the free row's percent moves about 6 px left; the owner chose to reserve 000.0 Byte on every mount and GPU memory value
+  - evidence: wf_83e6163e-4e7: mount and GPU memory values reserve 000.0 Byte; with 999.9 Byte forced at 1440x900, 1024x768 and 390x844 nothing is clipped and the page does not scroll; memory rows keep 000.0 MiB and moved 0 px with Byte forced; make ci 430 passed, test-client 4/4
+  - root-cause: 2026-11-07T12:32:15Z @kj the smoothed free space decays through values under 1 KiB that print in Byte, the widest unit word, while the reserve was 000.0 MiB
+  - repro: fill a mount to 0 free at smoothing M: the free row's percent shifts left for about 4 s
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-07T12:05:16Z @kj added
+  - log: 2026-11-07T12:32:15Z @kj closed
 
 ## Graphs and sparklines `GRAPH`
 
@@ -1070,6 +1154,27 @@ Palette tokens, variants and contrast across the shipped pairs
   - test-tags: MANUAL
   - log: 2026-10-27T05:55:54Z @kj added
   - log: 2026-10-27T07:29:40Z @kj closed
+- [x] `DEF-DOCS-155-CORE-EMA` **Design notes put the core rows on the plots' 1 s average** - MINOR; docs/design/notes.md lines 397, 433, 528 and 708 say the core rows draw the plots' 1 s EMA; since ACC-VIEW-230-STEADY-READOUT, Ema::smooth (collector/mod.rs near 1966) gives them the CONFIG smoothing average; only the gauge arcs keep the 1 s history
+  - evidence: wf_83e6163e-4e7 verify r2: notes.md lines 397, 433, 528, 708, 943, 970 and 1106 give the core rows the CONFIG smoothing EMA and the gauge arcs the 1 s history, matching Ema::smooth and cpu.rs; grep finds no other core-row 1 s claim
+  - root-cause: 2026-11-07T12:32:15Z @kj the notes were written when the core rows read History's 1 s EMA; ACC-VIEW-230-STEADY-READOUT moved them to the CONFIG smoothing EMA and only the user-facing docs were updated
+  - repro: read notes.md line 397 against collector/mod.rs Ema::smooth
+  - test-tags: MANUAL
+  - log: 2026-11-07T12:05:20Z @kj added
+  - log: 2026-11-07T12:32:15Z @kj closed
+- [x] `DEF-DOCS-156-GAUGE-RAW` **Design notes give the CPU gauge number btop's raw value** - MINOR; docs/design/notes.md lines 381, 384, 387, 431, 705 and 886 say the CPU gauge's hollow number, its aria-label and #cpu-total show btop's raw value; since ACC-VIEW-230-STEADY-READOUT, Ema::smooth (collector/mod.rs near 1947) gives them the CONFIG smoothing average; only the gauge arc keeps the 1 s history; found by review round 9
+  - evidence: wf_60b879aa-687 verify r2 PASS: notes.md lines 337-939 (12 lines) match a readout list built from the code: readouts on the CONFIG smoothing average, arcs and plots on the 1 s EMA; docs-only gate: nothing outside the notes changed, no test reads notes.md
+  - repro: read notes.md line 431 against collector/mod.rs Ema::smooth and cpu_gauge.html
+  - test-tags: MANUAL
+  - root-cause: 2026-11-07T12:40:24Z @kj DEF-DOCS-155-CORE-EMA was scoped to the core-row and arc sentences; the sentences about the gauge number were not searched
+  - log: 2026-11-07T12:40:24Z @kj added
+  - log: 2026-11-07T13:01:37Z @kj closed
+- [x] `DEF-DOCS-157-NOTES-FORMAT` **Design notes name btop's humanizer for readouts that collector::Shown prints** - MINOR; docs/design/notes.md line 598 and section 12.2 rows 944, 948, 955 say sizes and rates print through btop's humanizer, which collector::Shown replaced (one decimal, unit up at 1000, down below 800); line 972 says legend strings truncate; section 12.4 lacks the ACC-VIEW-230-STEADY-READOUT divergence; line 337 omits the unsmoothed process table and Processes tile; test gauge_arcs_draw_the_ema_and_readouts_stay_raw names raw; found by review round 10
+  - evidence: wf_ee9f3351-8a2 verify r3 PASS: every readout sentence of notes.md matches a code-built list (value source, number format, smoothing scope); section 12.4 states the divergence; test renamed to gauge_arcs_draw_the_ema_and_readouts_print_the_snapshot, assertions unchanged; make ci 430 passed, 0 failed
+  - repro: read notes.md line 598 against storage.html and collector::Shown::bytes
+  - test-tags: MANUAL
+  - root-cause: 2026-11-07T13:15:50Z @kj the DEF-DOCS-155 and DEF-DOCS-156 passes checked only where each readout value comes from; number format and the unsmoothed readouts were never checked
+  - log: 2026-11-07T13:15:50Z @kj added; reason: the text lists six sites found by one review round
+  - log: 2026-11-07T13:59:24Z @kj closed
 
 ## Performance `PERF`
 
@@ -1102,4 +1207,12 @@ CPU, memory and wire cost of the server and the page against their recorded base
   - log: 2026-10-30T14:16:39Z @kj added
   - log: 2026-10-30T21:36:20Z @kj root-cause updated "2026-10-30T14:16:39Z @kj cause under investigation" -> "panel replacement on every frame was 66 percent of the tab and a chart scroll that never reached the compositor was 32 percent; forced layout in fitGauge added layouts at 76.6 per s; the batch attributes 94 percent of the rise since the closure to host load, which its verifier did not re-measure"; reason: states the measured shares of batch b9
   - log: 2026-10-30T21:36:20Z @kj closed; reason: states the accepted frame-rate verdict
+- [x] `DEF-PERF-147-TIP-FRAMES` **Constant tooltip texts sent in every frame** - MINOR; Tooltip texts that never change travel in the per-sample data frames (frame.rs near 233, the mem frame), a few hundred bytes per frame for every client
+  - evidence: wf_f0a2bb17-50c verify r3: cpu and mem records carry no tip text, -24 bytes per cpu frame and -262 per mem frame on the fixture, -392 per live mem record; /events.json unchanged; make ci and make test-client green
+  - root-cause: 2026-11-06T19:40:11Z @kj MemSnapshot tip helpers fed constant texts into every cpu and mem frame record so app.js could rewrite data-tip each sample
+  - repro: read one /events data frame: it carries constant tip strings
+  - test-tags: UNIT
+  - log: 2026-11-06T17:47:07Z @kj added
+  - log: 2026-11-06T19:40:11Z @kj closed
+  - log: 2026-11-06T21:34:34Z @kj DEF-VIEW-152-LOAD-TIP put the 34-character load tip back in c1 slot 12, +24 bytes per cpu frame, because 1.0.4 shows load values only when slot 12 holds text
 

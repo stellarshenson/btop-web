@@ -59,6 +59,7 @@ fn fixture_snapshot() -> Snapshot {
             slow_ms: config.proc_refresh_ms.max(config.update_ms),
             slow_seq: 1,
             container: false,
+            shown: Default::default(),
         };
     }
     snapshot

@@ -45,8 +45,6 @@
 
 use std::path::{Path, PathBuf};
 
-use askama::filters::{Html, escape};
-
 use super::sys_root;
 
 /// The detection result, fixed for the process lifetime.
@@ -63,21 +61,10 @@ pub struct Container {
 }
 
 impl Container {
-    /// The CONTAINER chip's tooltip: scope, source, detector and cgroup path
-    /// on the four short `&#10;` lines ACC-VIEW-80 allows. The browser title
-    /// that drew a second box beside it is gone (DEF-VIEW-74), so the
-    /// detector and the path move here.
+    /// The CONTAINER chip's tooltip: what the chip means, in one line
+    /// (ACC-VIEW-223-TIP-MINIMAL).
     pub fn tip(&self) -> String {
-        let cgroup = self.cgroup.as_ref().map_or_else(
-            || "unavailable".to_string(),
-            |path| path.display().to_string(),
-        );
-        format!(
-            "Container scope, no unit&#10;source: this container's cgroup v2&#10;detected by {}&#10;{} container, cgroup {}",
-            escape(&self.signal, Html).unwrap(),
-            escape(&self.runtime, Html).unwrap(),
-            escape(&cgroup, Html).unwrap()
-        )
+        "Panels show this container, not the whole host".to_string()
     }
 }
 
@@ -284,12 +271,6 @@ mod tests {
         assert_eq!(found.signal, "1 /.dockerenv");
         assert_eq!(found.cgroup, Some(fixture("container/sys/fs/cgroup")));
         assert!(found.own_netns);
-        assert!(
-            found.tip().contains("detected by 1 /.dockerenv"),
-            "{}",
-            found.tip()
-        );
-        assert!(found.tip().contains("cgroup "), "{}", found.tip());
     }
 
     #[test]
@@ -364,11 +345,6 @@ mod tests {
         assert!(found.signal.starts_with("7 "));
         // No 0:: line: container mode with every cgroup metric unavailable.
         assert_eq!(found.cgroup, None);
-        assert!(
-            found.tip().contains("cgroup unavailable"),
-            "{}",
-            found.tip()
-        );
     }
 
     #[test]

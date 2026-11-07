@@ -394,25 +394,51 @@ The README explains the product and shows both themes
   - mechanism: 2026-10-25T15:15:34Z @kj numbered sections, a commands table and a status line refreshed whenever a gate or a count moves
   - log: 2026-10-25T15:15:34Z @kj added
   - log: 2026-10-26T18:59:43Z @kj closed
-- [x] `ACC-DOCS-85-README-TERSE` **README in the terse technical style** - MEDIUM; README.md follows the markdown-editing technical-documentation form: a short overview, then declarative bullets and tables, one fact each; at most 1,500 words (3,792 on 2026-10-28); every command, flag, endpoint and path a user needs stays, and every statement matches the code
+- [x] `ACC-DOCS-85-README-TERSE` **README in the terse technical style** - MEDIUM; README.md and docs/usage.md follow the markdown-editing technical-documentation form: a short overview, then declarative bullets and tables, one fact each; README at most 1,500 words (3,792 on 2026-10-28); every command, flag, endpoint and path a user needs stays in one of the two, and every statement matches the code
   - evidence: README.md is 1300 words (wc -w), terse form with a grouped overview; verifier round 3 pass with no findings; applied from tmp/workflows/btop-web-readme/README.draft.md
   - test: wc -w README.md; check each command and path against the Makefile and the code
   - test-tags: MANUAL
   - log: 2026-10-28T14:23:25Z @kj added
   - log: 2026-10-28T16:06:23Z @kj closed
-- [x] `ACC-DOCS-86-SMOOTH-SCROLL` **Smooth graph scrolling documented** - MEDIUM; the README explains, in a short section, how the graphs scroll continuously while the sampler runs only every 250 ms: what the server sends per tick, what the browser animates between ticks, and what that saves; it names the code that does it
+  - log: 2026-11-06T15:59:38Z @kj amended text "README.md follows the markdown-editing technical-documentation form: a short overview, then declarative bullets and tables, one fact each; at most 1,500 words (3,792 on 2026-10-28); every command, flag, endpoint and path a user needs stays, and every statement matches the code" -> "README.md and docs/usage.md follow the markdown-editing technical-documentation form: a short overview, then declarative bullets and tables, one fact each; README at most 1,500 words (3,792 on 2026-10-28); every command, flag, endpoint and path a user needs stays in one of the two, and every statement matches the code"; reason: ACC-DOCS-226: the owner asked for a simple README; detail moved to docs/usage.md
+  - log: 2026-11-06T17:47:08Z @kj owner kept the amendment naming docs/usage.md (2026-11-06)
+- [x] `ACC-DOCS-86-SMOOTH-SCROLL` **Smooth graph scrolling documented** - MEDIUM; docs/usage.md explains, in a short section, how the graphs scroll continuously while the sampler runs only every 250 ms: what the server sends per tick, what the browser animates between ticks, and what that saves; it names the code that does it
   - evidence: one section states the 250 ms sampling, the 1 s EMA and PCHIP, nothing moving between frames, and the measured rejection of between-tick motion; verifier round 3 pass; tmp/workflows/btop-web-readme/checkpoints/verify-3.json
   - test: read the section; each claim points at code that does it
   - test-tags: MANUAL
   - log: 2026-10-28T14:23:25Z @kj added
   - log: 2026-10-28T16:06:23Z @kj closed
-- [x] `ACC-DOCS-185-PERF-CLAIM` **README states the performance case with measurements** - MEDIUM; the README states the monitor is optimised for performance and gives the measured evidence: one shared sampler, the sampler parked with no viewer, the server tick cost, the browser tab cost and the frame rate; every number is measured on the current tree, not estimated
+  - log: 2026-11-06T15:59:38Z @kj amended text "the README explains, in a short section, how the graphs scroll continuously while the sampler runs only every 250 ms: what the server sends per tick, what the browser animates between ticks, and what that saves; it names the code that does it" -> "docs/usage.md explains, in a short section, how the graphs scroll continuously while the sampler runs only every 250 ms: what the server sends per tick, what the browser animates between ticks, and what that saves; it names the code that does it"; reason: ACC-DOCS-226: the owner asked for a simple README; the section moved to docs/usage.md unchanged
+  - log: 2026-11-06T17:47:08Z @kj owner kept the amendment naming docs/usage.md (2026-11-06)
+- [x] `ACC-DOCS-185-PERF-CLAIM` **README states the performance case with measurements** - MEDIUM; docs/usage.md states the monitor is optimised for performance and gives the measured evidence: one shared sampler, the sampler parked with no viewer, the server tick cost, the browser tab cost and the frame rate; every number is measured on the current tree, not estimated
   - evidence: b9-verify: README line 43 holds the owner's words; every Performance figure within 20 percent by median, renderer 11.8 s against 12.06 s over 15 windows, server tick 4.2 ms against 4.167 ms
   - test: the numbers are re-measured on the built page before the sentence is written; the method and the raw figures sit in the batch evidence
   - test-tags: MANUAL
   - mechanism: 2026-10-30T10:36:31Z @kj a short Performance section after What it shows, one claim per sentence, the method named
   - log: 2026-10-30T10:36:31Z @kj added
   - log: 2026-10-30T21:36:26Z @kj closed
+  - log: 2026-11-06T15:59:38Z @kj amended text "the README states the monitor is optimised for performance and gives the measured evidence: one shared sampler, the sampler parked with no viewer, the server tick cost, the browser tab cost and the frame rate; every number is measured on the current tree, not estimated" -> "docs/usage.md states the monitor is optimised for performance and gives the measured evidence: one shared sampler, the sampler parked with no viewer, the server tick cost, the browser tab cost and the frame rate; every number is measured on the current tree, not estimated"; reason: ACC-DOCS-226: the owner asked for a simple README; the section moved to docs/usage.md unchanged
+  - log: 2026-11-06T17:47:08Z @kj owner kept the amendment naming docs/usage.md (2026-11-06)
+- [x] `ACC-DOCS-224-README-PURPOSE` **README states the purpose** - MEDIUM; README says near the top that btop-web is for live monitoring of critical systems, as btop is, but in a web browser
+  - evidence: README line 11: btop-web is for live monitoring of critical systems, as btop is, but in a web browser
+  - test: read the README's first paragraph: it names live monitoring of critical systems, like btop, in a browser
+  - test-tags: MANUAL
+  - log: 2026-11-06T13:38:24Z @kj added
+  - log: 2026-11-06T15:12:06Z @kj closed
+- [x] `ACC-DOCS-226-README-SIMPLE` **README is simple** - MEDIUM; README holds only what btop-web is, install, run and the main flags, with links for the rest; badges stay; detail it drops that no other file holds moves to docs/usage.md
+  - evidence: README 59 lines, was 312: purpose, install, run, flags, licence; badges identical to HEAD; every dropped fact found in docs/usage.md or another tracked file; all links and anchors resolve
+  - related: ACC-DOCS-224-README-PURPOSE
+  - test: read the README top to bottom in under 2 minutes; every removed fact is in docs/usage.md or another file
+  - test-tags: MANUAL
+  - log: 2026-11-06T13:38:46Z @kj added
+  - log: 2026-11-06T15:12:06Z @kj closed
+  - log: 2026-11-06T17:43:03Z @kj owner keeps relative README links; README now ships to crates.io (Cargo.toml readme key), check its screenshot and links there after the next publish
+- [x] `ACC-DOCS-227-README-JOKE` **README carries one self-deprecating remark** - LOW; README carries one short self-deprecating remark about btop-web, set in italic
+  - evidence: README line 13, the one italic sentence: btop-web lists every process that uses your CPU, and when your browser runs on the same machine, the btop-web tab is one of them
+  - test: README has one italic sentence that jokes about btop-web itself
+  - test-tags: MANUAL
+  - log: 2026-11-06T13:38:46Z @kj added
+  - log: 2026-11-06T15:12:06Z @kj closed
 
 ## Safety and controls `SAFE`
 
@@ -940,6 +966,7 @@ What the panels render and how unavailable values are drawn
   - log: 2026-10-28T14:05:13Z @kj added
   - log: 2026-10-28T18:03:55Z @kj closed
 - [x] `ACC-VIEW-80-STAT-TIPS` **Tooltip on every stat** - MEDIUM; every stat on the page (number, gauge, bar, chip) shows a tooltip on hover: what the value is, its unit and source, and a few details the panel does not show; about 4 short lines at most; it stays while the value updates and does not cover the hovered value
+  - overridden-by: ACC-VIEW-223-TIP-MINIMAL
   - evidence: 164 of 164 stat anchors at 1440x900 and 57 of 57 at 390x844 name value, unit and source, at most 4 lines, clear of the stat and of any chart; 26 stayed through two live frames
   - test: hover each stat in every panel at 1440x900; a tooltip names the value, unit and source, stays through two updates, and has at most 4 lines
   - test-tags: FUNCTIONAL
@@ -1019,6 +1046,7 @@ What the panels render and how unavailable values are drawn
   - log: 2026-10-28T21:53:35Z @kj added
   - log: 2026-10-29T21:01:55Z @kj closed
 - [x] `ACC-VIEW-111-TIP-EXPLAIN` **A terse stat explains itself in the standard tooltip** - MEDIUM; Every terse stat explains itself in the house tooltip, shown 3 s after the pointer rests on it and placed at the pointer: what the number counts, its unit and its source in plain words; the CPU footer's load values are the first, naming tasks runnable or blocked and the 1, 5 and 15 minute spans
+  - overridden-by: ACC-VIEW-223-TIP-MINIMAL
   - evidence: wf_68539a2e-1ce verify: 117 tip anchors cover every terse stat; the tip opens at the 1.5 s wait set by ACC-VIEW-168, which supersedes the 3 s here; longest tip 176 chars, no clip at 390x844
   - test: hover the CPU load footer for 3 s; the tooltip names the metric, the spans and the source
   - log: 2026-10-28T21:56:56Z @kj added
@@ -1127,6 +1155,7 @@ What the panels render and how unavailable values are drawn
   - log: 2026-10-29T07:43:13Z @kj added
   - log: 2026-10-29T07:43:20Z @kj rejected: owner reclassified it as a defect
 - [x] `ACC-VIEW-161-MEM-SIZE` **A three-digit memory value drops its decimal** - MEDIUM; At stat size a memory value keeps one decimal only while its integer part has fewer than three digits: 23.8 GiB today, 100 GiB and 123 GiB at three, so the value and its unit never exceed the space the gauge readout and the Memory tile reserve.
+  - overridden-by: ACC-VIEW-230-STEADY-READOUT
   - evidence: 23.8 and 99.9 GiB keep one decimal, 100.0 and 123.4 drop it; gauge readout and Memory tile stay inside their boxes at 1440x900, 1024x768 and 390x844; cells, legends and tooltips keep btop's form
   - test: render memory used at 23.8, 99.9, 100.0 and 123.4 GiB: the first two carry one decimal and the last two none; the gauge readout and the Memory tile never overflow their box at 1440x900, 1024x768 and 390x844; every other memory label keeps its usual form
   - test-tags: UNIT, FUNCTIONAL
@@ -1474,6 +1503,40 @@ What the panels render and how unavailable values are drawn
   - log: 2026-10-31T20:30:38Z @kj mechanism overridden; reason: the verifier saw 66 beside 67 in 93 of 986 frames with one collector change alone
   - log: 2026-10-31T20:30:38Z @kj verify failed on wf_9015f6e7-b38: strip 66 beside table 67 in 93 of 986 frames, two roundings; stage added so the strip prints the table's percent
   - log: 2026-10-31T20:49:38Z @kj closed; reason: evidence names the frames, the live reading and the suite
+- [x] `ACC-VIEW-223-TIP-MINIMAL` **Tooltips are minimal** - HIGH; Every tooltip, house tooltip and native title alike, says what the element is in the fewest plain words: one line, two at most; a unit only where the element does not show it; no source, formula or mechanism; every element a new user cannot name has one
+  - evidence: wf_2bca33fb-4c4 verify r3: 265 tip anchors, 207 distinct rendered texts, none over 2 lines or 90 characters, none naming a source, kernel path, library or field name; no element shows two tips; tip opens at 1.5 s
+  - overrides: ACC-VIEW-80-STAT-TIPS
+  - overrides: ACC-VIEW-111-TIP-EXPLAIN
+  - test: hover every tooltip anchor at 1440x900: each tip is at most 2 lines and names what the element is
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T13:38:24Z @kj added
+  - log: 2026-11-06T15:12:06Z @kj closed
+- [x] `ACC-VIEW-225-PROC-TIP` **Processes count tooltip says what it is** - MEDIUM; The tooltip on the Processes header count XX/YY says in one short line what the two numbers are: processes in the list now / all processes
+  - evidence: wf_2bca33fb-4c4 verify r3: filter bash reads 20/209 with 20 visible rows; views all, top, tree match visible rows; 1.5 s hover shows 'Processes in the list now / all processes' on one line at 1440x900 and 390x844; first paint empty until app.js fills it
+  - test: hover the Processes header count 1.5 s: one line names both numbers
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T13:38:28Z @kj added
+  - log: 2026-11-06T15:12:06Z @kj closed
+- [x] `ACC-VIEW-229-READOUT-CONCEPTS` **Concepts for steady live readouts** - HIGH; The owner gets a concept board comparing readout smoothing (raw, EMA, adaptive 1 euro filter, Kalman) and number formats (fixed decimals, unit hysteresis) on recorded traffic, for network and other counters; plots stay as they are; the chosen concept is applied to every live readout
+  - evidence: board tmp/preview/steady-readouts/index.html, 8 cards C0-C7 on a 999-tick live trace, filters checked in Python; owner comment on C3: good, but the EMA can span a longer time, set in settings
+  - related: DEF-VIEW-153-JUMPY-READOUT
+  - test: open the board: each concept replays the same recorded trace at 250 ms and names its filter and format
+  - test-tags: MANUAL
+  - log: 2026-11-06T21:00:21Z @kj added
+  - log: 2026-11-06T21:38:29Z @kj board handed over: tmp/preview/steady-readouts/index.html, 8 cards C0-C7 on a 999-tick live trace; awaiting the owner's pick
+  - log: 2026-11-06T21:39:46Z @kj closed
+- [x] `ACC-VIEW-230-STEADY-READOUT` **Live readouts are smoothed and keep their decimal point** - HIGH; Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) shows an EMA of its samples (concept C3); CONFIG has a smoothing setting S, M, L (time constants 1, 2 and 4 s), default M; byte and rate values show one decimal in tabular figures with a fixed decimal point and switch unit up at 1000 and down below 800 of the lower unit; percent values keep their format; /events.json stays raw
+  - evidence: wf_683ea6bd-4ff: sampler-side EMA, CONFIG smoothing S/M/L (1/2/4 s, M default, btop-web.conf); one decimal, tabular, fixed decimal point within 0.02 px, unit hysteresis 1000/800 kept per series in collector::Shown; eth0 unit switches/min at M 0 vs 20 on 1.0.4; /events.json raw; mixed-release slots 0 failed; make ci 430 passed, test-client 4/4
+  - related: DEF-VIEW-153-JUMPY-READOUT
+  - related: ACC-VIEW-229-READOUT-CONCEPTS
+  - overrides: ACC-VIEW-161-MEM-SIZE
+  - test: 1440x900 live traffic: the Network readouts change unit at most a few times a minute and the decimal point never moves; CONFIG 4 s slows them further; /events.json rates equal the raw samples
+  - test-tags: FUNCTIONAL, UNIT
+  - log: 2026-11-06T21:39:46Z @kj added; reason: owner picked concept C3 with a longer EMA in settings; scope, defaults and exclusions must be stated for the implementer
+  - log: 2026-11-06T21:40:07Z @kj amended text "Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) shows the EMA of its samples with a time constant chosen in CONFIG (1, 2 or 4 s, default 2 s); byte and rate values use one decimal, tabular figures and a fixed decimal point, and switch unit up at 1000 and down below 800 of the lower unit; percent values keep their format; /events.json stays raw" -> "Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) moves smoothly: smoothing works on the logarithm of the value, so the shown value changes by a bounded factor per tick and never jumps an order of magnitude at once, yet follows a sustained change within about 1 s; the time constant is set in CONFIG; byte and rate values keep a fixed decimal point and switch unit with hysteresis; /events.json stays raw"; reason: owner: just smoother changes, can be faster; jumping orders of magnitude is not smooth
+  - log: 2026-11-06T21:48:14Z @kj amended text "Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) moves smoothly: smoothing works on the logarithm of the value, so the shown value changes by a bounded factor per tick and never jumps an order of magnitude at once, yet follows a sustained change within about 1 s; the time constant is set in CONFIG; byte and rate values keep a fixed decimal point and switch unit with hysteresis; /events.json stays raw" -> "Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) shows an EMA of its samples (concept C3); CONFIG has a smoothing setting S, M, L (time constants 1, 2 and 4 s), default M; byte and rate values show one decimal in tabular figures with a fixed decimal point and switch unit up at 1000 and down below 800 of the lower unit; percent values keep their format; /events.json stays raw"; reason: owner: ema fixed point hysteresis, settings smoothing factor S / M / L, ride with M
+  - log: 2026-11-06T21:48:14Z @kj owner chose concept C3 with an S/M/L setting, default M; time constants 1, 2, 4 s chosen by the orchestrator, M equal to btop's default 2 s update interval
+  - log: 2026-11-06T23:11:36Z @kj closed
 
 ## Layout and density `LAYOUT`
 
@@ -1531,6 +1594,7 @@ Page fit, density and responsive behaviour across viewport sizes
   - log: 2026-10-29T07:37:25Z @kj added
   - log: 2026-10-29T10:04:10Z @kj closed
 - [x] `ACC-LAYOUT-158-PANEL-SWAP` **Panels swap places by dragging one onto another** - HIGH; Any panel can be dragged by its header onto another and the two swap slots; the target is outlined during the drag and Escape cancels. The arrangement is stored per browser, restored on reload, and survives adding, removing and resizing panels, with no page scroll at any viewport.
+  - overridden-by: ACC-LAYOUT-222-DRAG-LIVE
   - evidence: verify: dragging the Processes header onto the GPU panel swaps them and the arrangement survives a reload; Escape and a 3 px click leave it untouched; a touch drag works
   - test: drag the Processes header onto the GPU panel, release: the two swap; reload and the arrangement holds; Escape during a drag leaves both in place; no page scroll at 1440x900, 1024x768 and 390x844
   - test-tags: FUNCTIONAL
@@ -1544,6 +1608,22 @@ Page fit, density and responsive behaviour across viewport sizes
   - mechanism: 2026-10-29T07:37:43Z @kj the control clears the layout keys in localStorage and re-renders the grid from the defaults in the same page, with no server round trip
   - log: 2026-10-29T07:37:43Z @kj added
   - log: 2026-10-29T10:04:10Z @kj closed
+- [x] `ACC-LAYOUT-222-DRAG-LIVE` **Panels move live while dragged** - HIGH; Dragging a panel by its header moves it with the pointer, and the panels between its old and new place shift one place over during the drag, as a list reorder, before the drop; the drop keeps what is shown, Escape puts every panel back; mouse and touch; arrangement stored per browser; no page scroll
+  - evidence: wf_2bca33fb-4c4 verify: held drag shows the insert order before release; release and reload keep it; Escape restores; 2 px press and click change nothing; CDP touch drag works; reset layout works; no scroll or overlap at 1440x900, 1024x768, 390x844; 0 console errors
+  - overrides: ACC-LAYOUT-158-PANEL-SWAP
+  - test: drag the Processes header over the GPU panel and hold: the panels already show the new arrangement; release keeps it; Escape restores
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T13:38:24Z @kj added
+  - log: 2026-11-06T13:43:47Z @kj amended text "Dragging a panel by its header moves it with the pointer, and the other panels take their new places during the drag, before the drop; the drop keeps what is shown, Escape puts every panel back; mouse and touch; arrangement stored per browser; no page scroll" -> "Dragging a panel by its header moves it with the pointer, and the panels between its old and new place shift one place over during the drag, as a list reorder, before the drop; the drop keeps what is shown, Escape puts every panel back; mouse and touch; arrangement stored per browser; no page scroll"; reason: owner chose live insert over live swap
+  - log: 2026-11-06T13:43:47Z @kj related ACC-LAYOUT-158-PANEL-SWAP removed
+  - log: 2026-11-06T15:12:06Z @kj closed
+- [x] `ACC-LAYOUT-228-EQUAL-WIDTH` **Network and GPU panels share one width** - MEDIUM; In band 3 the first two slots are the same width, so the GPU and Network panels in the default layout are equally wide at 1440x900 and 1024x768; storage keeps its width; a panel still takes the width of the slot it lands in; no page scroll
+  - evidence: wf_9e0817bb-5bb verify r2: GPU and Network 708/708 px at 1440x900 and 502.6/502.6 at 1024x768; storage width unchanged; with GPU hidden Network and storage keep their old widths; 80 states with no scroll or page error; make ci green
+  - related: ACC-LAYOUT-157-PANEL-ORDER
+  - test: 1440x900 and 1024x768 default layout: GPU and Network panel widths differ by at most 1 px; storage width unchanged
+  - test-tags: FUNCTIONAL
+  - log: 2026-11-06T16:13:01Z @kj added
+  - log: 2026-11-06T17:07:12Z @kj closed
 
 ## Design and presentation `DESIGN`
 

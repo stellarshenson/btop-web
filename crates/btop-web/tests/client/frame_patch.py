@@ -21,11 +21,11 @@ CLIENT_URL = sys.argv[2] if len(sys.argv) > 2 else None
 
 
 def cpu_record(total, one="10%"):
-    """A complete c1 record: two cores, a load, a frequency and no temperature."""
+    """A complete c1 record: two cores, an aggregate load, a frequency and no
+    temperature."""
     fields = [
         "c1", "250", "1000", "1000", "1", str(total), "ok", "ok",
-        "M0 0", "M0 0", "61.00", "100%",
-        "Load average, unit percent\\nsource: /proc/loadavg",
+        "M0 0", "M0 0", "61.00", "100%", "Load average, percent of one core",
         one, "20%", "30%", "20%", "10%", "1.25%",
         "3.20 GHz", "", "4", "Test CPU", "8", "", "2", "",
         "cpu4", "42.4", "42", "cpu9", "", "",
@@ -35,28 +35,25 @@ def cpu_record(total, one="10%"):
 
 
 def mem_record():
-    """A complete m1 record: a total, seven rows (two created) and one mount."""
+    """A complete m1 record: a total, seven rows (two created), one mount and
+    the tip set of a container under a memory limit."""
     fields = [
-        "m1", "1", "5.0", "GiB", "8", "63%", "37%", "5.0 GiB",
-        "Memory shares, unit percent\\nsource: /proc/meminfo",
-        "8.00 GiB", " (container limit)",
-        "Memory total, unit bits\\nsource: cgroup",
-        "Memory used, unit percent\\nsource: cgroup",
-        "Memory available, unit percent\\nsource: rows",
-        "Mount space, unit bytes and percent\\nsource: statvfs\\nused = total - free\\nIO: block stat",
+        "m1", "1", "5.0", "GiB", "8", "63%", "37%", "5.0 GiB", "",
+        "8.00 GiB", " (container limit)", "", "", "", "",
         "1",
         "used", "M0 0", "M0 0", "0.00", "63.00",
         "2", "used", "63.000", "free", "37.000",
         "7",
-        "used", "5.0 GiB", "63%", "used", "Memory used\\nsource: cgroup",
-        "cache", "1.0 GiB", "12%", "reclaimable", "Reclaimable cache\\nsource: cgroup",
-        "other", "0.5 GiB", "6%", "other used", "Other used\\nsource: host",
-        "other-cache", "0.2 GiB", "3%", "other reclaimable", "Other reclaimable\\nsource: host",
-        "free", "1.3 GiB", "16%", "container free", "Free memory\\nsource: cgroup",
-        "free-cache", "1.5 GiB", "19%", "free + reclaimable", "Free + reclaimable\\nsource: rows",
-        "swap", "0.1 / 2 GiB", "5%", "swap", "Swap used\\nsource: cgroup",
+        "used", "5.0 GiB", "63%", "used", "",
+        "cache", "1.0 GiB", "12%", "reclaimable", "",
+        "other", "0.5 GiB", "6%", "other used", "",
+        "other-cache", "0.2 GiB", "3%", "other reclaimable", "",
+        "free", "1.3 GiB", "16%", "container free", "",
+        "free-cache", "1.5 GiB", "19%", "free + reclaimable", "",
+        "swap", "0.1 / 2 GiB", "5%", "swap", "",
         "1",
         "data\\|disk", "12%", "1.00 TB", "63", "63%", "630 GB", "37", "37%", "370 GB",
+        "limit",
         "", "",
     ]
     return "|".join(fields)
@@ -72,9 +69,13 @@ CLIENT_CHECKS = """([one, two, mem]) => {
     const el = document.querySelector(selector);
     return el ? el.textContent : null;
   };
+  const tips = (key) => document.getElementById('tips').getAttribute('data-' + key);
   const out = {};
   send('cpu', one);
-  out.cpuFactCreated = text('#p-cpu-stat [data-field="cpu-freq"] b') === '3.20 GHz';
+  out.cpuFactCreated = text('#p-cpu-stat [data-field="cpu-freq"] b') === '3.20 GHz' && document.querySelector('#p-cpu-stat [data-field="cpu-freq"]').getAttribute('data-tip') === tips('cpu-freq');
+  // DEF-VIEW-152-LOAD-TIP: both load facts take the record's load tip.
+  out.loadTipsFromRecord = document.querySelector('#p-cpu-stat [data-field="cpu-load"]').getAttribute('data-tip') === one.split('|')[12]
+    && document.querySelector('#p-cpu-gauge .fact.load').getAttribute('data-tip') === one.split('|')[12];
   out.cpuNameCreated = text('#p-cpu-gauge [data-field="cpu-name"]') === 'Test CPU';
   out.coresCreated = document.querySelectorAll('#p-cores .core-row').length === 2 && text('#p-cores .core-row .cl') === 'C04';
   out.firstNumber = text('#cpu-total') === '37';
@@ -82,10 +83,20 @@ CLIENT_CHECKS = """([one, two, mem]) => {
   send('mem', mem);
   out.memGaugeRead = text('#p-mem-gauge .g-read b') === '5.0GiB';
   out.mountCreated = text('#p-storage .mount .mount-label') === 'data|disk';
-  out.mountTitleUnescaped = document.querySelector('#p-storage .mount .mount-label').getAttribute('title') === 'data|disk';
+  out.mountOneTip = document.querySelector('#p-storage .mount .mount-label').getAttribute('data-tip') === text('#p-storage .mount .mount-label') && document.querySelector('#p-storage .mount .mount-io').getAttribute('data-tip') === tips('mount-io');
   out.rowsCreated = !!document.querySelector('#p-mem-gauge .mem-row[data-row="other"]') && !!document.querySelector('#p-mem-gauge .mem-row[data-row="swap"]');
   out.totalCreated = text('#p-mem-gauge [data-field="mem-gauge-total"] .meta-value') === '8.00 GiB';
   out.usedFactCreated = text('#p-mem-stat [data-field="mem-used-fact"] b') === '63%';
+  // DEF-PERF-147-TIP-FRAMES: the record names the limit set; the page's
+  // texts reach the created nodes and replace the default page's host wording.
+  const tipOf = (selector) => document.querySelector(selector).getAttribute('data-tip');
+  out.memTipsFromPage = !!tips('row-free-limit')
+    && tipOf('#p-mem-gauge .mem-row[data-row="free"]') === tips('row-free-limit')
+    && tipOf('#p-mem-gauge .mem-row[data-row="other"]') === tips('row-other')
+    && tipOf('#p-mem-gauge .mem-row[data-row="swap"]') === tips('row-swap-limit')
+    && tipOf('#p-mem-gauge [data-field="mem-gauge-total"]') === tips('total-limit')
+    && tipOf('#p-mem-stat [data-field="mem-used-fact"]') === tips('used-limit')
+    && tipOf('#p-storage .mount') === tips('mount');
   send('cpu', two);
   out.springStarted = document.getElementById('cpu-total').hasAttribute('data-num-host');
   return out;

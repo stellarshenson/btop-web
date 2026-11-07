@@ -42,7 +42,7 @@
     return node && node.closest ? node.closest(selector) : null;
   }
 
-  /* ---------- stat tooltips (ACC-VIEW-80-STAT-TIPS) ---------- */
+  /* ---------- tooltips (ACC-VIEW-223-TIP-MINIMAL) ---------- */
 
   // The server writes each stat's text into data-tip; this code only places
   // the one box. A process cell takes its column header's text, so a table of
@@ -63,6 +63,17 @@
   var tipWant = null; // the stat the pointer rests on, not yet open
   var tipX = 0;
   var tipY = 0;
+
+  // DEF-VIEW-148-TIP-COPIES: a node this code creates reads its text from the
+  // page's #tips, which the server renders once. A memory text has one
+  // attribute per tip set the mem record names, and a text without one for a
+  // set takes the plain attribute. The mem record's set is its third field
+  // from the end, where a 1.0.4 page reads no tip (DEF-VIEW-150-MIXED-TIP).
+  // The load tip is the cpu record's slot 12 (DEF-VIEW-152-LOAD-TIP).
+  var tipTexts = document.getElementById("tips");
+  function tipText(key, set) {
+    return (set && tipTexts.getAttribute("data-" + key + "-" + set)) || tipTexts.getAttribute("data-" + key);
+  }
 
   // A swapped fragment repeats the elements but not the nodes, so a stat's
   // identity through a frame is its place in the document.
@@ -160,8 +171,7 @@
   function openTip(source) {
     tipAt = { key: source.key, text: source.text };
     tipWant = null;
-    // DEF-VIEW-84: the first line is the value's name, every line after it
-    // its sources, so the two carry different tones.
+    // DEF-VIEW-84: the first line is strong, a second line muted.
     var cut = source.text.indexOf("\n");
     var first = document.createElement("span");
     first.className = "tip-first";
@@ -725,10 +735,7 @@
   }
 
   function setCoreRow(row, name, value, display) {
-    var tip = "Core " + name + ", unit percent\n" + (value
-      ? "source: /proc/stat " + name + " line, delta\n1 s average shown by the meter and number"
-      : "unavailable: /proc/stat has no " + name + " line\nthe meter shows the unavailable state");
-    frameAttr(row, "data-tip", tip);
+    frameAttr(row, "data-tip", tipText("core") + " " + name.replace(/^cpu/, ""));
     frameText(cached(row, "label", ".cl"), coreLabel(name));
     var meter = cached(row, "meter", ".meter");
     var cv = cached(row, "cv", ".cv");
@@ -768,13 +775,6 @@
   // The CPU stat header's optional facts. The first page renders one only
   // when its value is known, so a frame creates the span on the first value
   // and removes it when the field is empty; the order is the template's.
-  var CPU_FREQUENCY_TIP = "CPU frequency, unit MHz or GHz\nsource: cpufreq policy0 scaling_cur_freq\nfalls back to the first cpuinfo cpu MHz line";
-  var CPU_TEMPERATURE_TIP = "CPU temperature, unit degrees Celsius\nsource: hwmon and thermal sysfs, m\u00b0C / 1000\nwhole degrees, btop's sensor choice";
-  var LOAD_UNAVAILABLE_TIP = "Load average, unit percent of all cores\nsource: /proc/loadavg; container: its own tasks\nunavailable: no load or core count was read";
-  var CPU_STAT_LOAD_UNAVAILABLE_TIP = "Load average, unit percent\ntasks runnable or blocked in I/O wait\naveraged over 1, 5 and 15 minutes\nsource: /proc/loadavg, not this container's";
-  var CORES_COUNT_TIP = "Core count and scale, unit percent\nsource: online cpus in /proc/stat\neach row is one core's 1 s average";
-  var CPU_CORES_TIP = "Core count, unit cores\nsource: online cpus in /proc/stat\nin a container: cpuset.cpus.effective";
-
   function setCpuStatFacts(stat, frame) {
     var box = cached(stat, "facts", ".stat-facts");
     if (!box) return;
@@ -784,7 +784,7 @@
       if (!node) {
         node = document.createElement("span");
         node.setAttribute("data-field", "cpu-freq");
-        node.setAttribute("data-tip", CPU_FREQUENCY_TIP);
+        node.setAttribute("data-tip", tipText("cpu-freq"));
         node.appendChild(document.createElement("b"));
         box.insertBefore(node, box.querySelector('[data-field="cpu-temp"], [data-field="cpu-load"]'));
         nodeCache(box).freq = node;
@@ -801,7 +801,7 @@
         node = document.createElement("span");
         node.className = "cpu-temp";
         node.setAttribute("data-field", "cpu-temp");
-        node.setAttribute("data-tip", CPU_TEMPERATURE_TIP);
+        node.setAttribute("data-tip", tipText("cpu-temp"));
         var value = document.createElement("b");
         value.setAttribute("data-w", "100\u00b0C");
         node.appendChild(value);
@@ -833,7 +833,7 @@
         frameAttr(node, "data-tip", tip);
       } else {
         frameText(node, "load unavailable");
-        frameAttr(node, "data-tip", CPU_STAT_LOAD_UNAVAILABLE_TIP);
+        frameAttr(node, "data-tip", tipText("load-container"));
         if (nodeCache(node).b) {
           nodeCache(node).b = null;
           nodeCache(stat).figures = undefined;
@@ -874,7 +874,7 @@
         node.className = "head-right meta";
         node.setAttribute("data-p", "3");
         node.setAttribute("data-field", "cpu-gauge-cores");
-        node.setAttribute("data-tip", CPU_CORES_TIP);
+        node.setAttribute("data-tip", tipText("cpu-cores"));
         header.appendChild(node);
         nodeCache(header).cores = node;
       }
@@ -923,7 +923,7 @@
       var span = document.createElement("span");
       span.textContent = "unavailable";
       fact.appendChild(span);
-      frameAttr(fact, "data-tip", LOAD_UNAVAILABLE_TIP);
+      frameAttr(fact, "data-tip", tipText("load"));
       return;
     }
     if (!b) {
@@ -1005,7 +1005,7 @@
           withheld = document.createElement("span");
           withheld.className = "head-right meta";
           withheld.setAttribute("data-withheld", "");
-          withheld.setAttribute("title", "No cgroup v2 cpuset names this container's cores");
+          withheld.setAttribute("title", tipText("cores-withheld"));
           withheld.textContent = "unavailable";
           coresHeader.appendChild(withheld);
           nodeCache(coresHeader).withheld = withheld;
@@ -1046,7 +1046,7 @@
           if (!count && coresHeader) {
             count = document.createElement("span");
             count.className = "head-right meta";
-            count.setAttribute("data-tip", CORES_COUNT_TIP);
+            count.setAttribute("data-tip", tipText("cores-count"));
             coresHeader.appendChild(count);
             nodeCache(coresHeader).count = count;
           }
@@ -1105,7 +1105,7 @@
     } else if (suffix && suffix.nodeValue !== "") {
       suffix.nodeValue = "";
     }
-    frameAttr(node, "data-tip", frame[11]);
+    frameAttr(node, "data-tip", tipText("total", frame[frame.length - 3]));
   }
 
   // One Memory stat header fact: the template's <b> with its 100% width, or
@@ -1147,15 +1147,15 @@
         nodeCache(header).total = node;
       }
       frameText(node, "of " + frame[9] + frame[10]);
-      frameAttr(node, "data-tip", frame[11]);
+      frameAttr(node, "data-tip", tipText("total", frame[frame.length - 3]));
     } else if (node) {
       node.remove();
       nodeCache(header).total = null;
     }
     var facts = cached(header, "facts", '[data-field="mem-stat-facts"]');
     if (!facts) return;
-    setMemStatFact(facts, "mem-used-fact", frame[5], frame[12], "used");
-    setMemStatFact(facts, "mem-avail-fact", frame[6], frame[13], "available");
+    setMemStatFact(facts, "mem-used-fact", frame[5], tipText("used", frame[frame.length - 3]), "used");
+    setMemStatFact(facts, "mem-avail-fact", frame[6], tipText("avail"), "available");
   }
 
   var MEM_ROW_ORDER = ["used", "cache", "other", "other-cache", "free", "free-cache", "swap"];
@@ -1173,7 +1173,7 @@
     }
     head.appendChild(document.createTextNode(label));
     var value = document.createElement("b");
-    if (kind !== "swap") value.setAttribute("data-w", "0000 MiB");
+    if (kind !== "swap") value.setAttribute("data-w", "000.0 MiB");
     var share = document.createElement("span");
     share.className = "pct";
     share.setAttribute("data-w", "100%");
@@ -1218,15 +1218,14 @@
     var name = document.createElement("span");
     name.className = "mount-label";
     name.textContent = label;
-    name.setAttribute("title", label);
     head.appendChild(name);
     node.appendChild(head);
     var used = document.createElement("div");
     used.className = "mount-row";
-    used.innerHTML = '<span class="mount-key">used</span><span class="meter meter-used"></span><span class="mount-pct"></span><span class="mount-size"></span>';
+    used.innerHTML = '<span class="mount-key">used</span><span class="meter meter-used"></span><span class="mount-pct"></span><span class="mount-size" data-w="000.0 Byte"></span>';
     var free = document.createElement("div");
     free.className = "mount-row free";
-    free.innerHTML = '<span class="mount-key">free</span><span class="meter meter-free"></span><span class="mount-pct"></span><span class="mount-size"></span>';
+    free.innerHTML = '<span class="mount-key">free</span><span class="meter meter-free"></span><span class="mount-pct"></span><span class="mount-size" data-w="000.0 Byte"></span>';
     node.appendChild(used);
     node.appendChild(free);
     return node;
@@ -1239,7 +1238,7 @@
     var label = frame[at];
     var name = cached(node, "name", ".mount-label");
     frameText(name, label);
-    frameAttr(name, "title", label);
+    frameAttr(name, "data-tip", label);
     var io = frame[at + 1];
     var ioNode = cached(node, "io", ".mount-io");
     if (io) {
@@ -1247,6 +1246,7 @@
         var head = cached(node, "head", ".mount-head");
         ioNode = document.createElement("span");
         ioNode.className = "mount-io";
+        ioNode.setAttribute("data-tip", tipText("mount-io"));
         ioNode.appendChild(document.createTextNode("IO "));
         var ioValue = document.createElement("span");
         ioValue.setAttribute("data-w", "100%");
@@ -1322,7 +1322,7 @@
     at += 1;
     var rowData = [];
     for (index = 0; index < rows; index += 1) {
-      rowData.push([frame[at], frame[at + 1], frame[at + 2], frame[at + 3], frame[at + 4]]);
+      rowData.push([frame[at], frame[at + 1], frame[at + 2], frame[at + 3], tipText("row-" + frame[at], frame[frame.length - 3])]);
       at += 5;
     }
     var mountCount = Number(frame[at]);
@@ -1336,7 +1336,7 @@
       var span = tile ? cached(tile, "value", ".stat-value") : null;
       if (tile && frame[2]) {
         if (!span) {
-          tile.innerHTML = '<span class="stat-value" data-w="0000" id="mem-used"></span><span class="stat-unit"></span>';
+          tile.innerHTML = '<span class="stat-value" data-w="000.0" id="mem-used"></span><span class="stat-unit"></span>';
           span = nodeCache(tile).value = tile.querySelector(".stat-value");
           nodeCache(tile).unit = tile.querySelector(".stat-unit");
         }
@@ -1356,7 +1356,6 @@
       if (gauge) {
         var aria = frame[7] ? "Memory " + frame[7] + " used, " + frame[5].replace("%", "") + " percent" : "";
         setGaugeAria(gauge, aria, "Memory unavailable");
-        frameAttr(gauge, "data-tip", frame[8]);
         var shapes = [cached(gauge, "circle", "svg.g-circle"), cached(gauge, "squircle", "svg.g-squircle")];
         for (var shape = 0; shape < shapes.length; shape += 1) {
           var paths = cachedList(shapes[shape], "fills", "path.g-fill");
@@ -1461,7 +1460,7 @@
     }
     if (storage) {
       var body = cached(storage, "body", ".storage-body");
-      var mountTip = frame[14];
+      var mountTip = tipText("mount");
       var mounts = body ? cachedList(body, "mounts", ".mount") : [];
       for (var mount = 0; mount < mountCount; mount += 1) {
         var node = mounts[mount];
@@ -1619,7 +1618,7 @@
       if (newPass) {
         svg._pass = svg._seq;
         var lane = closest(svg, ".gpu-lane");
-        svg._unread = !!lane && !lane.querySelector(".legend-value [data-w]");
+        svg._unread = !!lane && !lane.querySelector(".legend-value > [data-w]");
       }
       var moves = allowed && !svg._unread;
       if (svg._run === "run") {
@@ -2329,7 +2328,9 @@
   // Only band 3 can empty on a frame: the GPU panel with no device and the
   // storage panel with no mount. Read those two markers, which need no layout,
   // and skip the computed-style sweep while they hold; the layout paths call
-  // this function themselves.
+  // this function themselves. Each panel not shown carries data-gone, which
+  // app.css reads for band 3's slot widths (ACC-LAYOUT-228-EQUAL-WIDTH) and
+  // for the phone band heights (DEF-LAYOUT-145-PHONE-BANDS).
   var band3Known = "";
 
   function band3State() {
@@ -2348,7 +2349,9 @@
       var panels = bands[index].querySelectorAll(".panel");
       var shown = false;
       for (var inner = 0; inner < panels.length; inner += 1) {
-        if (window.getComputedStyle(panels[inner]).display !== "none") shown = true;
+        var gone = window.getComputedStyle(panels[inner]).display === "none";
+        panels[inner].toggleAttribute("data-gone", gone);
+        if (!gone) shown = true;
       }
       bands[index].hidden = !shown;
     }
@@ -2381,7 +2384,7 @@
     layoutApi.apply(layout);
     syncLayoutControls();
     syncBands();
-    applyGpuSelection(); // a swap can move the GPU panel to another band
+    applyGpuSelection(); // a drag can move the GPU panel to another band
   }
 
   var panelGroup = document.querySelector('[data-group="panels"]');
@@ -2417,15 +2420,17 @@
     });
   }
 
-  /* ---------- drag a panel onto another to swap (ACC-LAYOUT-158-PANEL-SWAP) ---------- */
+  /* ---------- drag a panel to a new place (ACC-LAYOUT-222-DRAG-LIVE) ---------- */
 
   // The header is the drag handle. A press moves nothing until the pointer
-  // travels DRAG_STEP px, so a click leaves the layout alone; Escape or a
-  // pointer cancel ends a drag with both panels in place; a release over
-  // another panel exchanges the two places and stores the order beside the
-  // panel settings. Pointer Events carry mouse, touch and pen alike.
+  // travels DRAG_STEP px, so a click leaves the layout alone. During the drag
+  // the panel follows the pointer and the panel order is a list: entering
+  // another panel inserts the dragged one at its place, and the panels between
+  // shift one place over. A release stores what is shown beside the panel
+  // settings; Escape or a pointer cancel restores the order the drag started
+  // from. Pointer Events carry mouse, touch and pen alike.
   var DRAG_STEP = 4;
-  var drag = null; // {panel, pointerId, x, y, active, target}
+  var drag = null; // {panel, id, pointerId, x, y, fx, fy, active, start, under}
 
   function dragPanel(event) {
     var header = closest(event.target, ".ph");
@@ -2435,36 +2440,35 @@
     return panel;
   }
 
-  function setDropTarget(panel) {
-    if (drag.target === panel) return;
-    if (drag.target) drag.target.removeAttribute("data-drop");
-    drag.target = panel;
-    if (panel) panel.setAttribute("data-drop", "");
+  // The dragged panel has pointer-events: none, so this finds the one below it.
+  function panelAt(x, y) {
+    var under = document.elementFromPoint(x, y);
+    return under ? closest(under, ".panel[data-panel]") : null;
   }
 
-  function endDrag() {
-    if (!drag) return;
-    setDropTarget(null);
-    drag = null;
-  }
-
-  // The comment holds the first panel's place while the nodes move; it works
-  // for neighbours and for different bands alike.
-  function swapPanels(first, second) {
-    var marker = document.createComment("panel swap");
-    first.parentNode.insertBefore(marker, first);
-    second.parentNode.insertBefore(first, second);
-    marker.parentNode.replaceChild(second, marker);
-    var order = [];
-    var bands = document.querySelectorAll(".band");
-    for (var index = 0; index < bands.length; index += 1) {
-      for (var child = 0; child < bands[index].children.length; child += 1) {
-        var id = bands[index].children[child].getAttribute("data-panel");
-        if (id) order.push(id);
-      }
-    }
+  function showOrder(order) {
     layout.order = order;
-    commitLayout();
+    layoutApi.apply(layout);
+    syncBands();
+    applyGpuSelection(); // a move can put the GPU panel in another band
+  }
+
+  // The grab point stays under the pointer; the slot, and so the width, of
+  // the panel changes as it moves, so the x offset is a share of the width.
+  function follow(x, y) {
+    var style = drag.panel.style;
+    style.transform = "";
+    var box = drag.panel.getBoundingClientRect();
+    style.transform = "translate(" + (x - box.left - drag.fx * box.width) + "px, " + (y - box.top - drag.fy) + "px)";
+  }
+
+  function endDrag(keep) {
+    var moved = drag.active && layout.order.join() !== drag.start.join();
+    drag.panel.removeAttribute("data-dragging");
+    drag.panel.style.transform = "";
+    if (moved && keep) commitLayout();
+    else if (moved) showOrder(drag.start);
+    drag = null;
   }
 
   if (layout) {
@@ -2472,7 +2476,19 @@
       if (event.button !== 0 || drag) return;
       var panel = dragPanel(event);
       if (!panel) return;
-      drag = { panel: panel, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false, target: null };
+      var box = panel.getBoundingClientRect();
+      drag = {
+        panel: panel,
+        id: panel.getAttribute("data-panel"),
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        fx: (event.clientX - box.left) / box.width,
+        fy: event.clientY - box.top,
+        active: false,
+        start: layout.order.slice(),
+        under: null
+      };
       event.preventDefault(); // the header is held, not selected
     });
 
@@ -2481,31 +2497,34 @@
       if (!drag.active) {
         if (Math.abs(event.clientX - drag.x) < DRAG_STEP && Math.abs(event.clientY - drag.y) < DRAG_STEP) return;
         drag.active = true;
+        drag.panel.setAttribute("data-dragging", "");
       }
-      var under = document.elementFromPoint(event.clientX, event.clientY);
-      var panel = under ? closest(under, ".panel[data-panel]") : null;
-      setDropTarget(panel && panel !== drag.panel ? panel : null);
+      var under = panelAt(event.clientX, event.clientY);
+      if (under && under !== drag.under) {
+        var order = layout.order.slice();
+        order.splice(order.indexOf(drag.id), 1);
+        order.splice(layout.order.indexOf(under.getAttribute("data-panel")), 0, drag.id);
+        showOrder(order);
+        // A panel the shift brings under a still pointer is not entered, so
+        // two panels of unequal width cannot trade places on every move.
+        under = panelAt(event.clientX, event.clientY);
+      }
+      drag.under = under;
+      follow(event.clientX, event.clientY);
     });
 
     document.addEventListener("pointerup", function (event) {
-      if (!drag || event.pointerId !== drag.pointerId) return;
-      var under = document.elementFromPoint(event.clientX, event.clientY);
-      var panel = under ? closest(under, ".panel[data-panel]") : null;
-      var target = panel && panel !== drag.panel ? panel : null;
-      var source = drag.panel;
-      var active = drag.active;
-      endDrag();
-      if (active && target) swapPanels(source, target);
+      if (drag && event.pointerId === drag.pointerId) endDrag(true);
     });
 
     document.addEventListener("pointercancel", function (event) {
-      if (drag && event.pointerId === drag.pointerId) endDrag();
+      if (drag && event.pointerId === drag.pointerId) endDrag(false);
     });
 
     document.addEventListener("keydown", function (event) {
       if (event.key !== "Escape" || !drag || !drag.active) return;
       event.preventDefault();
-      endDrag();
+      endDrag(false);
     });
   }
 

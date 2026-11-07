@@ -18,8 +18,8 @@ EPILOG = """\
 output:
   One frame is about 130 KB on a host with 300 processes and grows with the process table, so
   keep the fields you need. It holds process command lines and user names, which can hold
-  secrets. The README of btop-web gives the schema: units sit in the field suffix, and a value
-  the server could not read is null, never zero.
+  secrets. docs/usage.md in the btop-web repository gives the schema: units sit in the field
+  suffix, and a value the server could not read is null, never zero.
 
 connecting:
   Standalone server: http://HOST:PORT, no key and no pin.

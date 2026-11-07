@@ -19,13 +19,17 @@ use std::sync::{Arc, OnceLock};
 
 use askama::Template;
 
-use super::{Snapshot, band, bytes, mount_tip};
+use super::{Snapshot, band};
 use crate::chart;
 
 /// One sample and the five SSE events built for it.
 pub struct Frame {
+    /// The sample the events and the page show, its readouts smoothed by the
+    /// sampler (ACC-VIEW-230-STEADY-READOUT).
     pub snapshot: Snapshot,
-    /// The named events in send order, built once by [`Frame::new`].
+    /// The sample as collected, which `/events.json` serializes.
+    pub raw: Snapshot,
+    /// The named events in send order, built once by [`Frame::smoothed`].
     pub events: Vec<(&'static str, String)>,
     /// ACC-VIEW-210-COPY-HELD: the slow pass's `/events.json` text, one cell
     /// shared by the pass's frames. The first connection that asks builds it,
@@ -34,12 +38,19 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// One sample with its five events, each built once.
+    /// One sample with its five events, each built once, shown as collected.
     pub fn new(snapshot: Snapshot) -> Self {
+        Self::smoothed(snapshot.clone(), snapshot)
+    }
+
+    /// One sample with its five events, each built once from `shown`, the
+    /// sample with its readouts smoothed; `raw` is the sample as collected.
+    pub fn smoothed(shown: Snapshot, raw: Snapshot) -> Self {
         Self {
-            events: fragments(&snapshot),
+            events: fragments(&shown),
             telemetry: Arc::default(),
-            snapshot,
+            snapshot: shown,
+            raw,
         }
     }
 }
@@ -123,6 +134,10 @@ fn percent(value: Option<f64>, decimals: usize) -> String {
 /// 24 container-without-cores flag, 25 core count, 26 load-unavailable flag,
 /// then per core its name, its `--value` and its printed number, then the
 /// history line and area paths.
+///
+/// DEF-VIEW-152-LOAD-TIP: the short load tip is the one tooltip text the
+/// record carries (DEF-PERF-147-TIP-FRAMES). A 1.0.4 page writes slot 12 into
+/// the load tooltips and reads an empty slot as load unavailable.
 fn cpu_frame(snapshot: &Snapshot) -> String {
     let cpu = &snapshot.cpu;
     let total = cpu.total_pct;
@@ -196,18 +211,27 @@ fn cpu_frame(snapshot: &Snapshot) -> String {
 /// The memory event. Fields, in order:
 ///
 /// 0 `m1`, 1 slow_seq, 2 used value, 3 used unit, 4 used range, 5 used
-/// percent, 6 available percent, 7 gauge label, 8 gauge tip, 9 total label,
-/// 10 total suffix, 11 total tip, 12 used fact tip, 13 available fact tip,
-/// 14 mount tip, 15 span count, then per span its name, circle path, squircle
-/// path, from and to; then the bar segment count and per segment its name and
-/// width; then the row count and per row its kind, size, percent, label and
-/// tip; then the mount count and per mount its label, IO, total, used meter,
-/// used percent, used size, free meter, free percent and free size; then the
-/// history line and area paths.
+/// percent, 6 available percent, 7 gauge label, 8 empty, 9 total label,
+/// 10 total suffix, 11-14 empty, 15 span count, then per span its name, circle
+/// path, squircle path, from and to; then the bar segment count and per
+/// segment its name and width; then the row count and per row its kind, size,
+/// percent, label and an empty field; then the mount count and per mount its
+/// label, IO, total, used meter, used percent, used size, free meter, free
+/// percent and free size; then the tip set; then the history line and area
+/// paths.
+///
+/// DEF-PERF-147-TIP-FRAMES: no tooltip text travels here; the tip set names
+/// which of the page's [`super::TIP_SETS`] wordings applies. Slots 8, 11-14
+/// and each row's last field held tip texts and stay empty, so the `m1` token
+/// stays and a page of either release still reads every value.
+/// DEF-VIEW-150-MIXED-TIP: the 1.0.4 page writes those slots into `data-tip`,
+/// so the tip set sits after the mounts, which that page skips because it
+/// reads the history paths from the record's end.
 fn mem_frame(snapshot: &Snapshot) -> String {
     let mem = &snapshot.mem;
     let container = snapshot.container;
-    let parts = mem.ram_used_parts();
+    let shown = &snapshot.shown;
+    let parts = mem.ram_used_parts(shown);
     let mut fields = vec![
         "m1".to_string(),
         snapshot.slow_seq.to_string(),
@@ -217,31 +241,33 @@ fn mem_frame(snapshot: &Snapshot) -> String {
             .unwrap_or_default(),
         parts
             .as_ref()
-            .map(|(_, unit)| unit.clone())
+            .map(|(_, unit)| unit.to_string())
             .unwrap_or_default(),
         parts
             .as_ref()
-            .map(|_| mem.ram_used_range())
+            .map(|_| mem.ram_used_range(shown))
             .unwrap_or_default(),
         percent(mem.ram_percent, 0),
         percent(
-            mem.ram_free_reclaimable_percent()
+            mem.ram_free_reclaimable_percent(shown)
                 .or(mem.ram_available_percent),
             0,
         ),
-        mem.ram_percent.map(|_| mem.ram_label()).unwrap_or_default(),
-        field(&mem.gauge_tip(container)),
+        mem.ram_percent
+            .map(|_| mem.ram_label(shown))
+            .unwrap_or_default(),
+        String::new(),
         mem.ram_total
-            .map_or_else(String::new, |total| bytes(Some(total))),
+            .map_or_else(String::new, |_| mem.ram_total_label(shown)),
         if mem.ram_limit.is_some() {
             " (container limit)".to_string()
         } else {
             String::new()
         },
-        field(&mem.total_tip(container)),
-        field(&mem.used_tip(container)),
-        field(&mem.available_tip(container)),
-        field(&mount_tip(container)),
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
     ];
     let spans = mem.gauge_spans();
     fields.push(spans.len().to_string());
@@ -258,55 +284,49 @@ fn mem_frame(snapshot: &Snapshot) -> String {
         fields.push(name.to_string());
         fields.push(format!("{width:.3}"));
     }
-    let mut rows: Vec<(&'static str, String, String, &'static str, String)> = vec![
+    let mut rows: Vec<(&'static str, String, String, &'static str)> = vec![
         (
             "used",
-            bytes(mem.ram_used),
+            mem.ram_used_label(shown),
             percent(mem.ram_percent, 0),
             "used",
-            mem.row_tip("used", container),
         ),
         (
             "cache",
-            mem.ram_cache_label(),
+            mem.ram_cache_label(shown),
             percent(mem.ram_cache_percent, 0),
             "reclaimable",
-            mem.row_tip("cache", container),
         ),
     ];
     if mem.ram_other.is_some() {
         rows.push((
             "other",
-            mem.ram_other_label(),
+            mem.ram_other_label(shown),
             percent(mem.ram_other_percent, 0),
             "other used",
-            super::OTHER_TIP.to_string(),
         ));
         rows.push((
             "other-cache",
-            mem.ram_other_cache_label(),
+            mem.ram_other_cache_label(shown),
             percent(mem.ram_other_cache_percent, 0),
             "other reclaimable",
-            super::OTHER_CACHE_TIP.to_string(),
         ));
     }
     rows.push((
         "free",
-        mem.ram_free_label(),
+        mem.ram_free_label(shown),
         percent(mem.ram_free_percent, 0),
         if mem.ram_limit.is_some() {
             "container free"
         } else {
             "free"
         },
-        mem.row_tip("free", container),
     ));
     rows.push((
         "free-cache",
-        mem.ram_free_reclaimable_label(),
-        percent(mem.ram_free_reclaimable_percent(), 0),
+        mem.ram_free_reclaimable_label(shown),
+        percent(mem.ram_free_reclaimable_percent(shown), 0),
         "free + reclaimable",
-        mem.row_tip("free-cache", container),
     ));
     if mem.swap_visible() {
         rows.push((
@@ -314,16 +334,15 @@ fn mem_frame(snapshot: &Snapshot) -> String {
             mem.swap_label(),
             percent(mem.swap_row_percent(), 0),
             "swap",
-            mem.swap_tip(container),
         ));
     }
     fields.push(rows.len().to_string());
-    for (kind, size, pct, label, tip) in rows {
+    for (kind, size, pct, label) in rows {
         fields.push(kind.to_string());
         fields.push(size);
         fields.push(pct);
         fields.push(label.to_string());
-        fields.push(field(&tip));
+        fields.push(String::new());
     }
     let mounts: Vec<_> = mem
         .disks
@@ -339,7 +358,7 @@ fn mem_frame(snapshot: &Snapshot) -> String {
         );
         fields.push(
             disk.total
-                .map_or_else(String::new, |total| bytes(Some(total))),
+                .map_or_else(String::new, |_| disk.size_label(shown, "total", disk.total)),
         );
         fields.push(
             disk.bar()
@@ -347,15 +366,25 @@ fn mem_frame(snapshot: &Snapshot) -> String {
                 .unwrap_or_default(),
         );
         fields.push(percent(disk.used_percent, 0));
-        fields.push(bytes(disk.used));
+        fields.push(disk.size_label(shown, "used", disk.used));
         fields.push(
             super::bar(disk.free_percent)
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
         );
         fields.push(percent(disk.free_percent, 0));
-        fields.push(bytes(disk.free));
+        fields.push(disk.size_label(shown, "free", disk.free));
     }
+    fields.push(
+        if mem.ram_limit.is_some() {
+            "limit"
+        } else if container {
+            "container"
+        } else {
+            "host"
+        }
+        .to_string(),
+    );
     fields.push(mem.used_chart.line.clone());
     fields.push(mem.used_chart.area.clone());
     fields.join("|")

@@ -63,7 +63,7 @@ test:
 
 ## Run the browser tests; needs python3 with Playwright and its chromium, so make ci leaves them out
 test-client:
-	$(CARGO) test --locked --test e2e $(FEATURES_FLAG) -- --ignored --exact proc_popup_opens_with_the_pid_and_closes_on_escape frames_patch_the_panels_in_place live_status_shows_on_dimmed_and_off
+	$(CARGO) test --locked --test e2e $(FEATURES_FLAG) -- --ignored --exact proc_popup_opens_with_the_pid_and_closes_on_escape frames_patch_the_panels_in_place live_status_shows_on_dimmed_and_off drag_inserts_live_and_escape_restores
 
 ## Build the companion Python client and test its wheel against this build's server, in a venv under target/; needs PyPI, so make ci leaves it out
 test-python:

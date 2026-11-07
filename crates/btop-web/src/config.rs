@@ -246,7 +246,8 @@ pub struct ServerOption {
     pub page: &'static str,
     pub key: &'static str,
     pub control: Control,
-    /// btop's first description line in `btop_menu.cpp`.
+    /// The row's tooltip: what the key sets, in a few plain words
+    /// (ACC-VIEW-223-TIP-MINIMAL).
     pub help: &'static str,
 }
 
@@ -293,6 +294,12 @@ const WINDOW_CHOICES: [(&str, &str); 5] = [
     ("600", "10m"),
 ];
 
+/// ACC-VIEW-230-STEADY-READOUT: the readout EMA's time constants the CONFIG
+/// smoothing row offers, in milliseconds by label.
+pub const SMOOTHING: [(&str, u64); 3] = [("S", 1000), ("M", 2000), ("L", 4000)];
+
+const SMOOTHING_CHOICES: [(&str, &str); 3] = same([SMOOTHING[0].0, SMOOTHING[1].0, SMOOTHING[2].0]);
+
 const fn option(
     page: &'static str,
     key: &'static str,
@@ -321,12 +328,12 @@ const MEBIBITS: Control = Control::Int {
 };
 
 /// The server options in page order and, within a page, btop's menu order.
-pub const SERVER_OPTIONS: [ServerOption; 41] = [
+pub const SERVER_OPTIONS: [ServerOption; 42] = [
     option(
         "general",
         "theme",
         Control::Choice(&THEME_CHOICES),
-        "Set color theme. Applies at the next page load of a viewer with no stored theme.",
+        "Default colour theme",
     ),
     option(
         "general",
@@ -335,105 +342,71 @@ pub const SERVER_OPTIONS: [ServerOption; 41] = [
             min: 100,
             max: 86_400_000,
         },
-        "Update time in milliseconds.",
+        "Time between samples, in milliseconds",
     ),
     option(
         "general",
         "window_s",
         Control::Chips(&WINDOW_CHOICES),
-        "Chart time axis, in seconds.",
+        "Time span of the charts",
     ),
-    flag("general", "show_battery", "Show battery stats."),
-    text("general", "selected_battery", "Select battery."),
-    flag("cpu", "check_temp", "Enable cpu temperature reporting."),
-    text("cpu", "cpu_sensor", "Cpu temperature sensor."),
-    flag("cpu", "show_coretemp", "Show temperatures for cpu cores."),
+    option(
+        "general",
+        "smoothing",
+        Control::Chips(&SMOOTHING_CHOICES),
+        "Readout averaging time: S 1 s, M 2 s, L 4 s",
+    ),
+    flag("general", "show_battery", "Show battery stats"),
+    text("general", "selected_battery", "Battery to show"),
+    flag("cpu", "check_temp", "Show the CPU temperature"),
+    text("cpu", "cpu_sensor", "Sensor for the CPU temperature"),
+    flag("cpu", "show_coretemp", "Show temperatures for CPU cores"),
     text(
         "cpu",
         "cpu_core_map",
-        "Custom mapping between core and coretemp.",
+        "Map from cores to their temperature sensors",
     ),
-    flag("cpu", "show_cpu_freq", "Show CPU frequency."),
+    flag("cpu", "show_cpu_freq", "Show the CPU frequency"),
     text(
         "cpu",
         "custom_cpu_name",
-        "Custom cpu model name in cpu percentage box.",
+        "CPU name to show in place of the model",
     ),
     option(
         "cpu",
         "cpu_load",
         Control::Chips(&LOAD_SCALE_CHOICES),
-        "CPU load reporting: percent of all cores, or summed over the cores.",
+        "Load as a percent of all cores or of one core",
     ),
     flag(
         "gpu",
         "nvml_measure_pcie_speeds",
-        "Measure PCIe throughput on NVIDIA cards.",
+        "Measure PCIe traffic on NVIDIA cards",
     ),
-    text(
-        "gpu",
-        "custom_gpu_name0",
-        "Custom gpu0 model name in gpu stats box.",
-    ),
-    text(
-        "gpu",
-        "custom_gpu_name1",
-        "Custom gpu1 model name in gpu stats box.",
-    ),
-    text(
-        "gpu",
-        "custom_gpu_name2",
-        "Custom gpu2 model name in gpu stats box.",
-    ),
-    text(
-        "gpu",
-        "custom_gpu_name3",
-        "Custom gpu3 model name in gpu stats box.",
-    ),
-    text(
-        "gpu",
-        "custom_gpu_name4",
-        "Custom gpu4 model name in gpu stats box.",
-    ),
-    text(
-        "gpu",
-        "custom_gpu_name5",
-        "Custom gpu5 model name in gpu stats box.",
-    ),
-    flag("mem", "show_disks", "Split memory box to also show disks."),
-    flag(
-        "mem",
-        "show_swap",
-        "If swap memory should be shown in memory box.",
-    ),
-    flag("mem", "swap_disk", "Show swap as a disk."),
-    flag("mem", "only_physical", "Filter out non physical disks."),
-    flag(
-        "mem",
-        "use_fstab",
-        "(Linux) Read disks list from /etc/fstab.",
-    ),
+    text("gpu", "custom_gpu_name0", "Name to show for GPU 0"),
+    text("gpu", "custom_gpu_name1", "Name to show for GPU 1"),
+    text("gpu", "custom_gpu_name2", "Name to show for GPU 2"),
+    text("gpu", "custom_gpu_name3", "Name to show for GPU 3"),
+    text("gpu", "custom_gpu_name4", "Name to show for GPU 4"),
+    text("gpu", "custom_gpu_name5", "Name to show for GPU 5"),
+    flag("mem", "show_disks", "Show disks"),
+    flag("mem", "show_swap", "Show swap"),
+    flag("mem", "swap_disk", "Show swap as a disk"),
+    flag("mem", "only_physical", "Show physical disks only"),
+    flag("mem", "use_fstab", "Read the disk list from /etc/fstab"),
     flag(
         "mem",
         "zfs_hide_datasets",
-        "(Linux) Hide ZFS datasets in disks list.",
+        "Hide ZFS datasets in the disk list",
     ),
     flag(
         "mem",
         "disk_free_priv",
-        "(Linux) Type of available disk space.",
+        "Count space reserved for root as free",
     ),
-    text("mem", "disks_filter", "Optional filter for shown disks."),
-    flag(
-        "mem",
-        "zfs_arc_cached",
-        "(Linux) Count ZFS ARC as cached memory.",
-    ),
-    flag(
-        "net",
-        "net_auto",
-        "Start in network graphs auto rescaling mode.",
-    ),
+    text("mem", "disks_filter", "Filter for the disks shown"),
+    flag("mem", "zfs_arc_cached", "Count the ZFS ARC as cache"),
+    flag("net", "net_auto", "Scale the network plots to the traffic"),
     option(
         "net",
         "net_floor",
@@ -441,7 +414,7 @@ pub const SERVER_OPTIONS: [ServerOption; 41] = [
             min: 0,
             max: i32::MAX as i64,
         },
-        "Lowest auto-scaled ceiling, in Mbit/s.",
+        "Lowest network plot scale, in Mbit/s",
     ),
     option(
         "net",
@@ -450,49 +423,45 @@ pub const SERVER_OPTIONS: [ServerOption; 41] = [
             min: 1,
             max: 86_400,
         },
-        "Seconds below a tenth of btop's graph_max before it falls; the plots ignore it.",
+        "Seconds before the scale falls; plots ignore it",
     ),
-    flag("net", "net_sync", "Network scale sync."),
+    flag("net", "net_sync", "Same scale for download and upload"),
     option(
         "net",
         "net_download",
         MEBIBITS,
-        "Fixed network graph download value.",
+        "Fixed download scale, in mebibits",
     ),
     option(
         "net",
         "net_upload",
         MEBIBITS,
-        "Fixed network graph upload value.",
+        "Fixed upload scale, in mebibits",
     ),
-    text("net", "net_iface", "Network Interface."),
+    text("net", "net_iface", "Network interface to show"),
     option(
         "proc",
         "proc_sorting",
         Control::Choice(&SORT_CHOICES),
-        "Processes sorting option. Orders sibling rows in the JSON stream and breaks ties in the page's sort.",
+        "Process order in the JSON stream",
     ),
     flag(
         "proc",
         "proc_reversed",
-        "Reverse processes sorting order. Orders sibling rows in the JSON stream and breaks ties in the page's sort.",
+        "Reverse the process order in the JSON stream",
     ),
+    flag("proc", "proc_tree", "Start the process list as a tree"),
     flag(
         "proc",
-        "proc_tree",
-        "Processes tree view. Applies at the next page load of a viewer with no stored view, unless --proc-view is set.",
+        "proc_per_core",
+        "Process CPU as a percent of one core",
     ),
-    flag("proc", "proc_per_core", "Process usage per core."),
-    flag(
-        "proc",
-        "proc_filter_kernel",
-        "(Linux) Filter kernel processes from output.",
-    ),
+    flag("proc", "proc_filter_kernel", "Hide kernel processes"),
     option(
         "proc",
         "proc_refresh_ms",
         Control::Chips(&PROC_REFRESH_CHOICES),
-        "Process list refresh, in milliseconds.",
+        "Time between process list updates, in milliseconds",
     ),
 ];
 
@@ -655,6 +624,9 @@ pub struct Config {
     /// btop-web `window_s`: the time every chart spans, in seconds
     /// (ACC-VIEW-110-TIME-AXIS).
     pub window_s: u64,
+    /// btop-web `smoothing`: the readouts' EMA time constant in milliseconds,
+    /// written as its [`SMOOTHING`] label (ACC-VIEW-230-STEADY-READOUT).
+    pub smoothing_ms: u64,
     /// btop-web `cpu_load`: the CPU load reporting scale
     /// (ACC-VIEW-130-LOAD-SCALE).
     pub cpu_load: LoadScale,
@@ -809,6 +781,10 @@ impl Config {
             "theme" => Some(self.theme.to_string()),
             "update_ms" => Some(self.update_ms.to_string()),
             "window_s" => Some(self.window_s.to_string()),
+            "smoothing" => SMOOTHING
+                .iter()
+                .find(|(_, ms)| *ms == self.smoothing_ms)
+                .map(|(label, _)| label.to_string()),
             "cpu_load" => Some(self.cpu_load.as_str().to_string()),
             "show_battery" => flag(self.show_battery),
             "selected_battery" => Some(self.selected_battery.clone()),
@@ -895,6 +871,7 @@ impl Config {
             known_agents: None,
             update_ms: DEFAULT_UPDATE_MS,
             window_s: DEFAULT_WINDOW_S,
+            smoothing_ms: 2000,
             cpu_load: LoadScale::Normalised,
             proc_root: PathBuf::from("/proc"),
             theme: 0,
@@ -1074,6 +1051,13 @@ impl Config {
                     self.window_s = value
                         .parse()
                         .map_err(|_| invalid(key, value, origin, index))?;
+                }
+                "smoothing" => {
+                    self.smoothing_ms = SMOOTHING
+                        .iter()
+                        .find(|(label, _)| *label == value)
+                        .map(|(_, ms)| *ms)
+                        .ok_or_else(|| invalid(key, value, origin, index))?;
                 }
                 "cpu_load" => {
                     self.cpu_load = LoadScale::parse(value)

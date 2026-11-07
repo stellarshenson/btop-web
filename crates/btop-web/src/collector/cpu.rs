@@ -580,7 +580,7 @@ fn cpuinfo_mhz(proc_root: &Path) -> Option<f64> {
 
 /// btop's `get_cpuHz` formatting, including the three-character truncation
 /// below 10 GHz.
-fn format_hz(hz: f64) -> String {
+pub(super) fn format_hz(hz: f64) -> String {
     if hz >= 10_000.0 {
         format!("{} GHz", (hz / 1000.0).round() as i64)
     } else if hz >= 1000.0 {

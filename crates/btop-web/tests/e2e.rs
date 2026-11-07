@@ -190,14 +190,22 @@ fn run_env(args: &[&str], envs: &[(&str, &str)]) -> (Option<i32>, String, String
     // directory is cleared while another child still holds its key file.
     static RUN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let run = RUN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // Files, not pipes read after exit: past the user's pipe-user-pages-soft a
+    // new pipe holds two pages, and the usage text then blocks the child's
+    // write until the deadline (DEF-TEST-143-EXIT-DEADLINE).
+    let output = xdg_path("run-output");
+    std::fs::create_dir_all(&output).expect("output dir");
+    let stdout_path = output.join(format!("{run}.out"));
+    let stderr_path = output.join(format!("{run}.err"));
     let mut command = Command::new(env!("CARGO_BIN_EXE_btop-web"));
     command
         .args(["--port", "0"])
         .args(args)
         .env("BTOP_WEB_PROC_ROOT", fixture("proc"))
-        .env("XDG_CONFIG_HOME", xdg_home(&format!("run-{run}")))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        // run-env-, not start()'s run-: its own counter would clear a live server's directory (DEF-TEST-144-XDG-COLLIDE).
+        .env("XDG_CONFIG_HOME", xdg_home(&format!("run-env-{run}")))
+        .stdout(std::fs::File::create(&stdout_path).expect("stdout file"))
+        .stderr(std::fs::File::create(&stderr_path).expect("stderr file"));
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -210,15 +218,11 @@ fn run_env(args: &[&str], envs: &[(&str, &str)]) -> (Option<i32>, String, String
         assert!(Instant::now() < deadline, "{args:?} did not exit in 10 s");
         std::thread::sleep(Duration::from_millis(20));
     };
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    if let Some(mut pipe) = server.0.stdout.take() {
-        pipe.read_to_string(&mut stdout).expect("stdout");
-    }
-    if let Some(mut pipe) = server.0.stderr.take() {
-        pipe.read_to_string(&mut stderr).expect("stderr");
-    }
-    (status.code(), stdout, stderr)
+    (
+        status.code(),
+        std::fs::read_to_string(&stdout_path).expect("stdout"),
+        std::fs::read_to_string(&stderr_path).expect("stderr"),
+    )
 }
 
 /// Start an agent on a free loopback port against the recorded tree, with its
@@ -618,7 +622,10 @@ fn binary_serves_fixture_metrics_and_an_event_stream() {
         !page.contains(&format!(r#"id="cpu-total">{}<"#, fixture_cpu_total())),
         "the since-boot CPU average leaked into a frame"
     );
-    assert!(page.contains("cpu0"), "no per-core rows");
+    assert!(
+        page.contains(r#"<span class="cl">C00</span>"#),
+        "no per-core rows"
+    );
     assert!(page.contains("GiB"), "no memory total");
     assert!(page.contains("eth0"), "no recorded interface");
     assert!(
@@ -1158,6 +1165,31 @@ fn live_status_shows_on_dimmed_and_off() {
         )],
     );
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/client/live_status.py");
+    let status = Command::new("python3")
+        .arg("-I")
+        .arg(script)
+        .arg(format!("http://{address}/"))
+        .status()
+        .expect("python3 runs");
+    assert!(status.success(), "the browser test failed: {status}");
+}
+
+/// ACC-LAYOUT-222-DRAG-LIVE in a real browser: a held drag shows the insert
+/// order before the release, the release and a reload keep it, and Escape
+/// restores it. Ignored for the reason above; `make test-client` runs it.
+#[test]
+#[ignore = "needs python3 with Playwright; make test-client runs it"]
+fn drag_inserts_live_and_escape_restores() {
+    let root = fixture("proc-gpu/proc");
+    let (_server, address) = start_mode(
+        "drag-live",
+        &[],
+        &[(
+            "BTOP_WEB_PROC_ROOT",
+            root.to_str().expect("utf-8 fixture path"),
+        )],
+    );
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/client/drag_live.py");
     let status = Command::new("python3")
         .arg("-I")
         .arg(script)

@@ -5,9 +5,11 @@
 //! first line waits for the next slow pass, at most 2 x `slow_ms`, so its
 //! process table and GPU readings are not the ones from before the sleep.
 //!
-//! The line is serialized from the published [`Frame`]'s snapshot only. The
-//! sampler collects once and renders the HTML fragments once; this module adds
-//! no collector and no timer to the sampler. A connection holds one wake
+//! The line is serialized from the published [`Frame`]'s raw sample only, so
+//! its values are not smoothed as the page's readouts are
+//! (ACC-VIEW-230-STEADY-READOUT). The sampler collects once and renders the
+//! HTML fragments once; this module adds no collector and no timer to the
+//! sampler. A connection holds one wake
 //! subscription, as an `/events` stream does, which keeps the sampler awake, and
 //! a viewer costs one serialization of the frame it was already sent.
 //!
@@ -170,7 +172,7 @@ pub async fn events_json(
                 (header::CONTENT_TYPE, CONTENT_TYPE),
                 (header::CACHE_CONTROL, "no-store"),
             ],
-            frame_json(&frame.snapshot),
+            frame_json(&frame.raw),
         )
             .into_response());
     }
@@ -178,7 +180,7 @@ pub async fn events_json(
         let _subscription = subscription;
         loop {
             if let Some(frame) = &held {
-                yield Ok::<_, Infallible>(frame_json(&frame.snapshot));
+                yield Ok::<_, Infallible>(frame_json(&frame.raw));
             }
             if receiver.changed().await.is_err() {
                 break;
