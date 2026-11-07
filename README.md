@@ -1,7 +1,7 @@
 # btop-web
 
 [![GitHub Actions](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml/badge.svg)](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml)
-![Version 1.0.4](https://img.shields.io/badge/version-1.0.4-blue?style=flat)
+![Version 1.0.5](https://img.shields.io/badge/version-1.0.5-blue?style=flat)
 [![Downloads](https://img.shields.io/crates/d/btop-web?style=flat)](https://crates.io/crates/btop-web)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue?style=flat)](LICENSE)
 [![Rust 1.99.1](https://img.shields.io/badge/rust-1.99.1-orange?style=flat)](rust-toolchain.toml)
@@ -12,7 +12,7 @@ btop-web is for live monitoring of critical systems, as btop is, but in a web br
 
 *btop-web lists every process that uses your CPU, and when your browser runs on the same machine, the btop-web tab is one of them.*
 
-![The owner's dashboard](docs/design/owner-2026-11-02.png)
+![The owner's dashboard](docs/design/owner-2026-11-07.png)
 
 ## Install
 
@@ -29,7 +29,7 @@ make env
 make build SKIP_VERSION_INCREMENT=1
 ```
 
-The Docker workflow publishes the release image to `ghcr.io/stellarshenson/btop-web` as `1.0.4` and `1.0`; [Container](docs/usage.md#container) builds and runs the image.
+The Docker workflow publishes the release image to `ghcr.io/stellarshenson/btop-web` as `1.0.5` and `1.0`; [Container](docs/usage.md#container) builds and runs the image.
 
 ## Run
 

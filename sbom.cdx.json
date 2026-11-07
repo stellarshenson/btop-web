@@ -337,8 +337,8 @@
     {
       "type": "application",
       "name": "btop-web",
-      "version": "1.0.3",
-      "purl": "pkg:cargo/btop-web@1.0.3",
+      "version": "1.0.5",
+      "purl": "pkg:cargo/btop-web@1.0.5",
       "licenses": [
         {
           "license": {
@@ -385,8 +385,8 @@
     {
       "type": "library",
       "name": "cc",
-      "version": "1.11.0",
-      "purl": "pkg:cargo/cc@1.11.0",
+      "version": "1.11.1",
+      "purl": "pkg:cargo/cc@1.11.1",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -554,8 +554,8 @@
     {
       "type": "library",
       "name": "ctutils",
-      "version": "0.4.7",
-      "purl": "pkg:cargo/ctutils@0.4.7",
+      "version": "0.4.8",
+      "purl": "pkg:cargo/ctutils@0.4.8",
       "licenses": [
         {
           "expression": "Apache-2.0 OR MIT"
@@ -718,8 +718,8 @@
     {
       "type": "library",
       "name": "flate2",
-      "version": "1.1.10",
-      "purl": "pkg:cargo/flate2@1.1.10",
+      "version": "1.1.11",
+      "purl": "pkg:cargo/flate2@1.1.11",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -968,8 +968,8 @@
     {
       "type": "library",
       "name": "inout",
-      "version": "0.2.5",
-      "purl": "pkg:cargo/inout@0.2.5",
+      "version": "0.2.6",
+      "purl": "pkg:cargo/inout@0.2.6",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -1141,8 +1141,8 @@
     {
       "type": "library",
       "name": "mime",
-      "version": "0.3.17",
-      "purl": "pkg:cargo/mime@0.3.17",
+      "version": "0.3.18",
+      "purl": "pkg:cargo/mime@0.3.18",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -1950,8 +1950,8 @@
     {
       "type": "library",
       "name": "smallvec",
-      "version": "1.16.4",
-      "purl": "pkg:cargo/smallvec@1.16.4",
+      "version": "1.16.5",
+      "purl": "pkg:cargo/smallvec@1.16.5",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -2663,8 +2663,8 @@
     {
       "type": "library",
       "name": "winnow",
-      "version": "1.0.4",
-      "purl": "pkg:cargo/winnow@1.0.4",
+      "version": "1.0.5",
+      "purl": "pkg:cargo/winnow@1.0.5",
       "licenses": [
         {
           "license": {

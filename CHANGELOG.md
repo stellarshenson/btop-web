@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-07
+
+### Added
+
+- Panels move while one is dragged by its header: the panels between its old and new place shift one place over before the drop, Escape puts every panel back, and mouse and touch both work
+- The CONFIG smoothing setting S, M or L (1, 2 or 4 s, default M, the `smoothing` key in `btop-web.conf`) sets the average every live readout shows, except the process table and the Processes tile; the plots keep their own 1 s average and `/events.json` keeps the raw samples
+- `docs/usage.md` holds the usage detail the README no longer carries, including the `/events.json` schema and the performance figures
+
+### Changed
+
+- Tooltips say in one line, two at most, what an element is, with no source, formula or mechanism; the tooltip on the Processes header count names its two numbers, the processes in the list now and all processes
+- Live byte and rate readouts show one decimal at a fixed decimal point and change unit up at 1000 and down below 800 of the lower unit, so network rates no longer jump between units every 250 ms
+- Mount and GPU memory values reserve the width of `000.0 Byte`, so the percent beside them stays in place while a value falls to 0
+- The README states in a few lines that btop-web is for live monitoring of critical systems, as btop is, in a web browser, and keeps only install, run and the main flags; the crates.io page shows it
+- In band 3 the GPU and Network panels are equally wide, and storage keeps its width
+- Tooltip texts that never change come with the page instead of with every cpu and memory update, a few hundred bytes less per memory update for each client; a 1.0.4 page in client mode still reads every value from a 1.0.5 agent
+- Seven dependencies move to their latest patch releases: cc, ctutils, flate2, inout, mime, smallvec and winnow
+
+### Fixed
+
+- On a phone each band takes its height and minimum height from the panels it holds, so a panel dragged into another band is no longer clipped
+- The host label's tooltip names the full host name, so a long name cut in the top bar can still be read on windows 1101 px and wider
+
 ## [1.0.4] - 2026-11-02
 
 ### Added

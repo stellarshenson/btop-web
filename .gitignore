@@ -11,6 +11,7 @@ __pycache__/
 .DS_Store
 .playwright-mcp/
 .ipynb_checkpoints/
+.claude/agent-memory/
 
 # runtime files of the local fixture and live servers
 *.pid
