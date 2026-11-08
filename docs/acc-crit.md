@@ -425,7 +425,7 @@ The README explains the product and shows both themes
   - test-tags: MANUAL
   - log: 2026-11-06T13:38:24Z @kj added
   - log: 2026-11-06T15:12:06Z @kj closed
-- [x] `ACC-DOCS-226-README-SIMPLE` **README is simple** - MEDIUM; README holds only what btop-web is, install, run and the main flags, with links for the rest; badges stay; detail it drops that no other file holds moves to docs/usage.md
+- [x] `ACC-DOCS-226-README-SIMPLE` **README is simple** - MEDIUM; The README keeps only purpose, install, run and the main flags, with links for the rest; its links are absolute GitHub URLs, because crates.io renders the README under crates/btop-web/ and relative paths return 404 there (DEF-DOCS-158-README-LINKS)
   - evidence: README 59 lines, was 312: purpose, install, run, flags, licence; badges identical to HEAD; every dropped fact found in docs/usage.md or another tracked file; all links and anchors resolve
   - related: ACC-DOCS-224-README-PURPOSE
   - test: read the README top to bottom in under 2 minutes; every removed fact is in docs/usage.md or another file
@@ -433,6 +433,7 @@ The README explains the product and shows both themes
   - log: 2026-11-06T13:38:46Z @kj added
   - log: 2026-11-06T15:12:06Z @kj closed
   - log: 2026-11-06T17:43:03Z @kj owner keeps relative README links; README now ships to crates.io (Cargo.toml readme key), check its screenshot and links there after the next publish
+  - log: 2026-11-08T22:56:33Z @kj amended text "README holds only what btop-web is, install, run and the main flags, with links for the rest; badges stay; detail it drops that no other file holds moves to docs/usage.md" -> "The README keeps only purpose, install, run and the main flags, with links for the rest; its links are absolute GitHub URLs, because crates.io renders the README under crates/btop-web/ and relative paths return 404 there (DEF-DOCS-158-README-LINKS)"; reason: owner decision 2026-11-08 after DEF-DOCS-158: absolute links so the crates.io page works
 - [x] `ACC-DOCS-227-README-JOKE` **README carries one self-deprecating remark** - LOW; README carries one short self-deprecating remark about btop-web, set in italic
   - evidence: README line 13, the one italic sentence: btop-web lists every process that uses your CPU, and when your browser runs on the same machine, the btop-web tab is one of them
   - test: README has one italic sentence that jokes about btop-web itself

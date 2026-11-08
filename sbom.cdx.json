@@ -337,8 +337,8 @@
     {
       "type": "application",
       "name": "btop-web",
-      "version": "1.0.5",
-      "purl": "pkg:cargo/btop-web@1.0.5",
+      "version": "1.0.6",
+      "purl": "pkg:cargo/btop-web@1.0.6",
       "licenses": [
         {
           "license": {

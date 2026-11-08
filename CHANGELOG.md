@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-08
+
+### Fixed
+
+- The crate page shows the dashboard screenshot, and its LICENSE, NOTICE.md and docs/usage.md links resolve, because every README link is an absolute GitHub URL (DEF-DOCS-158-README-LINKS)
+
 ## [1.0.5] - 2026-11-07
 
 ### Added
