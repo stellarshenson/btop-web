@@ -1175,6 +1175,10 @@ Palette tokens, variants and contrast across the shipped pairs
   - root-cause: 2026-11-07T13:15:50Z @kj the DEF-DOCS-155 and DEF-DOCS-156 passes checked only where each readout value comes from; number format and the unsmoothed readouts were never checked
   - log: 2026-11-07T13:15:50Z @kj added; reason: the text lists six sites found by one review round
   - log: 2026-11-07T13:59:24Z @kj closed
+- [ ] `DEF-DOCS-158-README-LINKS` **crates.io page shows a broken screenshot and 404 doc links** - MINOR; On the crates.io page for 1.0.5 the README's relative links resolve under crates/btop-web/, so the dashboard screenshot and the LICENSE and docs/usage.md links return 404
+  - repro: Open https://crates.io/crates/btop-web after 1.0.5; the screenshot is broken and LICENSE, usage.md and their anchors return 404
+  - root-cause: 2026-11-08T22:54:27Z @kj Cargo sends the packaged README path ../.../README.md; crates.io renders it under the crate directory, so repo-root relative paths miss
+  - log: 2026-11-08T22:54:27Z @kj added
 
 ## Performance `PERF`
 
