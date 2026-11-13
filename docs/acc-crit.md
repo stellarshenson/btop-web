@@ -1538,6 +1538,16 @@ What the panels render and how unavailable values are drawn
   - log: 2026-11-06T21:48:14Z @kj amended text "Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) moves smoothly: smoothing works on the logarithm of the value, so the shown value changes by a bounded factor per tick and never jumps an order of magnitude at once, yet follows a sustained change within about 1 s; the time constant is set in CONFIG; byte and rate values keep a fixed decimal point and switch unit with hysteresis; /events.json stays raw" -> "Every live readout (network rates, CPU, memory, GPU and storage values; not the plots, not the process table) shows an EMA of its samples (concept C3); CONFIG has a smoothing setting S, M, L (time constants 1, 2 and 4 s), default M; byte and rate values show one decimal in tabular figures with a fixed decimal point and switch unit up at 1000 and down below 800 of the lower unit; percent values keep their format; /events.json stays raw"; reason: owner: ema fixed point hysteresis, settings smoothing factor S / M / L, ride with M
   - log: 2026-11-06T21:48:14Z @kj owner chose concept C3 with an S/M/L setting, default M; time constants 1, 2, 4 s chosen by the orchestrator, M equal to btop's default 2 s update interval
   - log: 2026-11-06T23:11:36Z @kj closed
+- [x] `ACC-VIEW-231-ALL-NUM` **Every number runs the number effect** - HIGH; every number host on the page runs the CONFIG number-change effect, not only the large stat values: network rate, top and total figures, footers, table cells, the gauge centre readouts and the process count; aria-hidden scale tick labels stay static
+  - evidence: Every number host animates, gauge centre and process count included: spring 32/33 intervals and odometer 267 mid-roll samples off the settled reading, housing 0.0 px; make ci 432 passed, 0 failed, 5 ignored; final review round 3 SHIP from architect, bug-hunter and ux-designer.
+  - overrides: DEF-VIEW-81-ODOMETER-SMALL
+  - test: CONFIG number effect on spring, load the page, watch the network legend, a footer count and a table cell change: each runs the effect
+  - test-tags: MANUAL
+  - log: 2026-11-12T10:37:19Z @kj added
+  - log: 2026-11-12T19:11:54Z @kj owner confirmed on 2026-11-12: the gauge centre readouts are in scope and must animate too
+  - log: 2026-11-12T21:39:13Z @kj amended text "every number on the page runs the CONFIG number-change effect, not only the large stat values: network rate, top and total figures, footers, table cells and axis labels included" -> "every number host on the page runs the CONFIG number-change effect, not only the large stat values: network rate, top and total figures, footers, table cells, the gauge centre readouts and the process count; aria-hidden scale tick labels stay static"
+  - log: 2026-11-12T21:40:34Z @kj closed: implemented (unreleased)
+  - log: 2026-11-12T21:40:37Z @kj final review: AST graph only, ponytail rows fed to a three-lens adversarial panel, round 3 SHIP
 
 ## Layout and density `LAYOUT`
 

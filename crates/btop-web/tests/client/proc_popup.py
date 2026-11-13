@@ -139,7 +139,7 @@ STALE_WORD = """() => {
 
 
 def row(page, pid):
-    return page.locator("#proc-body tr", has=page.locator(f'td:first-child:text-is("{pid}")'))
+    return page.locator("#proc-body tr", has=page.locator(f'td:first-child:has(span:text-is("{pid}"))'))
 
 
 def open_popup(page, pid):
@@ -170,7 +170,7 @@ def main():
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.add_init_script("document.addEventListener('htmx:sseOpen', (event) => { window.stream = event.detail.source; })")
         page.goto(URL, wait_until="load")
-        page.wait_for_selector(f'#proc-body td:first-child:text-is("{GPU_PID}")', timeout=20000)
+        page.wait_for_selector(f'#proc-body td:first-child:has(span:text-is("{GPU_PID}"))', timeout=20000)
 
         # DEF-GRAPH-129-PROC-PLOT: the server has sampled since the page woke it,
         # and the first body draws that time at once.

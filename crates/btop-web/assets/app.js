@@ -444,8 +444,24 @@
     return cache[key];
   }
 
+  // A [data-w] host with a running number effect owns its children. The new
+  // reading becomes the effect's target and its settled text; writing
+  // textContent here would replace the effect's layers, and numFinish would
+  // then put the older reading back. Every applier write reaches this
+  // function, so no writer can replace a running effect's layers.
   function frameText(node, text) {
     if (!node) return;
+    var state = node._numState;
+    if (state && state.el === node && state.run) {
+      if (state.text !== text) {
+        state.text = text;
+        if (state.run.retarget) state.run.retarget(text);
+      }
+      // The shadow carries the newest reading too, because syncNumbers reads
+      // it back for a host the applier wrote.
+      nodeCache(node).text = text;
+      return;
+    }
     var cache = nodeCache(node);
     if (cache.text === text) return;
     cache.text = text;
@@ -483,28 +499,6 @@
     }
     fields.push(field);
     return fields;
-  }
-
-  // A [data-w] host with a running number effect owns its children. The new
-  // reading becomes the effect's target and its settled text; writing
-  // textContent here would replace the effect's layers, and numFinish would
-  // then put the older reading back. syncNumbers stamps each host with its
-  // state index, so the lookup is a property read, not a scan.
-  function numberText(node, text) {
-    if (!node) return;
-    var index = node._num;
-    var state = index === undefined ? null : numStates[index];
-    if (state && state.el === node) {
-      var run = numRuns[index];
-      if (run) {
-        if (state.text !== text) {
-          state.text = text;
-          if (run.retarget) run.retarget(text);
-        }
-        return;
-      }
-    }
-    frameText(node, text);
   }
 
   function svgNode(name) {
@@ -594,7 +588,7 @@
       tile.innerHTML = '<span class="stat-value" data-w="100" data-range="100" id="cpu-total"></span><span class="stat-unit">%</span>';
       span = nodeCache(tile).value = tile.querySelector(".stat-value");
     }
-    numberText(span, value);
+    frameText(span, value);
     frameAttr(span, "class", "stat-value " + band);
   }
 
@@ -719,6 +713,150 @@
     }
   }
 
+  /* ---------- the gauge readout's number effect ---------- */
+
+  // ACC-VIEW-231-ALL-NUM: the gauge's centre readout runs the configured
+  // effect like a text host. SVG text cannot hold the effect's span layers,
+  // so a [data-w] host in a .g-num overlay carries them; the painted copy
+  // stays laid out under the overlay, hidden by data-num-gauge, and the
+  // gauge's aria-label carries the settled reading, because the overlay and
+  // the readout it covers are hidden from a screen reader. Colours come from
+  // the tokens, so a theme switch needs no re-placement; the placement copies
+  // the paint's size, spacing and baseline.
+
+  function zeroSpan() {
+    var probe = document.createElement("span");
+    probe.style.cssText = "display:inline-block;width:0;height:0;margin:0;padding:0;border:0";
+    return probe;
+  }
+
+  function numPx(value) {
+    var at = parseFloat(value);
+    return at === at ? at : 0;
+  }
+
+  // The copy the overlay stands on: the wide layout's HTML readout, else the
+  // one shape SVG the container query shows. A hidden panel or an unavailable
+  // value has none.
+  function gaugePaint(gauge) {
+    var read = gauge.querySelector(".g-read b");
+    if (read && read.getClientRects().length) {
+      return { box: read, parent: read.parentNode, html: true, unit: read.querySelector("i") };
+    }
+    var values = gauge.querySelectorAll(".g-value");
+    for (var index = 0; index < values.length; index += 1) {
+      if (!values[index].getClientRects().length) continue;
+      return {
+        box: values[index],
+        parent: gauge,
+        html: false,
+        unit: values[index].querySelector(".g-unit")
+      };
+    }
+    return null;
+  }
+
+  function gaugeBox(gauge) {
+    var box = document.createElement("div");
+    box.className = "g-num";
+    box.setAttribute("aria-hidden", "true");
+    var host = box.appendChild(document.createElement("span"));
+    host.setAttribute("data-w", "");
+    box.appendChild(document.createElement("i"));
+    box.appendChild(zeroSpan());
+    nodeCache(gauge).num = box;
+    return box;
+  }
+
+  // The overlay copies the paint's type at its rendered size (an SVG user
+  // unit times the shape's screen scale), and its top is placed from a
+  // zero-size calibration inline-block, whose bottom margin edge sits on the
+  // line's baseline: the paint's baseline is its screen CTM's y, or a zero
+  // span in the HTML box. Both are viewport deltas, so no containing block is
+  // read, and the HTML copy lives inside .g-read, whose translate would
+  // otherwise rasterize the two copies at different subpixel phases.
+  function gaugePlace(gauge, paint) {
+    var box = cached(gauge, "num", ".g-num");
+    var unit = box.children[1];
+    var style = window.getComputedStyle(paint.box);
+    var scale = 1;
+    var size = numPx(style.fontSize);
+    var ctm = null;
+    if (!paint.html) {
+      ctm = paint.box.getScreenCTM();
+      if (!ctm) return;
+      scale = ctm.a;
+      size *= scale;
+    }
+    box.style.fontSize = size + "px";
+    box.style.letterSpacing = numPx(style.letterSpacing) * scale + "px";
+    var unitStyle = window.getComputedStyle(paint.unit);
+    unit.style.fontSize = numPx(unitStyle.fontSize) * scale + "px";
+    unit.style.letterSpacing = numPx(unitStyle.letterSpacing) * scale + "px";
+    unit.style.marginLeft = (paint.html
+      ? numPx(unitStyle.marginLeft)
+      : numPx(paint.unit.getAttribute("dx")) * scale) + "px";
+    var top = gauge.getBoundingClientRect().top;
+    var target;
+    if (paint.html) {
+      var probe = zeroSpan();
+      paint.box.appendChild(probe);
+      target = probe.getBoundingClientRect().top - top;
+      probe.remove();
+    } else {
+      target = ctm.d * Number(paint.box.getAttribute("y")) + ctm.f - top;
+    }
+    box.style.top = "0px";
+    var cal = box.lastChild.getBoundingClientRect().top - top;
+    box.style.top = (target - cal).toFixed(3) + "px";
+  }
+
+  // The host takes the settled reading through frameText, so a running effect
+  // retargets instead of being painted over.
+  function gaugeText(box, state) {
+    frameText(box.firstChild, state.value);
+    frameAttr(box.firstChild, "data-range", state.range || null);
+    frameText(box.children[1], state.unit);
+  }
+
+  // Detection and placement read layout, so the per-frame path below runs
+  // them only when the overlay is missing or stopped; the fit pass runs them
+  // after a resize, a shape switch or a face change. A hidden panel or an
+  // unavailable value keeps the host's text current but shows no overlay.
+  function gaugeShow(gauge) {
+    var state = gauge._num;
+    if (!state) return;
+    state.paint = gaugePaint(gauge);
+    var box = cached(gauge, "num", ".g-num");
+    if (!box && state.value && state.paint) {
+      box = gaugeBox(gauge);
+      state.paint.parent.appendChild(box);
+    }
+    if (box) gaugeText(box, state);
+    if (!state.value || !state.paint) {
+      if (box) box.classList.remove("on");
+      frameAttr(gauge, "data-num-gauge", null);
+      return;
+    }
+    if (box.parentNode !== state.paint.parent) state.paint.parent.appendChild(box);
+    box.classList.add("on");
+    frameAttr(gauge, "data-num-gauge", "");
+    gaugePlace(gauge, state.paint);
+  }
+
+  function gaugeNumber(gauge, value, unit, range) {
+    var state = gauge._num || (gauge._num = { paint: null });
+    state.value = value || "";
+    state.unit = unit || "";
+    state.range = range || "";
+    var box = cached(gauge, "num", ".g-num");
+    if (state.value && box && box.classList.contains("on")) {
+      gaugeText(box, state);
+      return;
+    }
+    gaugeShow(gauge);
+  }
+
   function setMeter(node, value) {
     if (!node) return;
     if (value) {
@@ -759,7 +897,7 @@
       cv.appendChild(unit);
       nodeCache(cv).unit = unit;
     }
-    numberText(cell, display);
+    frameText(cell, display);
   }
 
   function newCoreRow(name, value, display) {
@@ -785,7 +923,9 @@
         node = document.createElement("span");
         node.setAttribute("data-field", "cpu-freq");
         node.setAttribute("data-tip", tipText("cpu-freq"));
-        node.appendChild(document.createElement("b"));
+        var freq = document.createElement("b");
+        freq.setAttribute("data-w", "00.00 GHz");
+        node.appendChild(freq);
         box.insertBefore(node, box.querySelector('[data-field="cpu-temp"], [data-field="cpu-load"]'));
         nodeCache(box).freq = node;
       }
@@ -823,8 +963,8 @@
         nodeCache(box).load = node;
       }
       if (tip) {
-        if (!cached(node, "b", "b[data-num]")) {
-          node.innerHTML = 'load <b data-num></b>/1m <b data-num></b>/5m <b data-num></b>/15m';
+        if (!cached(node, "b", "b")) {
+          node.innerHTML = 'load <b></b>/1m <b></b>/5m <b></b>/15m';
           // The new children void the node's text shadow and the figures list.
           nodeCache(node).text = undefined;
           nodeCache(node).b = node.querySelector("b");
@@ -928,14 +1068,14 @@
     }
     if (!b) {
       frameAttr(fact, "class", "fact load");
-      fact.innerHTML = '<span>load</span><b><span class="load-cell"><span data-num></span>/1m</span> <span class="load-cell"><span data-num></span>/5m</span> <span class="load-cell"><span data-num></span>/15m</span></b>';
+      fact.innerHTML = '<span>load</span><b><span class="load-cell"><span></span>/1m</span> <span class="load-cell"><span></span>/5m</span> <span class="load-cell"><span></span>/15m</span></b>';
       b = nodeCache(fact).b = fact.querySelector("b");
     }
     frameAttr(fact, "data-tip", tip);
-    var cells = cachedList(b, "cells", "[data-num]");
+    var cells = cachedList(b, "cells", ".load-cell > span");
     for (var index = 0; index < cells.length; index += 1) {
       if (reserve) frameAttr(cells[index], "data-w", reserve);
-      numberText(cells[index], loads[index]);
+      frameText(cells[index], loads[index]);
     }
   }
 
@@ -952,9 +1092,9 @@
     if (stat) {
       setCpuStatFacts(stat, frame);
       setStatTile(cached(stat, "tile", ".stat-tile"), total, band);
-      var figures = cachedList(stat, "figures", "[data-num]");
+      var figures = cachedList(stat, "figures", '[data-field="cpu-load"] b');
       for (var index = 0; index < figures.length; index += 1) {
-        numberText(figures[index], loads[index]);
+        frameText(figures[index], loads[index]);
         if (reserve) frameAttr(figures[index], "data-w", reserve);
       }
       setChart(cached(stat, "chart", '[data-chart="cpu"]'), frame[frame.length - 2], frame[frame.length - 1], Number(frame[4]));
@@ -973,6 +1113,7 @@
         setGaugeValue(circle, total, "%", "total");
         setGaugeValue(squircle, total, "%", "total");
         setGaugeRead(cached(gauge, "read", ".g-read"), total, "%", "total");
+        gaugeNumber(gauge, total, "%", "100");
       }
       var facts = cachedList(gaugePanel, "facts", ".facts .fact");
       if (facts.length) {
@@ -1081,6 +1222,7 @@
       inner.appendChild(document.createTextNode("of total "));
       var value = document.createElement("span");
       value.className = "meta-value";
+      value.setAttribute("data-w", "000.0 MiB");
       inner.appendChild(value);
       node.appendChild(inner);
       header.appendChild(node);
@@ -1143,6 +1285,7 @@
         node = document.createElement("span");
         node.className = "meta";
         node.setAttribute("data-field", "mem-stat-total");
+        node.setAttribute("data-w", "of 000.0 MiB");
         header.insertBefore(node, cached(header, "facts", '[data-field="mem-stat-facts"]'));
         nodeCache(header).total = node;
       }
@@ -1173,7 +1316,7 @@
     }
     head.appendChild(document.createTextNode(label));
     var value = document.createElement("b");
-    if (kind !== "swap") value.setAttribute("data-w", "000.0 MiB");
+    value.setAttribute("data-w", kind === "swap" ? "000.0 / 000.0 GiB" : "000.0 MiB");
     var share = document.createElement("span");
     share.className = "pct";
     share.setAttribute("data-w", "100%");
@@ -1222,10 +1365,10 @@
     node.appendChild(head);
     var used = document.createElement("div");
     used.className = "mount-row";
-    used.innerHTML = '<span class="mount-key">used</span><span class="meter meter-used"></span><span class="mount-pct"></span><span class="mount-size" data-w="000.0 Byte"></span>';
+    used.innerHTML = '<span class="mount-key">used</span><span class="meter meter-used"></span><span class="mount-pct" data-w="100%"></span><span class="mount-size" data-w="000.0 Byte"></span>';
     var free = document.createElement("div");
     free.className = "mount-row free";
-    free.innerHTML = '<span class="mount-key">free</span><span class="meter meter-free"></span><span class="mount-pct"></span><span class="mount-size" data-w="000.0 Byte"></span>';
+    free.innerHTML = '<span class="mount-key">free</span><span class="meter meter-free"></span><span class="mount-pct" data-w="100%"></span><span class="mount-size" data-w="000.0 Byte"></span>';
     node.appendChild(used);
     node.appendChild(free);
     return node;
@@ -1265,6 +1408,7 @@
       if (!totalNode) {
         var mountHead = cached(node, "head", ".mount-head");
         totalNode = document.createElement("b");
+        totalNode.setAttribute("data-w", "000.0 Byte");
         mountHead.appendChild(totalNode);
         nodeCache(node).total = totalNode;
         nodeCache(mountHead).b = totalNode;
@@ -1340,7 +1484,7 @@
           span = nodeCache(tile).value = tile.querySelector(".stat-value");
           nodeCache(tile).unit = tile.querySelector(".stat-unit");
         }
-        numberText(span, frame[2]);
+        frameText(span, frame[2]);
         frameAttr(span, "data-range", frame[4]);
         frameText(cached(tile, "unit", ".stat-unit"), frame[3]);
       } else if (tile && span) {
@@ -1398,6 +1542,7 @@
         setGaugeValue(cached(gauge, "circle", "svg.g-circle"), frame[2], frame[3], "used");
         setGaugeValue(cached(gauge, "squircle", "svg.g-squircle"), frame[2], frame[3], "used");
         setGaugeRead(cached(gauge, "read", ".g-read"), frame[2], frame[3], "used");
+        gaugeNumber(gauge, frame[2], frame[3], frame[4]);
         var bar = cached(gaugePanel, "bar", ".mem-bar");
         frameAttr(bar, "data-state", segments === 0 ? "unavailable" : null);
         var bars = cachedList(bar, "segs", ".mem-seg");
@@ -1678,9 +1823,11 @@
   /* ---------- number change effects (ACC-VIEW-108-NUM-MOTION) ---------- */
 
   // The setting is per browser, stored like the motion toggle. Effects run on
-  // the large stat values (DEF-VIEW-81) and the load figures (ACC-VIEW-131);
-  // each one is a [data-w] that reserves its widest form, so a tween or an
-  // overlay moves no neighbour (ACC-LAYOUT-74), and tabular figures give 0 the
+  // every [data-w] host (ACC-VIEW-231-ALL-NUM, overriding DEF-VIEW-81). A host
+  // reserves the widest form its data-w declares; a host whose neighbours
+  // cannot move carries an empty data-w (fixed-width table cells, the proc
+  // bar's free space, the absolute .g-num gauge overlay), so a tween or an
+  // overlay moves no neighbour (ACC-LAYOUT-74). Tabular figures give 0 the
   // advance and height of every other digit. Only the app's motion toggle
   // stops them; the OS reduced-motion query is not consulted, because the
   // owner's machine sets it on every page.
@@ -1728,10 +1875,12 @@
   } catch (error) {
     // Storage is optional; none holds for this page view.
   }
-  // One record per [data-w] in document order: the target text and the texts
-  // the echoes may show. A frame replaces the nodes, so the order is the key.
+  // One record per [data-w] host: the last reading, the unit beside it and the
+  // texts the echoes may show. A record follows its host's element, so a panel
+  // or row that moves keeps its history; a place is matched only when a frame
+  // replaced that host's node (see syncNumbers).
   var numStates = [];
-  var numRuns = {};
+  var numByEl = new WeakMap();
 
   function numParts(text) {
     var match = /^(\D*)(\d+(?:\.\d+)?)([\s\S]*)$/.exec(text);
@@ -1761,6 +1910,19 @@
   function numSignificant(el, before, after) {
     var range = numRange(el);
     return !range || Math.abs(after.value - before.value) >= range * NUM_RATE;
+  }
+
+  // The unit or qualifier the template puts just beside a value: the network
+  // legend's " MiB/s" text node, the memory tile's unit span. A unit step
+  // changes that text without changing the host's own digits, so a tween must
+  // not cross it. A sibling that is a host, or a wrapper holding other hosts,
+  // belongs to other numbers and is no unit.
+  function hostUnit(el) {
+    var next = el.nextSibling;
+    if (!next) return "";
+    if (next.nodeType === 3) return next.nodeValue;
+    if (next.nodeType !== 1 || next.hasAttribute("data-w") || next.querySelector("[data-w]")) return "";
+    return next.textContent;
   }
 
   function numLine(el) {
@@ -1796,36 +1958,35 @@
   // host marker is an attribute, not a class: htmx settles the class and style
   // of a swapped element back to the server's own, which would undo a class
   // 20 ms in.
-  function numAdopt(index, el) {
-    var run = numRuns[index];
-    if (!run || run.host.el === el) return;
-    var old = run.host.el;
+  function numAdopt(state, el) {
+    if (state.el === el) return;
+    var old = state.el;
     old.removeAttribute("data-num-host");
     el.textContent = "";
     while (old.firstChild) el.appendChild(old.firstChild);
     el.setAttribute("data-num-host", "");
-    run.host.el = el;
+    state.el = el;
+    numByEl.set(el, state);
+    el._numState = state;
   }
 
   // A run carries an optional retarget for continuous motion: a spring takes
   // the newest reading as its target and keeps its position and velocity
   // (ACC-VIEW-120/121). A run without one is a discrete transition that holds
   // the newest reading until it ends.
-  function numBegin(index, host, stop, retarget) {
-    numRuns[index] = { host: host, stop: stop, retarget: retarget || null };
+  function numBegin(state, stop, retarget) {
+    state.run = { stop: stop, retarget: retarget || null };
     numStarted += 1;
     numCount();
   }
 
   // End one effect: its node shows the newest reading, never a value that a
   // later frame replaced.
-  function numFinish(index) {
-    if (!numRuns[index]) return;
-    delete numRuns[index];
+  function numFinish(state) {
+    if (!state.run) return;
+    state.run = null;
     numCompleted += 1;
     numCount();
-    var state = numStates[index];
-    if (!state) return;
     state.el.textContent = state.text;
     state.el.removeAttribute("data-num-host");
     // Only a node the applier writes carries a text shadow; an out-of-band
@@ -1849,9 +2010,11 @@
   // and velocity the number has now, so it neither jumps back nor restarts.
   // The settle timer moves with it, so the number comes to rest about
   // NUM_SPRING_MS after the last reading.
-  function numSpring(index, el, before, after, trail) {
-    var host = { el: el };
+  function numSpring(state, text, before, after, trail) {
     var ms = NUM_SPRING_MS;
+    // The echo drifts a fifth of the host's own line, so a footer-sized
+    // number's ghost stays inside its line; the 6 px cap keeps the stat look.
+    var drift = -Math.min(6, numLine(state.el) * 0.2);
     // The echoes keep a discrete effect's spacing and lifetime, so a longer
     // spring shows no more of them at once.
     var echoMs = numDuration();
@@ -1865,11 +2028,19 @@
     var echoes = [];
     var frame = 0;
     var timer = 0;
+    // The tween is decorative: the sr-only copy carries the settled reading,
+    // so a screen reader during the spring reads a value the page displays
+    // (matching the odometer's aria-hidden cells and plain copy).
+    var reading = document.createElement("span");
+    reading.className = "sr-only";
+    reading.textContent = text;
     var tween = document.createElement("span");
     tween.className = "num-tween";
-    host.el.textContent = "";
-    host.el.appendChild(tween);
-    host.el.setAttribute("data-num-host", "");
+    tween.setAttribute("aria-hidden", "true");
+    state.el.textContent = "";
+    state.el.appendChild(reading);
+    state.el.appendChild(tween);
+    state.el.setAttribute("data-num-host", "");
 
     // The spring's position and velocity at `now`, from the current run. A
     // frame's timestamp can precede `started` after a long swap, and the closed
@@ -1897,15 +2068,19 @@
         echoes[echo].animation.cancel();
         echoes[echo].layer.remove();
       }
-      numFinish(index);
+      numFinish(state);
     }
 
-    // A new reading retargets the running spring. A different unit, prefix or
-    // decimal count cannot tween, so that reading stays held for the finish.
+    // A new reading retargets the running spring. A different prefix, suffix
+    // or decimal count cannot tween: end here, showing this reading at once.
     function retarget(text) {
       var next = numParts(text);
       if (!next || next.pre !== parts.pre || next.post !== parts.post ||
-          next.decimals !== parts.decimals) return false;
+          next.decimals !== parts.decimals) {
+        finish();
+        return false;
+      }
+      reading.textContent = text;
       var now = window.performance.now();
       var at = motion(now);
       from = at.value;
@@ -1927,7 +2102,7 @@
       draw(at.value);
       if (trail && now - echoAt >= echoMs / 8) {
         echoAt = now;
-        echoes.push(numEcho(host.el, tween.textContent, 0.3, -6, Math.min(echoMs, ms - (now - started))));
+        echoes.push(numEcho(state.el, tween.textContent, 0.3, drift, Math.min(echoMs, ms - (now - started))));
         if (echoes.length > NUM_ECHOES) {
           var oldest = echoes.shift();
           oldest.animation.cancel();
@@ -1940,7 +2115,7 @@
     draw(from);
     // The timer, not the display cadence, ends the effect.
     timer = window.setTimeout(finish, ms);
-    numBegin(index, host, finish, retarget);
+    numBegin(state, finish, retarget);
     frame = window.requestAnimationFrame(step);
   }
 
@@ -1949,24 +2124,26 @@
   // aria-hidden and removed within the effect's duration. A discrete
   // transition: the trail has one fixed end state, so a reading arriving
   // mid-run is applied when the trail is gone (ACC-VIEW-120).
-  function numBlur(index, el, text, history) {
-    var host = { el: el };
+  function numBlur(state, text, history) {
     var ms = numDuration();
+    // The same line-relative drift as the spring: a small host's echo stays
+    // inside its own line.
+    var drift = -Math.min(6, numLine(state.el) * 0.2);
     var opacity = [0.3, 0.17, 0.09];
     var echoes = [];
     var tween = document.createElement("span");
     tween.className = "num-tween";
     tween.textContent = text;
-    host.el.textContent = "";
-    host.el.appendChild(tween);
-    host.el.setAttribute("data-num-host", "");
+    state.el.textContent = "";
+    state.el.appendChild(tween);
+    state.el.setAttribute("data-num-host", "");
     for (var echo = 0; echo < history.length && echo < NUM_ECHOES; echo += 1) {
-      echoes.push(numEcho(host.el, history[echo], opacity[echo], -6, ms));
+      echoes.push(numEcho(state.el, history[echo], opacity[echo], drift, ms));
     }
 
     function finish() {
       window.clearTimeout(timer);
-      numFinish(index);
+      numFinish(state);
     }
 
     function stop() {
@@ -1978,70 +2155,84 @@
     }
 
     var timer = window.setTimeout(finish, ms);
-    numBegin(index, host, stop, null);
+    numBegin(state, stop, null);
   }
 
   // Odometer: each changed digit rolls through a 0-9 strip, up or down with
-  // the value. The cells are absolute and take their x from the rendered
-  // text, so with tabular figures 0 keeps its place against every digit.
-  // A length change moves every cell, so that update swaps instead of rolling.
+  // the value. The cells are inline, so they take the host's own layout and
+  // the effect reads no geometry: with tabular figures every digit keeps its
+  // advance and 0 stands in the place of any other. A width change aligns the
+  // old reading on the new one's right edge, so a carry rolls in its new place
+  // and a new leading digit appears static.
   // A discrete transition: the strips have fixed stops, so a reading arriving
   // mid-roll is applied when the roll ends (ACC-VIEW-120).
-  function numOdometer(index, el, oldText, newText, before, after) {
-    var host = { el: el };
+  function numOdometer(state, oldText, newText, before, after) {
     var ms = numDuration();
-    var line = numLine(host.el);
+    var line = numLine(state.el);
     // DEF-VIEW-136-ODO-DROP: a slot is a whole number of device px, so every stop
     // paints on the device row the resting text paints on.
     var ratio = window.devicePixelRatio || 1;
     var slotHeight = Math.round(line * ratio) / ratio;
-    var base = document.createElement("span");
-    base.className = "num-base";
-    base.textContent = newText;
-    var row = document.createElement("span");
-    row.className = "num-odo";
-    row.setAttribute("aria-hidden", "true");
-    row.style.lineHeight = line + "px";
-    host.el.textContent = "";
-    host.el.appendChild(base);
-    host.el.appendChild(row);
-    host.el.setAttribute("data-num-host", "");
-    var node = base.firstChild;
-    var box = host.el.getBoundingClientRect();
     var up = after.value >= before.value;
+    var old = oldText.length >= newText.length
+      ? oldText.slice(oldText.length - newText.length)
+      : " ".repeat(newText.length - oldText.length) + oldText;
+    state.el.textContent = "";
+    // The roll stops are decorative: without a plain copy the host's only
+    // text is the concatenated stops, so a screen reader or a selection
+    // during the roll reads a number the page never displays.
+    var reading = document.createElement("span");
+    reading.className = "sr-only";
+    reading.textContent = newText;
+    state.el.appendChild(reading);
+    state.el.setAttribute("data-num-host", "");
     var running = [];
     for (var at = 0; at < newText.length; at += 1) {
-      var range = document.createRange();
-      range.setStart(node, at);
-      range.setEnd(node, at + 1);
-      var cellBox = range.getBoundingClientRect();
       var cell = document.createElement("span");
       cell.className = "num-odo-cell";
-      cell.style.left = cellBox.left - box.left + "px";
-      cell.style.width = cellBox.width + "px";
+      cell.setAttribute("aria-hidden", "true");
+      cell.style.lineHeight = line + "px";
       cell.style.height = line + "px";
-      var oldGlyph = oldText.charAt(at);
+      var oldGlyph = old.charAt(at);
       var glyph = newText.charAt(at);
-      var rolls = oldText.length === newText.length && oldGlyph >= "0" && oldGlyph <= "9" &&
-        glyph >= "0" && glyph <= "9" && oldGlyph !== glyph;
+      var rolls = oldGlyph >= "0" && oldGlyph <= "9" && glyph >= "0" && glyph <= "9" &&
+        oldGlyph !== glyph;
       if (rolls) {
-        var strip = document.createElement("span");
-        strip.className = "num-odo-strip";
-        for (var slot = 0; slot < 20; slot += 1) {
-          var digit = document.createElement("span");
-          digit.textContent = String(slot % 10);
-          digit.style.height = slotHeight + "px";
-          strip.appendChild(digit);
-        }
         var fromDigit = Number(oldGlyph);
         var toDigit = Number(glyph);
-        var target = up ? (toDigit >= fromDigit ? toDigit : toDigit + 10) : toDigit;
-        strip.style.transform = "translateY(" + -fromDigit * slotHeight + "px)";
+        var strip = document.createElement("span");
+        strip.className = "num-odo-strip";
+        // The strip holds only the stops the roll crosses, so a carry of one
+        // step builds two digits instead of the old twenty.
+        var offset = 0;
+        var spot = 0;
+        if (up) {
+          spot = toDigit >= fromDigit ? toDigit : toDigit + 10;
+          offset = spot - fromDigit;
+          for (var slot = fromDigit; slot <= spot; slot += 1) {
+            var digit = document.createElement("span");
+            digit.textContent = String(slot % 10);
+            digit.style.height = slotHeight + "px";
+            strip.appendChild(digit);
+          }
+        } else {
+          spot = toDigit <= fromDigit ? toDigit : toDigit - 10;
+          offset = fromDigit - spot;
+          for (slot = spot; slot <= fromDigit; slot += 1) {
+            digit = document.createElement("span");
+            digit.textContent = String((slot + 20) % 10);
+            digit.style.height = slotHeight + "px";
+            strip.appendChild(digit);
+          }
+        }
+        var start = up ? 0 : offset;
+        var end = up ? offset : 0;
+        strip.style.transform = "translateY(" + -start * slotHeight + "px)";
         cell.appendChild(strip);
         running.push(strip.animate(
           [
-            { transform: "translateY(" + -fromDigit * slotHeight + "px)" },
-            { transform: "translateY(" + -target * slotHeight + "px)" }
+            { transform: "translateY(" + -start * slotHeight + "px)" },
+            { transform: "translateY(" + -end * slotHeight + "px)" }
           ],
           { duration: ms, easing: "cubic-bezier(.33,0,.2,1)", fill: "forwards" }
         ));
@@ -2051,12 +2242,12 @@
         fixed.textContent = glyph;
         cell.appendChild(fixed);
       }
-      row.appendChild(cell);
+      state.el.appendChild(cell);
     }
 
     function finish() {
       window.clearTimeout(timer);
-      numFinish(index);
+      numFinish(state);
     }
 
     function stop() {
@@ -2065,18 +2256,12 @@
     }
 
     var timer = window.setTimeout(finish, ms);
-    numBegin(index, host, stop, null);
+    numBegin(state, stop, null);
   }
 
-  function playNumber(index, el, oldText, newText, history) {
+  function playNumber(state, oldText, newText, history, shown) {
     if (numMode === "none" || !motionPref || document.hidden) return;
-    // DEF-VIEW-81-ODOMETER-SMALL: only the large stat values animate; a footer
-    // count, table cell or axis label at 12 px and below switches instantly,
-    // so no effect builds an animation layer under a small glyph. The load
-    // figures opt in with data-num (ACC-VIEW-131) and take the same effects
-    // through this one path.
-    if (!el.classList.contains("stat-value") && !el.hasAttribute("data-num")) return;
-    if (!el.getClientRects().length) return;
+    if (!shown) return;
     var before = numParts(oldText);
     var after = numParts(newText);
     if (!before || !after || before.value === after.value) return;
@@ -2085,79 +2270,119 @@
     if (before.pre !== after.pre || before.post !== after.post || before.decimals !== after.decimals) return;
     // ACC-VIEW-126: a change under the stat's own rate threshold updates the
     // text without moving anything, so the effect settles between changes.
-    if (!numSignificant(el, before, after)) return;
+    if (!numSignificant(state.el, before, after)) return;
     if (numMode === "odometer") {
-      if (oldText.length === newText.length) numOdometer(index, el, oldText, newText, before, after);
+      numOdometer(state, oldText, newText, before, after);
     } else if (numMode === "blur") {
-      numBlur(index, el, newText, history);
+      numBlur(state, newText, history);
     } else {
-      numSpring(index, el, before, after, numMode === "spring-blur");
+      numSpring(state, newText, before, after, numMode === "spring-blur");
     }
   }
 
   function cancelNumberRuns() {
-    var keys = Object.keys(numRuns);
-    for (var index = 0; index < keys.length; index += 1) numRuns[keys[index]].stop();
-    numRuns = {};
+    for (var index = 0; index < numStates.length; index += 1) {
+      if (numStates[index].run) numStates[index].run.stop();
+    }
   }
 
-  // A frame-applied value node carries the last text written to it; every
-  // other host (a proc row, a mount the applier has not written yet) has no
+  // A node an applier writes carries the last text written to it; a host no
+  // applier writes (an axis label, a host in a panel replaced whole) has no
   // shadow, so its text is read once.
   function hostText(el) {
     var cache = el._cache;
     return cache && cache.gen === cacheGen && typeof cache.text === "string" ? cache.text : el.textContent;
   }
 
-  // After each frame, pair the values by document order. A change starts an
-  // effect; the same text does nothing, so a replaced node with an unchanged
-  // value stays still and a hidden tab records the truth without replaying.
+  // After each frame, pair each host with the record it held: by the host's
+  // own element, so a panel or row that moves keeps its history, and by place
+  // when a frame replaced that host's node. A change starts an effect; the
+  // same text does nothing, so a replaced node with an unchanged value stays
+  // still and a hidden tab records the truth without replaying. A unit step
+  // beside the host ends a running effect at once and starts none: a tween
+  // across a 1024x scale would show hundreds of the new unit.
   function syncNumbers() {
     var hosts = document.querySelectorAll("[data-w]");
-    if (hosts.length !== numStates.length) {
-      // A row, lane or panel appeared or went: pair nothing this frame.
-      cancelNumberRuns();
-      numStates = [];
-      for (var fresh = 0; fresh < hosts.length; fresh += 1) {
-        hosts[fresh]._num = fresh;
-        numStates.push({ el: hosts[fresh], text: hostText(hosts[fresh]), history: [] });
-      }
-      return;
-    }
+    // Read every host's visibility up front, before any effect writes a
+    // layer: the reads share one layout, where a check inside the loop pays
+    // a full layout per started effect (measured at 16 long tasks per 4 s).
+    var shown = [];
+    for (var at = 0; at < hosts.length; at += 1) shown[at] = hosts[at].getClientRects().length > 0;
+    var previous = numStates;
+    var sameCount = hosts.length === previous.length;
+    for (var old = 0; old < previous.length; old += 1) previous[old].seen = false;
     var states = [];
     for (var index = 0; index < hosts.length; index += 1) {
       var el = hosts[index];
-      el._num = index;
       var text = hostText(el);
-      var previous = numStates[index];
-      if (numRuns[index] && previous) {
-        if (previous.el === el) {
-          // The node was not replaced, so its text is the effect's own paint,
-          // not a reading.
-          states.push(previous);
-          continue;
-        }
-        // A frame arrived mid-effect: carry the effect into the new node. A
-        // continuous effect takes this reading as its new target and keeps
-        // moving (ACC-VIEW-120/121); a discrete transition and a change under
-        // the rate threshold hold the reading for the finish. The state keeps
-        // the newest value either way, so a burst coalesces to it.
-        states.push({ el: el, text: text, history: previous.history });
-        numAdopt(index, el);
-        var run = numRuns[index];
-        if (run && run.retarget && previous.text !== text) {
-          var was = numParts(previous.text);
-          var now = numParts(text);
-          if (was && now && numSignificant(el, was, now)) run.retarget(text);
-        }
+      var unit = hostUnit(el);
+      var state = numByEl.get(el);
+      if (!state && sameCount) {
+        // A frame replaced this host's node in place; its record is here.
+        // shortcut: index pairing runs only while the [data-w] host count is
+        // unchanged, so a host replaced by a frame that adds or removes a
+        // process row records without history and snaps; upgrade to a stable
+        // row key when templates carry one.
+        var placed = previous[index];
+        if (placed && !placed.seen && !placed.el.isConnected) state = placed;
+      }
+      if (!state) {
+        state = { el: el, text: text, unit: unit, history: [], run: null, seen: true };
+        numByEl.set(el, state);
+        el._numState = state;
+        states.push(state);
         continue;
       }
-      var state = { el: el, text: text, history: previous ? previous.history : [] };
-      if (previous && previous.text !== text) {
-        state.history = [previous.text].concat(previous.history).slice(0, NUM_ECHOES);
-        playNumber(index, el, previous.text, text, state.history);
+      state.seen = true;
+      numByEl.set(el, state);
+      el._numState = state;
+      if (state.run) {
+        if (state.el === el) {
+          // The node stayed, so its text is the effect's own paint; only a
+          // unit step beside it can end the effect early.
+          if (state.unit !== unit) {
+            state.unit = unit;
+            state.history = [];
+            state.run.stop();
+          }
+          states.push(state);
+          continue;
+        }
+        // A frame replaced the node mid-effect: carry the layers across and
+        // take this reading as the target (ACC-VIEW-120/121).
+        numAdopt(state, el);
+        if (state.unit !== unit) {
+          state.text = text;
+          state.unit = unit;
+          state.history = [];
+          state.run.stop();
+        } else if (state.text !== text) {
+          state.text = text;
+          if (state.run.retarget) state.run.retarget(text);
+        }
+        states.push(state);
+        continue;
       }
+      if (state.el !== el) {
+        state.el = el;
+        numByEl.set(el, state);
+      }
+      if (state.text !== text) {
+        if (state.unit === unit) {
+          state.history = [state.text].concat(state.history).slice(0, NUM_ECHOES);
+          playNumber(state, state.text, text, state.history, shown[index]);
+        } else {
+          state.history = [];
+        }
+        state.text = text;
+      }
+      state.unit = unit;
       states.push(state);
+    }
+    // A host that left the page ends its effect where it stood.
+    for (old = 0; old < previous.length; old += 1) {
+      var gone = previous[old];
+      if (!gone.seen && gone.run) gone.run.stop();
     }
     numStates = states;
   }
@@ -2915,23 +3140,39 @@
     return one === null ? other : other === null ? one : one + other;
   }
 
+  // The value cells hold a [data-w] span, so a number effect can own the text.
+  // The template writes one where the value exists; a row whose value is
+  // unavailable gets an empty one here, so every row's cells keep their place.
+  function procValueSpan(cell) {
+    var span = cell.querySelector("[data-w]");
+    if (!span) {
+      span = document.createElement("span");
+      span.setAttribute("data-w", "");
+      cell.appendChild(span);
+    }
+    return span;
+  }
+
   // One row's data, parsed once per frame.
   function procRow(row) {
     var cells = row.cells;
     var raw = (row.getAttribute("data-raw") || "").split(" ");
-    var cpuText = cells[6].lastChild;
-    if (!cpuText || cpuText.nodeType !== 3) cpuText = cells[6].appendChild(document.createTextNode(""));
+    var cpuValue = procValueSpan(cells[6]);
+    var memValue = procValueSpan(cells[5]);
+    var threadsValue = procValueSpan(cells[3]);
     var p = {
       row: row,
       pid: Number(cells[0].textContent),
       depth: Number(raw[0]) || 0,
       own: { cpu: rawNumber(raw[1]), mem: rawNumber(raw[2]), threads: rawNumber(raw[3]) },
       // Cpu%, MemB and Threads labels and the Cpu% class, own and summed.
-      ownLabels: [cpuText.nodeValue, cells[5].textContent, cells[3].textContent, cells[6].className],
+      ownLabels: [cpuValue.textContent, memValue.textContent, threadsValue.textContent, cells[6].className],
       sumLabels: null,
       // btop filters on pid, name, command and user: cells 0, 1, 2 and 4.
       texts: [cells[0].textContent, cells[1].textContent, cells[2].textContent, cells[4].textContent],
-      cpuText: cpuText
+      cpuValue: cpuValue,
+      memValue: memValue,
+      threadsValue: threadsValue
     };
     var sum = row.getAttribute("data-sum");
     if (sum) {
@@ -3074,8 +3315,10 @@
       });
       var cell = p.row.cells[6];
       if (procGraphs(cell) !== procGraphs(row.cells[6])) {
-        while (cell.firstChild !== p.cpuText) cell.removeChild(cell.firstChild);
-        while (row.cells[6].firstChild !== q.cpuText) cell.insertBefore(row.cells[6].firstChild, p.cpuText);
+        while (cell.firstChild !== p.cpuValue) cell.removeChild(cell.firstChild);
+        while (row.cells[6].firstChild !== q.cpuValue) {
+          cell.insertBefore(row.cells[6].firstChild, p.cpuValue);
+        }
       }
       // applyProc writes the labels the view shows from these.
       p.depth = q.depth;
@@ -3089,11 +3332,43 @@
     });
   }
 
-  // The graphs of a Cpu% cell as the server wrote them; the text comes last.
+  // The graphs of a Cpu% cell as the server wrote them; the value span comes last.
   function procGraphs(cell) {
     var html = "";
-    for (var node = cell.firstChild; node && node.nodeType === 1; node = node.nextSibling) html += node.outerHTML;
+    for (var node = cell.firstChild; node && node.nodeType === 1; node = node.nextSibling) {
+      if (node.hasAttribute("data-w")) break;
+      html += node.outerHTML;
+    }
     return html;
+  }
+
+  // ACC-VIEW-231-ALL-NUM: the shown/all process count is two live numbers, so
+  // each is its own [data-w] host with "/" between them for the first host's
+  // unit; the bar's filter takes the free space to their right
+  // (#p-proc .head-right's auto margin), so neither count's width moves a
+  // neighbour. With no rows the bar shows the one word instead.
+  function setProcCount(shown, total) {
+    if (!procCount) return;
+    if (!total) {
+      if (procCount.textContent !== "unavailable") procCount.textContent = "unavailable";
+      return;
+    }
+    var hosts = procCount.querySelectorAll("[data-w]");
+    if (hosts.length !== 2) {
+      procCount.textContent = "";
+      hosts = [document.createElement("span"), document.createElement("span")];
+      hosts[0].setAttribute("data-w", "");
+      hosts[1].setAttribute("data-w", "");
+      procCount.appendChild(hosts[0]);
+      procCount.appendChild(document.createTextNode("/"));
+      procCount.appendChild(hosts[1]);
+    }
+    // The tile's reserve covers every shown count and holds the "/" and the
+    // total in place when the shown count changes digit count.
+    var tile = document.getElementById("proc-total");
+    if (tile) frameAttr(hosts[0], "data-w", tile.getAttribute("data-w"));
+    frameText(hosts[0], String(shown));
+    frameText(hosts[1], String(total));
   }
 
   function applyProc() {
@@ -3204,9 +3479,9 @@
       }
       // ACC-VIEW-205-TREE-TALLY: a tree row shows its whole branch, folded or not, as it ranks in procValue.
       var labels = (view === "tree" || p.collapsed) && p.sumLabels ? p.sumLabels : p.ownLabels;
-      if (p.cpuText.nodeValue !== labels[0]) p.cpuText.nodeValue = labels[0];
-      if (row.cells[5].textContent !== labels[1]) row.cells[5].textContent = labels[1];
-      if (row.cells[3].textContent !== labels[2]) row.cells[3].textContent = labels[2];
+      frameText(p.cpuValue, labels[0]);
+      frameText(p.memValue, labels[1]);
+      frameText(p.threadsValue, labels[2]);
       if (row.cells[6].className !== labels[3]) row.cells[6].className = labels[3];
       if (view === "tree" && p.shown) treeGlyphs(p, glyphs[p.pid]);
       else dropGlyphs(p);
@@ -3221,7 +3496,7 @@
     }
     // ACC-VIEW-140-COLUMN-MENU: new rows from a frame take the classes again.
     applyProcCols();
-    if (procCount) procCount.textContent = rows.length ? order.length + "/" + rows.length : "unavailable";
+    setProcCount(order.length, rows.length);
     restoreProcFocus(focus);
   }
 
@@ -3372,6 +3647,7 @@
     syncRescale();
     syncMotion();
     refreshTip();
+    syncNumbers();
   }
 
   // A body that does not arrive marks the popup and keeps the last figures; the
@@ -3763,6 +4039,9 @@
   function fitGauges() {
     var gauges = document.querySelectorAll("[data-gauge]");
     for (var index = 0; index < gauges.length; index += 1) fitGauge(gauges[index]);
+    // ACC-VIEW-231-ALL-NUM: the fit moves the paint's type and baseline, so
+    // every shown overlay is placed again from it.
+    for (index = 0; index < gauges.length; index += 1) gaugeShow(gauges[index]);
   }
 
   // A panel size, a viewport change or a shape switch moves the gauge without
@@ -3902,7 +4181,7 @@
     // htmx edits the panel's own nodes, so every reference the applier cached
     // for them may now be stale.
     if (DATA_PANELS[target.id]) cacheGen += 1;
-    numberEffects = numMode !== "none" || Object.keys(numRuns).length > 0;
+    numberEffects = numMode !== "none" || numStarted !== numCompleted;
     if (source.nodeType === 1) {
       patchChildren(target, source);
     } else {
@@ -3913,6 +4192,7 @@
     for (var index = 0; index < charts.length; index += 1) charts[index]._seq = slowSeq;
     event.detail.shouldSwap = false;
   });
+  document.body.addEventListener("htmx:afterSwap", syncNumbers);
 
   // A gauge text keeps its fitted size through a patch. Tabular figures give
   // every digit the advance of 0, so only new nodes or a new digit count or unit

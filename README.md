@@ -1,7 +1,7 @@
 # btop-web
 
 [![GitHub Actions](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml/badge.svg)](https://github.com/stellarshenson/btop-web/actions/workflows/ci.yml)
-![Version 1.0.6](https://img.shields.io/badge/version-1.0.6-blue?style=flat)
+![Version 1.0.7](https://img.shields.io/badge/version-1.0.7-blue?style=flat)
 [![Downloads](https://img.shields.io/crates/d/btop-web?style=flat)](https://crates.io/crates/btop-web)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue?style=flat)](https://github.com/stellarshenson/btop-web/blob/main/LICENSE)
 [![Rust 1.99.1](https://img.shields.io/badge/rust-1.99.1-orange?style=flat)](https://github.com/stellarshenson/btop-web/blob/main/rust-toolchain.toml)
@@ -12,7 +12,9 @@ btop-web is for live monitoring of critical systems, as btop is, but in a web br
 
 *btop-web lists every process that uses your CPU, and when your browser runs on the same machine, the btop-web tab is one of them.*
 
-![The owner's dashboard](https://raw.githubusercontent.com/stellarshenson/btop-web/main/docs/design/owner-2026-11-08.png)
+![The owner's dashboard](https://raw.githubusercontent.com/stellarshenson/btop-web/main/docs/design/owner-2026-11-13.png)
+
+CONFIG sets the number effect for every live value, the CPU gauge readout included - none, spring up, motion blur, odometer or spring blur - and a positive CPU share never reads 0%.
 
 ## Install
 
@@ -29,7 +31,7 @@ make env
 make build SKIP_VERSION_INCREMENT=1
 ```
 
-The Docker workflow publishes the release image to `ghcr.io/stellarshenson/btop-web` as `1.0.6` and `1.0`; [Container](https://github.com/stellarshenson/btop-web/blob/main/docs/usage.md#container) builds and runs the image.
+The Docker workflow publishes the release image to `ghcr.io/stellarshenson/btop-web` as `1.0.7` and `1.0`; [Container](https://github.com/stellarshenson/btop-web/blob/main/docs/usage.md#container) builds and runs the image.
 
 ## Run
 

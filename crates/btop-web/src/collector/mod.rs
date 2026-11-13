@@ -1626,6 +1626,18 @@ pub fn pct(value: Option<f64>) -> String {
     }
 }
 
+/// The whole percent a CPU share shows (DEF-CPU-159-NO-ZERO): rounded to
+/// nearest, except that a share above zero never reads 0%, so the lowest
+/// non-zero figure is 1. A true 0 stays 0, and the result is clamped to 100.
+pub fn cpu_pct(value: f64) -> u64 {
+    let rounded = value.clamp(0.0, 100.0).round();
+    if rounded == 0.0 && value > 0.0 {
+        1
+    } else {
+        rounded as u64
+    }
+}
+
 /// `None` when the value is unavailable, so a meter draws its unknown state
 /// instead of an empty bar.
 pub fn bar(value: Option<f64>) -> Option<u8> {
@@ -2121,6 +2133,24 @@ mod tests {
             ..CpuSnapshot::default()
         };
         assert!(uncounted.load_readout().is_none());
+    }
+
+    /// DEF-CPU-159-NO-ZERO: a CPU share above zero never displays as 0%, and
+    /// a true zero stays 0.
+    #[test]
+    fn a_positive_cpu_share_never_displays_zero() {
+        for (value, expected) in [
+            (0.0, 0),
+            (0.1, 1),
+            (0.4, 1),
+            (0.5, 1),
+            (1.4, 1),
+            (49.5, 50),
+            (99.6, 100),
+            (100.0, 100),
+        ] {
+            assert_eq!(cpu_pct(value), expected, "cpu_pct({value})");
+        }
     }
 
     #[test]

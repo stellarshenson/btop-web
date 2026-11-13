@@ -5,12 +5,12 @@
   </span>{% endif %}</header>
 <div class="stat-body">
   <div class="stat-tile{% if snapshot.proc.total.is_none() %} centred{% endif %}" data-tip="Number of processes">{% if let Some(total) = snapshot.proc.total %}<span class="stat-value" data-w="{{ w }}" data-range="{{ snapshot.proc.chart_max }}" id="proc-total">{{ total }}</span><span class="proc-facts">
-    <span data-tip="Processes running now">running {% if let Some(n) = snapshot.proc.running %}<b>{{ n }}</b>{% else %}unavailable{% endif %}</span>
-    <span data-tip="Processes waiting for an event">sleeping {% if let Some(n) = snapshot.proc.sleeping %}<b>{{ n }}</b>{% else %}unavailable{% endif %}</span>
-    <span data-tip="Processes waiting on disk or device I/O">waiting {% if let Some(n) = snapshot.proc.waiting %}<b>{{ n }}</b>{% else %}unavailable{% endif %}</span>
-    <span data-tip="Ended processes their parent has not collected">zombie {% if let Some(n) = snapshot.proc.zombie %}<b>{{ n }}</b>{% else %}unavailable{% endif %}</span>
-    <span data-tip="Threads in all processes">threads {% if let Some(n) = snapshot.proc.threads %}<b>{{ n }}</b>{% else %}unavailable{% endif %}</span>
-    {% if snapshot.gpu.available() %}<span data-tip="Processes using a GPU{% if snapshot.gpu.process_count.is_some() && snapshot.gpu.process_unreadable > 0 %}&#10;+ means some could not be read{% endif %}">gpu {% if let Some(n) = snapshot.gpu.process_count %}<b>{{ n }}{% if snapshot.gpu.process_unreadable > 0 %}+{% endif %}</b>{% else %}unavailable{% endif %}</span>{% endif %}
+    <span data-tip="Processes running now">running {% if let Some(n) = snapshot.proc.running %}<b data-w="">{{ n }}</b>{% else %}unavailable{% endif %}</span>
+    <span data-tip="Processes waiting for an event">sleeping {% if let Some(n) = snapshot.proc.sleeping %}<b data-w="">{{ n }}</b>{% else %}unavailable{% endif %}</span>
+    <span data-tip="Processes waiting on disk or device I/O">waiting {% if let Some(n) = snapshot.proc.waiting %}<b data-w="">{{ n }}</b>{% else %}unavailable{% endif %}</span>
+    <span data-tip="Ended processes their parent has not collected">zombie {% if let Some(n) = snapshot.proc.zombie %}<b data-w="">{{ n }}</b>{% else %}unavailable{% endif %}</span>
+    <span data-tip="Threads in all processes">threads {% if let Some(n) = snapshot.proc.threads %}<b data-w="">{{ n }}</b>{% else %}unavailable{% endif %}</span>
+    {% if snapshot.gpu.available() %}<span data-tip="Processes using a GPU{% if snapshot.gpu.process_count.is_some() && snapshot.gpu.process_unreadable > 0 %}&#10;+ means some could not be read{% endif %}">gpu {% if let Some(n) = snapshot.gpu.process_count %}<b data-w="">{{ n }}{% if snapshot.gpu.process_unreadable > 0 %}+{% endif %}</b>{% else %}unavailable{% endif %}</span>{% endif %}
   </span>{% else %}<span class="stat-na">unavailable</span>{% endif %}</div>{% if snapshot.proc.total.is_some() %}
   <div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to {{ snapshot.proc.chart_max }}">
     {% if !snapshot.proc.chart.line.is_empty() %}<svg class="chart" viewBox="0 0 {{ crate::chart::PROC_COUNT.width }} {{ crate::chart::PROC_COUNT.height }}" preserveAspectRatio="none" aria-hidden="true"><g class="series{% if !snapshot.proc.scale.style.is_empty() %} rescale" style="{{ snapshot.proc.scale.style }}" data-rescale="{{ snapshot.proc.scale.rescale }}{% endif %}"><path class="area" d="{{ snapshot.proc.chart.area }}"></path><path class="line" d="{{ snapshot.proc.chart.line }}"></path></g></svg>{% endif %}

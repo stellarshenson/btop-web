@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-13
+
+### Changed
+
+- The CONFIG number effect runs on every live number, not only the large stat values: the network rate, the top and total figures, the footers, the table cells, the gauge centre readouts and the process count
+
+### Fixed
+
+- A CPU share above zero never displays 0%: the CPU total, the gauge, the user and system shares and the per-core cells show at least 1%
+
 ## [1.0.6] - 2026-11-08
 
 ### Fixed

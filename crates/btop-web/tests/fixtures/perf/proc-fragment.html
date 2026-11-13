@@ -5,11 +5,11 @@
   </span></header>
 <div class="stat-body">
   <div class="stat-tile" data-tip="Number of processes"><span class="stat-value" data-w="000" data-range="10" id="proc-total">9</span><span class="proc-facts">
-    <span data-tip="Processes running now">running <b>1</b></span>
-    <span data-tip="Processes waiting for an event">sleeping <b>7</b></span>
-    <span data-tip="Processes waiting on disk or device I/O">waiting <b>0</b></span>
-    <span data-tip="Ended processes their parent has not collected">zombie <b>0</b></span>
-    <span data-tip="Threads in all processes">threads <b>85</b></span>
+    <span data-tip="Processes running now">running <b data-w="">1</b></span>
+    <span data-tip="Processes waiting for an event">sleeping <b data-w="">7</b></span>
+    <span data-tip="Processes waiting on disk or device I/O">waiting <b data-w="">0</b></span>
+    <span data-tip="Ended processes their parent has not collected">zombie <b data-w="">0</b></span>
+    <span data-tip="Threads in all processes">threads <b data-w="">85</b></span>
     
   </span></div>
   <div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to 10">
@@ -34,14 +34,14 @@
     </tr>
   </thead>
   <tbody id="proc-body">
-<tr data-raw="0 0 140709888 69"><td class="num">715</td><td class="mono">mlflow</td><td class="mono">/opt/conda/bin/python /opt/conda/bin/mlflow server --backend-store-uri sqlite:////home/lab/.cache/mlflow/mlflow.sqlite3 --default-artifact-root /home/lab/.cache/mlflow/artifacts --workers 1 --host 0.0.0.0 --port 5000 --serve-artifacts --gunicorn-opts --access-logfile=-</td><td class="num">69</td><td>root</td><td class="num">134M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="0 0 1134592 1" data-sum="0.0 25M 16 cpu-zero"><td class="num">1</td><td class="mono">tini</td><td class="mono">tini -- /opt/conda/bin/python3 -I -m galaxalab_utils.labserver jupyterhub-singleuser --ServerApp.disable_check_xsrf=True</td><td class="num">1</td><td>root</td><td class="num">1.1M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="1 0 1024000 4"><td class="num">222</td><td class="mono">hotproc</td><td class="mono">hotproc --busy</td><td class="num">4</td><td>root</td><td class="num">1.0M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="1 0 6090752 3"><td class="num">158</td><td class="mono">pulseaudio</td><td class="mono">pulseaudio --daemonize=yes --exit-idle-time=-1 -n --load=module-native-protocol-unix</td><td class="num">3</td><td>root</td><td class="num">5.8M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="1 0 409600 4"><td class="num">334</td><td class="mono">denied</td><td class="mono">/usr/bin/denied</td><td class="num">4</td><td>root</td><td class="num">400K</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="1 0 14262272 2"><td class="num">111</td><td class="mono">ttyd</td><td class="mono">ttyd -d 3 -W -i lo -p 7681 -t titleFixed Resources Monitor -t scrollback 0 btop --utf-force</td><td class="num">2</td><td>root</td><td class="num">14M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="1 0 1613824 1"><td class="num">112</td><td class="mono">12_start_resour</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/12_start_resources_monitor.sh</td><td class="num">1</td><td>root</td><td class="num">1.5M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="1 0 1626112 1"><td class="num">120</td><td class="mono">13_start_mlflow</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/13_start_mlflow.sh</td><td class="num">1</td><td>root</td><td class="num">1.6M</td><td class="num cpu-zero">0.0</td></tr>
-<tr data-raw="0 - - -"><td class="num">333</td><td class="mono">nostat</td><td class="mono">/usr/bin/nostat</td><td class="num"></td><td>root</td><td class="num"></td><td class="num"></td></tr>
+<tr data-raw="0 0 140709888 69"><td class="num"><span data-w="">715</span></td><td class="mono">mlflow</td><td class="mono">/opt/conda/bin/python /opt/conda/bin/mlflow server --backend-store-uri sqlite:////home/lab/.cache/mlflow/mlflow.sqlite3 --default-artifact-root /home/lab/.cache/mlflow/artifacts --workers 1 --host 0.0.0.0 --port 5000 --serve-artifacts --gunicorn-opts --access-logfile=-</td><td class="num"><span data-w="">69</span></td><td>root</td><td class="num"><span data-w="">134M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="0 0 1134592 1" data-sum="0.0 25M 16 cpu-zero"><td class="num"><span data-w="">1</span></td><td class="mono">tini</td><td class="mono">tini -- /opt/conda/bin/python3 -I -m galaxalab_utils.labserver jupyterhub-singleuser --ServerApp.disable_check_xsrf=True</td><td class="num"><span data-w="">1</span></td><td>root</td><td class="num"><span data-w="">1.1M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="1 0 1024000 4"><td class="num"><span data-w="">222</span></td><td class="mono">hotproc</td><td class="mono">hotproc --busy</td><td class="num"><span data-w="">4</span></td><td>root</td><td class="num"><span data-w="">1.0M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="1 0 6090752 3"><td class="num"><span data-w="">158</span></td><td class="mono">pulseaudio</td><td class="mono">pulseaudio --daemonize=yes --exit-idle-time=-1 -n --load=module-native-protocol-unix</td><td class="num"><span data-w="">3</span></td><td>root</td><td class="num"><span data-w="">5.8M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="1 0 409600 4"><td class="num"><span data-w="">334</span></td><td class="mono">denied</td><td class="mono">/usr/bin/denied</td><td class="num"><span data-w="">4</span></td><td>root</td><td class="num"><span data-w="">400K</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="1 0 14262272 2"><td class="num"><span data-w="">111</span></td><td class="mono">ttyd</td><td class="mono">ttyd -d 3 -W -i lo -p 7681 -t titleFixed Resources Monitor -t scrollback 0 btop --utf-force</td><td class="num"><span data-w="">2</span></td><td>root</td><td class="num"><span data-w="">14M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="1 0 1613824 1"><td class="num"><span data-w="">112</span></td><td class="mono">12_start_resour</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/12_start_resources_monitor.sh</td><td class="num"><span data-w="">1</span></td><td>root</td><td class="num"><span data-w="">1.5M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="1 0 1626112 1"><td class="num"><span data-w="">120</span></td><td class="mono">13_start_mlflow</td><td class="mono">/bin/bash /galaxalab/bin/start-platform.d/13_start_mlflow.sh</td><td class="num"><span data-w="">1</span></td><td>root</td><td class="num"><span data-w="">1.6M</span></td><td class="num cpu-zero"><span data-w="">0.0</span></td></tr>
+<tr data-raw="0 - - -"><td class="num"><span data-w="">333</span></td><td class="mono">nostat</td><td class="mono">/usr/bin/nostat</td><td class="num"></td><td>root</td><td class="num"></td><td class="num"></td></tr>
   </tbody>
 </table></div>

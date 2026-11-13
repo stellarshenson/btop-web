@@ -425,7 +425,7 @@ async fn unavailable_meters_render_their_unknown_state() {
         "the CPU and memory gauges and the memory bar are the meters the empty tree leaves"
     );
     assert!(
-        page.contains(r#"<span>swap</span><b>unavailable</b>"#),
+        page.contains(r#"<span>swap</span><b data-w="000.0 / 000.0 GiB">unavailable</b>"#),
         "the unavailable swap row does not say so"
     );
     // data-w="100%" is the reserved width of a percent cell, not a value
@@ -519,7 +519,7 @@ async fn swap_block_follows_the_swap_keys() {
     let page =
         String::from_utf8(get(&app(Some(unavailable), true), "/").await.2).expect("utf-8 page");
     assert!(
-        page.contains(r#"<span>swap</span><b>unavailable</b>"#),
+        page.contains(r#"<span>swap</span><b data-w="000.0 / 000.0 GiB">unavailable</b>"#),
         "a requested swap is hidden or not marked unavailable"
     );
 }
@@ -1272,7 +1272,10 @@ async fn process_rows_draw_a_graph_left_of_cpu() {
             );
             if has_own || has_sum {
                 let after = &cpu_cell[cpu_cell.rfind("</svg>").expect("svg end") + 6..];
-                assert!(after.starts_with(&entry.cpu_label()), "{cpu_cell}");
+                assert!(
+                    after.starts_with(&format!(r#"<span data-w="">{}</span>"#, entry.cpu_label())),
+                    "{cpu_cell}"
+                );
             } else {
                 assert!(!cpu_cell.contains("<svg"));
             }
@@ -1726,7 +1729,7 @@ async fn gpu_panel_draws_one_lane_per_device() {
             {
                 let (used, total) = first.vram_labels(&snapshot.shown, 0).expect("vram");
                 format!(
-                    r#"<span class="lg-vram"><span data-w="000.0 Byte">{used}</span> / {total}</span>"#
+                    r#"<span class="lg-vram"><span data-w="000.0 Byte">{used}</span> / <span data-w="">{total}</span></span>"#
                 )
             },
             format!(
@@ -2040,8 +2043,8 @@ async fn cpu_gauge_says_total_and_shows_the_load_triple() {
     for html in page_and_event(&page, &events, "cpu") {
         for marker in [
             r#"<text class="g-label" x="54" y="78">total</text>"#,
-            r#"<span>load</span><b><span class="load-cell"><span data-w="100%" data-num>50%</span>/1m</span> <span class="load-cell"><span data-w="100%" data-num>25%</span>/5m</span> <span class="load-cell"><span data-w="100%" data-num>15%</span>/15m</span></b>"#,
-            r#"load <b data-w="100%" data-num>50%</b>/1m <b data-w="100%" data-num>25%</b>/5m <b data-w="100%" data-num>15%</b>/15m"#,
+            r#"<span>load</span><b><span class="load-cell"><span data-w="100%">50%</span>/1m</span> <span class="load-cell"><span data-w="100%">25%</span>/5m</span> <span class="load-cell"><span data-w="100%">15%</span>/15m</span></b>"#,
+            r#"load <b data-w="100%">50%</b>/1m <b data-w="100%">25%</b>/5m <b data-w="100%">15%</b>/15m"#,
             r#"data-tip="Load average, percent of all cores""#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
@@ -2126,7 +2129,7 @@ async fn cpu_stat_header_shows_the_temperature_where_a_sensor_reads() {
     let page = String::from_utf8(get(&app(Some(snapshot.clone()), true), "/").await.2)
         .expect("utf-8 page");
     let marker = format!(
-        r#"<b>{}</b></span><span class="cpu-temp" data-field="cpu-temp" data-tip="CPU temperature"><b data-w="100°C">45°C</b></span>"#,
+        r#"<b data-w="00.00 GHz">{}</b></span><span class="cpu-temp" data-field="cpu-temp" data-tip="CPU temperature"><b data-w="100°C">45°C</b></span>"#,
         snapshot.cpu.frequency_label()
     );
     for html in page_and_event(&page, &fragments(&snapshot), "cpu") {
@@ -2236,8 +2239,8 @@ async fn aggregate_load_renders_in_the_gauge_and_the_header() {
     let events = fragments(&snapshot);
     for html in page_and_event(&page, &events, "cpu") {
         for marker in [
-            r#"<span>load</span><b><span class="load-cell"><span data-w="6400%" data-num>3200%</span>/1m</span> <span class="load-cell"><span data-w="6400%" data-num>1600%</span>/5m</span> <span class="load-cell"><span data-w="6400%" data-num>960%</span>/15m</span></b>"#,
-            r#"load <b data-w="6400%" data-num>3200%</b>/1m <b data-w="6400%" data-num>1600%</b>/5m <b data-w="6400%" data-num>960%</b>/15m"#,
+            r#"<span>load</span><b><span class="load-cell"><span data-w="6400%">3200%</span>/1m</span> <span class="load-cell"><span data-w="6400%">1600%</span>/5m</span> <span class="load-cell"><span data-w="6400%">960%</span>/15m</span></b>"#,
+            r#"load <b data-w="6400%">3200%</b>/1m <b data-w="6400%">1600%</b>/5m <b data-w="6400%">960%</b>/15m"#,
             r#"data-tip="Load average, percent of one core""#,
         ] {
             assert!(html.contains(marker), "lacks {marker}");
@@ -2289,9 +2292,9 @@ async fn container_page_shows_only_container_values() {
     let events = fragments(&snapshot);
     for html in page_and_event(&page, &events, "cpu") {
         for marker in [
-            r#"<span>load</span><b><span class="load-cell"><span data-w="100%" data-num>100%</span>/1m</span> <span class="load-cell"><span data-w="100%" data-num>100%</span>/5m</span> <span class="load-cell"><span data-w="100%" data-num>100%</span>/15m</span></b>"#,
+            r#"<span>load</span><b><span class="load-cell"><span data-w="100%">100%</span>/1m</span> <span class="load-cell"><span data-w="100%">100%</span>/5m</span> <span class="load-cell"><span data-w="100%">100%</span>/15m</span></b>"#,
             r#"data-tip="Load average, percent of all cores""#,
-            r#">load <b data-w="100%" data-num>100%</b>/1m <b data-w="100%" data-num>100%</b>/5m <b data-w="100%" data-num>100%</b>/15m</span>"#,
+            r#">load <b data-w="100%">100%</b>/1m <b data-w="100%">100%</b>/5m <b data-w="100%">100%</b>/15m</span>"#,
             r#">2 cores</span>"#,
             // DEF-CPU-41: the cpuset 0-3 gives four core rows, named C00 to C03.
             r#"4 &middot; 0&ndash;100%</span>"#,
@@ -2336,7 +2339,7 @@ async fn container_page_shows_only_container_values() {
         // DEF-VIEW-97-MEM-UNITS: the tag also names whose limit it is.
         for header in [
             ">of 8.0 GiB (container limit)</span>",
-            r#"><span>of total <span class="meta-value">8.0 GiB</span> (container limit)</span></span>"#,
+            r#"><span>of total <span class="meta-value" data-w="000.0 MiB">8.0 GiB</span> (container limit)</span></span>"#,
         ] {
             assert_eq!(
                 html.matches(header).count(),
@@ -2438,7 +2441,7 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
         // DEF-VIEW-106-SWAP-UNITS: the recorded 512 MiB of 128 GiB, in GiB.
         assert!(
             html.contains(
-                r#"<span>swap</span><b>0.5 / 128.0 GiB</b><span class="pct" data-w="100%">0%</span>"#
+                r#"<span>swap</span><b data-w="000.0 / 000.0 GiB">0.5 / 128.0 GiB</b><span class="pct" data-w="100%">0%</span>"#
             ),
             "the swap row is not in GiB with its percent"
         );
@@ -2446,7 +2449,7 @@ async fn unlimited_container_memory_names_the_host_total_and_row_scopes() {
         // the scope. ACC-VIEW-196-MEM-HEADER: the table panel's states the total.
         for header in [
             ">of 503.2 GiB</span>",
-            r#"><span>of total <span class="meta-value">503.2 GiB</span></span></span>"#,
+            r#"><span>of total <span class="meta-value" data-w="000.0 MiB">503.2 GiB</span></span></span>"#,
         ] {
             assert_eq!(
                 html.matches(header).count(),
@@ -2811,11 +2814,11 @@ async fn proc_tile_carries_the_count_graph_and_the_facts() {
                 snapshot.proc.chart_max,
                 snapshot.proc.total.expect("total")
             ),
-            ">running <b>1</b></span>".to_string(),
-            ">sleeping <b>7</b></span>".to_string(),
-            ">waiting <b>0</b></span>".to_string(),
-            ">zombie <b>0</b></span>".to_string(),
-            ">threads <b>85</b></span>".to_string(),
+            r#">running <b data-w="">1</b></span>"#.to_string(),
+            r#">sleeping <b data-w="">7</b></span>"#.to_string(),
+            r#">waiting <b data-w="">0</b></span>"#.to_string(),
+            r#">zombie <b data-w="">0</b></span>"#.to_string(),
+            r#">threads <b data-w="">85</b></span>"#.to_string(),
             format!(
                 r#"<div class="stat-chart" data-chart="proc-count" role="img" aria-label="Process count history, 0 to {}">"#,
                 snapshot.proc.chart_max
@@ -2871,8 +2874,8 @@ async fn proc_tile_gpu_fact_follows_the_devices() {
     for (devices, count, unreadable, expected) in [
         (false, None, 0, None),
         (true, None, 0, Some(">gpu unavailable</span>")),
-        (true, Some(3), 0, Some(">gpu <b>3</b></span>")),
-        (true, Some(3), 2, Some(">gpu <b>3+</b></span>")),
+        (true, Some(3), 0, Some(r#">gpu <b data-w="">3</b></span>"#)),
+        (true, Some(3), 2, Some(r#">gpu <b data-w="">3+</b></span>"#)),
     ] {
         let mut snapshot = fixture_snapshot();
         if !devices {
@@ -3575,8 +3578,10 @@ async fn narrow_face_is_the_only_galaxa_face_served_and_the_font_toggle_selects_
     let pid = first.pid;
     for html in [&page, &fragment] {
         assert!(
-            html.contains(&format!(r#"<td class="num">{pid}</td><td class="mono">"#)),
-            "the Pid cell is not plain or the Program cell is not mono"
+            html.contains(&format!(
+                r#"<td class="num"><span data-w="">{pid}</span></td><td class="mono">"#
+            )),
+            "the Pid cell is not a number host or the Program cell is not mono"
         );
         assert!(
             !html.contains(r#"<td class="num mono">"#),
@@ -4419,15 +4424,15 @@ async fn number_effects_retarget_continuous_motion_by_display_range() {
     for marker in [
         "var NUM_RATE = 0.01;",
         "function numSignificant(el, before, after)",
-        "if (!numSignificant(el, before, after)) return;",
-        "if (run && run.retarget && previous.text !== text)",
-        "numBegin(index, host, finish, retarget);",
-        "numBegin(index, host, stop, null);",
+        "if (!numSignificant(state.el, before, after)) return;",
+        "if (state.run.retarget) state.run.retarget(text);",
+        "numBegin(state, finish, retarget);",
+        "numBegin(state, stop, null);",
     ] {
         assert!(js.contains(marker), "app.js lacks {marker}");
     }
     assert_eq!(
-        js.matches("numBegin(index, host, stop, null);").count(),
+        js.matches("numBegin(state, stop, null);").count(),
         2,
         "the blur and the odometer are not both discrete"
     );
@@ -4473,6 +4478,44 @@ async fn spring_number_effects_move_gradually() {
     );
 }
 
+/// ACC-VIEW-231-ALL-NUM: the gauge's centre readout and the shown/all process
+/// count run the number effect through the same machinery as a text host.
+/// Both appliers hand the gauge its settled reading, the overlay's host is a
+/// [data-w] host placed by the fit, the painted copy is hidden while it
+/// shows, and the process count is two hosts rather than one packed node.
+#[test]
+fn gauge_readout_and_process_count_run_the_number_effect() {
+    let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
+        .expect("app.js");
+    for marker in [
+        r#"gaugeNumber(gauge, total, "%", "100");"#,
+        "gaugeNumber(gauge, frame[2], frame[3], frame[4]);",
+        "function gaugeNumber(gauge, value, unit, range)",
+        "function gaugePaint(gauge)",
+        "function gaugePlace(gauge, paint)",
+        "gaugeShow(gauges[index]);",
+        r#"host.setAttribute("data-w", "");"#,
+        r#"frameAttr(gauge, "data-num-gauge", "");"#,
+        "function setProcCount(shown, total)",
+    ] {
+        assert!(js.contains(marker), "app.js lacks {marker}");
+    }
+    assert!(
+        !js.contains(r#"procCount.textContent = rows.length ?"#),
+        "the process count is still one packed node"
+    );
+    let css = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.css"))
+        .expect("app.css");
+    for marker in [
+        ".gauge[data-num-gauge] .g-value,",
+        ".gauge[data-num-gauge] .g-read b {",
+        ".g-num.on {",
+        ".gauge .g-num span {",
+    ] {
+        assert!(css.contains(marker), "app.css lacks {marker}");
+    }
+}
+
 /// DEF-VIEW-80-SEGMENT-FLIP: the segment effect is removed, so a browser that
 /// stored "segment" keeps numMode at its "none" default: a stored value
 /// applies only when NUM_MODES names it, and no effect layer is built.
@@ -4494,19 +4537,87 @@ fn stored_segment_mode_falls_back_to_none() {
     );
 }
 
-/// DEF-VIEW-81-ODOMETER-SMALL and ACC-VIEW-131-LOAD-WIDTH: an effect starts
-/// only on the large stat values and on the load figures, which opt in with
-/// data-num; every other smaller host switches instantly, so no copy at 12 px
-/// builds a layer, and the two share one path at one duration.
+/// ACC-VIEW-231-ALL-NUM: every [data-w] host runs the configured number
+/// effect, so playNumber has no class or attribute gate; only the effect
+/// mode, the motion toggle and a hidden tab stop it. The process table's
+/// value cells and the process tile's counters are hosts, so the criterion's
+/// own manual test can watch them change.
 #[test]
-fn number_effects_are_gated_to_the_large_stat_values() {
+fn every_number_host_runs_the_effect() {
     let js = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"))
         .expect("app.js");
     assert!(
-        js.contains(
+        !js.contains(
             r#"if (!el.classList.contains("stat-value") && !el.hasAttribute("data-num")) return;"#
         ),
-        "playNumber has no stat-value or data-num gate"
+        "playNumber still gates the effect to stat-value or data-num"
+    );
+    assert!(
+        js.contains(r#"if (numMode === "none" || !motionPref || document.hidden) return;"#),
+        "playNumber lost its mode, motion or hidden-tab guard"
+    );
+    // An applier write to a host must reach the effect's state, not replace
+    // its layers; frameText is the one writer every applier calls.
+    assert!(
+        js.contains("var state = node._numState;"),
+        "frameText does not route a host write into its running effect"
+    );
+    assert_eq!(
+        js.matches("if (state.run.retarget) state.run.retarget(text);")
+            .count(),
+        2,
+        "frameText and syncNumbers do not both retarget a running effect"
+    );
+    let partials = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/partials");
+    let storage = std::fs::read_to_string(partials.join("storage.html")).expect("storage.html");
+    assert_eq!(
+        storage
+            .matches(r#"<span class="mount-pct" data-w="100%">"#)
+            .count(),
+        2,
+        "the storage used and free percentages are not number hosts"
+    );
+    let mem_gauge =
+        std::fs::read_to_string(partials.join("mem_gauge.html")).expect("mem_gauge.html");
+    for host in [
+        r#"<b data-w="000.0 / 000.0 GiB">"#,
+        r#"<span class="meta-value" data-w="000.0 MiB">"#,
+    ] {
+        assert!(mem_gauge.contains(host), "the memory gauge lacks {host}");
+    }
+    let mem_stat = std::fs::read_to_string(partials.join("mem_stat.html")).expect("mem_stat.html");
+    assert!(
+        mem_stat
+            .contains(r#"<span class="meta" data-field="mem-stat-total" data-w="of 000.0 MiB""#),
+        "the memory stat header total is not a number host"
+    );
+    let cpu_stat = std::fs::read_to_string(partials.join("cpu_stat.html")).expect("cpu_stat.html");
+    assert!(
+        cpu_stat.contains(r#"<b data-w="00.00 GHz">"#),
+        "the CPU frequency is not a number host"
+    );
+    let gpu = std::fs::read_to_string(partials.join("gpu.html")).expect("gpu.html");
+    assert!(
+        gpu.contains(r#"<span data-w="000 W">"#),
+        "the GPU power draw is not a number host"
+    );
+    let proc = std::fs::read_to_string(partials.join("proc.html")).expect("proc.html");
+    for value in [
+        "{{ process.pid }}",
+        "{{ process.threads_label() }}",
+        "{{ process.mem_label() }}",
+        "{{ process.cpu_label() }}",
+    ] {
+        assert!(
+            proc.contains(&format!(r#"<span data-w="">{value}</span>"#)),
+            "the process table's {value} cell is not a number host"
+        );
+    }
+    let facts = std::fs::read_to_string(partials.join("proc_stat.html")).expect("proc_stat.html");
+    assert_eq!(
+        facts.matches(r#"<b data-w="">"#).count(),
+        6,
+        "the six process fact counters are not all number hosts"
     );
 }
 
@@ -4519,7 +4630,7 @@ fn number_effect_layers_keep_the_host_letter_spacing() {
     let compact: String = css.split_whitespace().collect();
     assert!(
         compact.contains(
-            ".num-tween,.num-base,.num-echo,.num-odo{font-variant-numeric:tabular-nums;white-space:pre;letter-spacing:inherit;}"
+            ".num-tween,.num-echo{font-variant-numeric:tabular-nums;white-space:pre;letter-spacing:inherit;}"
         ),
         "the number effect layers do not inherit the host's letter-spacing"
     );
@@ -5157,11 +5268,11 @@ async fn waking_from_sleep_sends_the_first_frame_fast() {
     // The held walk rides in the first frame, so the pid that appeared while
     // the server slept is not invented by a slow pass on the wake tick.
     assert!(
-        page.contains(r#"<td class="num">222</td>"#),
+        page.contains(r#"<td class="num"><span data-w="">222</span></td>"#),
         "the first frame lost the held process walk"
     );
     assert!(
-        !page.contains(r#"<td class="num">999</td>"#),
+        !page.contains(r#"<td class="num"><span data-w="">999</span></td>"#),
         "the first frame rebuilt the process walk"
     );
     // The sweep has not landed: the GPU panel shows its unavailable state,
@@ -5208,7 +5319,7 @@ async fn waking_from_sleep_sends_the_first_frame_fast() {
         tail(&streamed)
     );
     assert!(
-        streamed.contains(r#"<td class="num">999</td>"#),
+        streamed.contains(r#"<td class="num"><span data-w="">999</span></td>"#),
         "the slow pass after the wake did not list the new pid: {}",
         tail(&streamed)
     );

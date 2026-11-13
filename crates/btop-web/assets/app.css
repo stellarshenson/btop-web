@@ -334,9 +334,10 @@ body {
 
 /* ACC-VIEW-108-NUM-MOTION: the number effects. A value keeps its reserved
    width: the tween rewrites its own text, an echo is an absolute layer behind
-   it, and an odometer cell is absolute over a hidden copy of the text, so no
-   neighbour moves. Tabular figures give 0 the advance and height of every
-   other digit, so a rolled 0 lines up with the rest of the number. */
+   it, and the odometer replaces the host's text with inline-block cells that
+   take its layout, so no neighbour moves. Tabular figures give 0 the advance
+   and height of every other digit, so a rolled 0 lines up with the rest of
+   the number. */
 [data-num-host] {
   position: relative;
   isolation: isolate;
@@ -345,16 +346,10 @@ body {
 /* DEF-VIEW-132-DIGIT-SHIFT: the face's own tracking on a layer would move a
    digit sideways while an effect runs, so a layer keeps its host's spacing. */
 .num-tween,
-.num-base,
-.num-echo,
-.num-odo {
+.num-echo {
   font-variant-numeric: tabular-nums;
   white-space: pre;
   letter-spacing: inherit;
-}
-
-.num-base {
-  visibility: hidden;
 }
 
 .num-echo {
@@ -365,17 +360,13 @@ body {
   pointer-events: none;
 }
 
-.num-odo {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-}
-
+/* ACC-VIEW-108-NUM-MOTION: an odometer cell flows with the host's text at the
+   host's line height, so the roll needs no measured position. */
 .num-odo-cell {
-  position: absolute;
-  top: 0;
+  display: inline-block;
+  vertical-align: top;
   overflow: hidden;
+  user-select: none;
 }
 
 .num-odo-strip,
@@ -1921,8 +1912,10 @@ select.opt.cfg-in:where(:not(:disabled)) {
   overflow: hidden;
 }
 
-/* the squircle, the shape a short body takes: the body's height sets the box */
+/* the squircle, the shape a short body takes: the body's height sets the box;
+   the readout's number overlay is placed against this box */
 .gauge {
+  position: relative;
   flex: 0 1 auto;
   min-width: 0;
   width: auto;
@@ -2125,6 +2118,54 @@ select.opt.cfg-in:where(:not(:disabled)) {
 .gauge[data-state="unavailable"] .g-label {
   text-transform: none;
   letter-spacing: var(--track);
+}
+
+/* ACC-VIEW-231-ALL-NUM: the gauge readout's number effect. SVG text cannot
+   hold the effect's span layers, so .g-num is an absolutely positioned
+   overlay whose [data-w] host carries them; the painted copy stays laid out
+   under it with visibility (so the fit and the readout's own layout are
+   untouched) and the gauge's aria-label carries the settled reading. Colours
+   come from the tokens, so a theme switch needs no re-placement; the
+   placement copies the paint's size, spacing and baseline and leaves the
+   calibration span (the box's last child, zero size) on the line's
+   baseline. */
+.g-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: none;
+  z-index: 1;
+  text-align: center;
+  white-space: pre;
+  pointer-events: none;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-strong);
+}
+
+.g-num.on {
+  display: block;
+}
+
+/* the wide readout styles every span in .g-read; the overlay's host takes
+   the paint's own type instead */
+.gauge .g-num span {
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  color: inherit;
+}
+
+.g-num i {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 500;
+}
+
+/* the painted copy under a shown overlay */
+.gauge[data-num-gauge] .g-value,
+.gauge[data-num-gauge] .g-read b {
+  visibility: hidden;
 }
 
 /* the facts and memory rows take their natural width and hug the panel's

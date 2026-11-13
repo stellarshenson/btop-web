@@ -337,8 +337,8 @@
     {
       "type": "application",
       "name": "btop-web",
-      "version": "1.0.6",
-      "purl": "pkg:cargo/btop-web@1.0.6",
+      "version": "1.0.7",
+      "purl": "pkg:cargo/btop-web@1.0.7",
       "licenses": [
         {
           "license": {
@@ -488,8 +488,8 @@
     {
       "type": "library",
       "name": "const-oid",
-      "version": "0.10.2",
-      "purl": "pkg:cargo/const-oid@0.10.2",
+      "version": "0.10.3",
+      "purl": "pkg:cargo/const-oid@0.10.3",
       "licenses": [
         {
           "expression": "Apache-2.0 OR MIT"
@@ -521,8 +521,8 @@
     {
       "type": "library",
       "name": "crc32fast",
-      "version": "1.5.4",
-      "purl": "pkg:cargo/crc32fast@1.5.4",
+      "version": "1.5.5",
+      "purl": "pkg:cargo/crc32fast@1.5.5",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -683,8 +683,8 @@
     {
       "type": "library",
       "name": "errno",
-      "version": "0.3.14",
-      "purl": "pkg:cargo/errno@0.3.14",
+      "version": "0.3.15",
+      "purl": "pkg:cargo/errno@0.3.15",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -990,8 +990,8 @@
     {
       "type": "library",
       "name": "itoa",
-      "version": "1.0.18",
-      "purl": "pkg:cargo/itoa@1.0.18",
+      "version": "1.0.19",
+      "purl": "pkg:cargo/itoa@1.0.19",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -1628,8 +1628,8 @@
     {
       "type": "library",
       "name": "rust-embed",
-      "version": "8.13.0",
-      "purl": "pkg:cargo/rust-embed@8.13.0",
+      "version": "8.14.0",
+      "purl": "pkg:cargo/rust-embed@8.14.0",
       "licenses": [
         {
           "license": {
@@ -1641,8 +1641,8 @@
     {
       "type": "library",
       "name": "rust-embed-impl",
-      "version": "8.13.0",
-      "purl": "pkg:cargo/rust-embed-impl@8.13.0",
+      "version": "8.14.0",
+      "purl": "pkg:cargo/rust-embed-impl@8.14.0",
       "licenses": [
         {
           "license": {
@@ -1654,8 +1654,8 @@
     {
       "type": "library",
       "name": "rust-embed-utils",
-      "version": "8.13.0",
-      "purl": "pkg:cargo/rust-embed-utils@8.13.0",
+      "version": "8.14.0",
+      "purl": "pkg:cargo/rust-embed-utils@8.14.0",
       "licenses": [
         {
           "license": {
@@ -1722,8 +1722,8 @@
     {
       "type": "library",
       "name": "rustls-pki-types",
-      "version": "1.15.1",
-      "purl": "pkg:cargo/rustls-pki-types@1.15.1",
+      "version": "1.16.0",
+      "purl": "pkg:cargo/rustls-pki-types@1.16.0",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"
@@ -1733,8 +1733,8 @@
     {
       "type": "library",
       "name": "rustls-webpki",
-      "version": "0.103.16",
-      "purl": "pkg:cargo/rustls-webpki@0.103.16",
+      "version": "0.103.17",
+      "purl": "pkg:cargo/rustls-webpki@0.103.17",
       "licenses": [
         {
           "license": {
@@ -2042,8 +2042,8 @@
     {
       "type": "library",
       "name": "syn",
-      "version": "3.0.9",
-      "purl": "pkg:cargo/syn@3.0.9",
+      "version": "3.0.10",
+      "purl": "pkg:cargo/syn@3.0.10",
       "licenses": [
         {
           "expression": "MIT OR Apache-2.0"

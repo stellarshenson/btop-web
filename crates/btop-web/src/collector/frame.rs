@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 
 use askama::Template;
 
-use super::{Snapshot, band};
+use super::{Snapshot, band, cpu_pct};
 use crate::chart;
 
 /// One sample and the five SSE events built for it.
@@ -149,7 +149,9 @@ fn cpu_frame(snapshot: &Snapshot) -> String {
         snapshot.window_ms.to_string(),
         snapshot.slow_ms.to_string(),
         snapshot.slow_seq.to_string(),
-        total.map(|pct| format!("{pct:.0}")).unwrap_or_default(),
+        total
+            .map(|pct| cpu_pct(pct).to_string())
+            .unwrap_or_default(),
         total.map_or("", band).to_string(),
         gauge.map_or("", band).to_string(),
         gauge.map_or_else(String::new, |pct| chart::gauge_arc_circle(Some(pct))),
@@ -166,8 +168,12 @@ fn cpu_frame(snapshot: &Snapshot) -> String {
         }
         None => fields.extend(["", "", "", "", ""].map(String::from)),
     }
-    fields.push(percent(cpu.field_pct("user"), 0));
-    fields.push(percent(cpu.field_pct("system"), 0));
+    for name in ["user", "system"] {
+        fields.push(
+            cpu.field_pct(name)
+                .map_or_else(String::new, |pct| format!("{}%", cpu_pct(pct))),
+        );
+    }
     fields.push(percent(cpu.pressure_pct, 2));
     fields.push(if cpu.cpu_hz.is_some() || cpu.frequency_mhz.is_some() {
         cpu.frequency_label()
@@ -198,7 +204,7 @@ fn cpu_frame(snapshot: &Snapshot) -> String {
         match core.smoothed_pct {
             Some(pct) => {
                 fields.push(format!("{pct:.1}"));
-                fields.push(format!("{pct:.0}"));
+                fields.push(cpu_pct(pct).to_string());
             }
             None => fields.extend([String::new(), String::new()]),
         }

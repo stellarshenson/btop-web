@@ -1,6 +1,6 @@
 <header class="ph"><h2 id="cpu-gauge-title">CPU</h2>{% if let Some(name) = snapshot.cpu.name %}<div class="cpu-name" data-p="3" data-field="cpu-name" title="{{ name }}">{{ name }}</div>{% endif %}{% if let Some(cores) = snapshot.cpu.cores_label() %}<span class="head-right meta" data-p="3" data-field="cpu-gauge-cores" data-tip="{{ crate::collector::CPU_CORES_TIP }}">{{ cores }} cores</span>{% endif %}</header>
 <div class="gauge-body">
-  <div class="gauge" data-gauge="cpu" data-tip="{{ crate::collector::CPU_TOTAL_TIP }}" role="img"{% if let Some(pct) = snapshot.cpu.total_pct %} aria-label="CPU total {{ pct|fmt("{:.0}") }} percent"{% else %} aria-label="CPU unavailable" data-state="unavailable"{% endif %}>
+  <div class="gauge" data-gauge="cpu" data-tip="{{ crate::collector::CPU_TOTAL_TIP }}" role="img"{% if let Some(pct) = snapshot.cpu.total_pct %} aria-label="CPU total {{ crate::collector::cpu_pct(**pct) }} percent"{% else %} aria-label="CPU unavailable" data-state="unavailable"{% endif %}>
     <svg class="g-circle" viewBox="{{ crate::chart::GAUGE_VIEW_X }} 0 {{ crate::chart::GAUGE_CIRCLE_SIZE.width }} {{ crate::chart::GAUGE_CIRCLE_SIZE.height }}" aria-hidden="true">
       <path class="g-track" d="{{ crate::chart::gauge_arc_circle(Some(100.0)) }}"></path>
       {% if let Some(arc) = snapshot.cpu.gauge_pct %}<path class="g-fill {{ crate::collector::band(**arc) }}" d="{{ crate::chart::gauge_arc_circle(*snapshot.cpu.gauge_pct) }}"></path>{% endif %}
@@ -8,7 +8,7 @@
       <path class="g-tick" d="{{ crate::chart::gauge_ticks_circle(false) }}"></path>
       <path class="g-tick major" d="{{ crate::chart::gauge_ticks_circle(true) }}"></path>
       <g data-p="3" data-field="gauge-scale">{% for (x, y, text, minor) in crate::chart::gauge_labels_circle() %}<text class="g-scale{% if minor %} minor{% endif %}" x="{{ x|fmt("{:.2}") }}" y="{{ y|fmt("{:.2}") }}">{{ text }}</text>{% endfor %}</g>
-      {% if let Some(pct) = snapshot.cpu.total_pct %}<text class="g-value" x="54" y="66">{{ pct|fmt("{:.0}") }}<tspan class="g-unit" dx="2.5">%</tspan></text>
+      {% if let Some(pct) = snapshot.cpu.total_pct %}<text class="g-value" x="54" y="66">{{ crate::collector::cpu_pct(**pct) }}<tspan class="g-unit" dx="2.5">%</tspan></text>
       <text class="g-label" x="54" y="78">total</text>{% else %}<text class="g-label" x="54" y="70">unavailable</text>{% endif %}
     </svg>
     <svg class="g-squircle" viewBox="{{ crate::chart::GAUGE_VIEW_X }} 0 {{ crate::chart::GAUGE_SIZE.width }} {{ crate::chart::GAUGE_SIZE.height }}" aria-hidden="true">
@@ -18,19 +18,19 @@
       <path class="g-tick" d="{{ crate::chart::gauge_ticks(false) }}"></path>
       <path class="g-tick major" d="{{ crate::chart::gauge_ticks(true) }}"></path>
       <g data-p="3" data-field="gauge-scale">{% for (x, y, text, minor) in crate::chart::gauge_labels() %}<text class="g-scale{% if minor %} minor{% endif %}" x="{{ x|fmt("{:.2}") }}" y="{{ y|fmt("{:.2}") }}">{{ text }}</text>{% endfor %}</g>
-      {% if let Some(pct) = snapshot.cpu.total_pct %}<text class="g-value" x="54" y="66">{{ pct|fmt("{:.0}") }}<tspan class="g-unit" dx="2.5">%</tspan></text>
+      {% if let Some(pct) = snapshot.cpu.total_pct %}<text class="g-value" x="54" y="66">{{ crate::collector::cpu_pct(**pct) }}<tspan class="g-unit" dx="2.5">%</tspan></text>
       <text class="g-label" x="54" y="78">total</text>{% else %}<text class="g-label" x="54" y="70">unavailable</text>{% endif %}
     </svg>
     <svg class="g-wide" viewBox="{{ crate::chart::GAUGE_WIDE_VIEWBOX.0 }} {{ crate::chart::GAUGE_WIDE_VIEWBOX.1 }} {{ crate::chart::GAUGE_WIDE_VIEWBOX.2 }} {{ crate::chart::GAUGE_WIDE_VIEWBOX.3 }}" preserveAspectRatio="none" aria-hidden="true">
       <use class="g-track" href="#g-wide-arc"></use>
       {% if let Some(arc) = snapshot.cpu.gauge_pct %}<use class="g-fill {{ crate::collector::band(**arc) }}" href="#g-wide-arc" style="--from:0;--to:{{ arc|fmt("{:.2}") }}"></use>{% endif %}
     </svg>
-    {% if let Some(pct) = snapshot.cpu.total_pct %}<div class="g-read" aria-hidden="true"><b>{{ pct|fmt("{:.0}") }}<i>%</i></b><span>total</span></div>{% else %}<div class="g-read" aria-hidden="true"><span>unavailable</span></div>{% endif %}
+    {% if let Some(pct) = snapshot.cpu.total_pct %}<div class="g-read" aria-hidden="true"><b>{{ crate::collector::cpu_pct(**pct) }}<i>%</i></b><span>total</span></div>{% else %}<div class="g-read" aria-hidden="true"><span>unavailable</span></div>{% endif %}
   </div>
   <div class="gauge-side facts" data-p="3" data-field="cpu-gauge-facts">
-    {% if let Some(load) = snapshot.cpu.load_readout() %}<div class="fact load" data-tip="{{ load.tip }}"><span>load</span><b><span class="load-cell"><span data-w="{{ load.reserve }}" data-num>{{ load.one.figure }}</span>/{{ load.one.window }}</span> <span class="load-cell"><span data-w="{{ load.reserve }}" data-num>{{ load.five.figure }}</span>/{{ load.five.window }}</span> <span class="load-cell"><span data-w="{{ load.reserve }}" data-num>{{ load.fifteen.figure }}</span>/{{ load.fifteen.window }}</span></b></div>{% else %}<div class="fact" data-tip="{{ crate::collector::LOAD_TIP }}"><span>load</span><span>unavailable</span></div>{% endif %}
-    <div class="fact" data-tip="Share of CPU time in user programs"><span>user</span>{% if let Some(pct) = snapshot.cpu.field_pct("user") %}<b data-w="100%">{{ pct|fmt("{:.0}") }}%</b>{% else %}<span>unavailable</span>{% endif %}</div>
-    <div class="fact" data-tip="Share of CPU time in the kernel"><span>system</span>{% if let Some(pct) = snapshot.cpu.field_pct("system") %}<b data-w="100%">{{ pct|fmt("{:.0}") }}%</b>{% else %}<span>unavailable</span>{% endif %}</div>
+    {% if let Some(load) = snapshot.cpu.load_readout() %}<div class="fact load" data-tip="{{ load.tip }}"><span>load</span><b><span class="load-cell"><span data-w="{{ load.reserve }}">{{ load.one.figure }}</span>/{{ load.one.window }}</span> <span class="load-cell"><span data-w="{{ load.reserve }}">{{ load.five.figure }}</span>/{{ load.five.window }}</span> <span class="load-cell"><span data-w="{{ load.reserve }}">{{ load.fifteen.figure }}</span>/{{ load.fifteen.window }}</span></b></div>{% else %}<div class="fact" data-tip="{{ crate::collector::LOAD_TIP }}"><span>load</span><span>unavailable</span></div>{% endif %}
+    <div class="fact" data-tip="Share of CPU time in user programs"><span>user</span>{% if let Some(pct) = snapshot.cpu.field_pct("user") %}<b data-w="100%">{{ crate::collector::cpu_pct(**pct) }}%</b>{% else %}<span>unavailable</span>{% endif %}</div>
+    <div class="fact" data-tip="Share of CPU time in the kernel"><span>system</span>{% if let Some(pct) = snapshot.cpu.field_pct("system") %}<b data-w="100%">{{ crate::collector::cpu_pct(**pct) }}%</b>{% else %}<span>unavailable</span>{% endif %}</div>
     <div class="fact" data-tip="Share of time tasks waited for a CPU, last 10 s"><span>pressure</span>{% if let Some(pct) = snapshot.cpu.pressure_pct %}<b data-w="100.00%">{{ pct|fmt("{:.2}") }}%</b>{% else %}<span>unavailable</span>{% endif %}</div>
   </div>
 </div>

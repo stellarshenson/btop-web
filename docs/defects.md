@@ -136,6 +136,15 @@ CPU usage, frequency, sensors and battery from btop's Cpu::collect
   - log: 2026-10-27T23:48:23Z @kj owner 2026-10-28: reduce the sampling frequency to cut the cost; count every 15 s with decay factors exp(-15/60), exp(-15/300), exp(-15/900) = 1595, 1948, 2014 over 2048 (the same rule gives the kernel's 1884, 2014, 2037 at 5 s); change d-44-freq in btop-web-merge-1
   - log: 2026-10-28T01:20:23Z @kj merge-1 verify round 1: A/A control shows two same-instant sweeps differ by up to 3.0 in the folded 1 min value in this busy container; within-2.0 bound dropped for round 2; gate keeps never unavailable, never the VM's value, rise of page minus background at least 1, fall
   - log: 2026-10-28T02:00:20Z @kj closed; reason: evidence names the measured result and the checkpoint
+- [x] `DEF-CPU-159-NO-ZERO` **CPU load never shows 0%** - MEDIUM; a CPU share above zero never displays 0%: nearest rounding with a positive share lifted to 1, not a ceiling, so parity with btop holds; CPU total, gauge, user and system shares and per-core cells follow it; the process table's own CPU column keeps its normal rounding
+  - evidence: cpu-pct probe: 260 frames streamed, 180 evaluated, 11,880 checks 0 failed, tau 2000 matched all; 878 low-band 0<share<0.5 observations all displayed 1; make ci 432 passed, 0 failed, 5 ignored.
+  - repro: on an idle host open the dashboard: cpu-total reads 0% while the total is 0.1 to 0.4 percent
+  - test-tags: UNIT, MANUAL
+  - root-cause: 2026-11-12T19:34:05Z @kj CPU shares were formatted with {:.0}, which rounds 0.1 to 0.4 down to 0; the live path is frame.rs total at 153, user and system at 174, per-core at 207, plus the first renders in cpu_stat.html, cpu_gauge.html and cores.html
+  - log: 2026-11-12T12:55:07Z @kj added
+  - log: 2026-11-12T19:34:05Z @kj root-cause updated "2026-11-12T12:55:07Z @kj templates format total_pct and field_pct with {:.0}, which rounds 0.1 to 0.4 down to 0; mod.rs:248 formats the per-core figures the same way" -> "CPU shares were formatted with {:.0}, which rounds 0.1 to 0.4 down to 0; the live path is frame.rs total at 153, user and system at 174, per-core at 207, plus the first renders in cpu_stat.html, cpu_gauge.html and cores.html"
+  - log: 2026-11-12T21:39:12Z @kj amended text "a CPU load share above zero renders as 0% when it rounds down; it must round up instead: CPU total, gauge, user and system shares and per-core cells never show 0% under load; the process table's own CPU column keeps normal rounding" -> "a CPU share above zero never displays 0%: nearest rounding with a positive share lifted to 1, not a ceiling, so parity with btop holds; CPU total, gauge, user and system shares and per-core cells follow it; the process table's own CPU column keeps its normal rounding"
+  - log: 2026-11-12T21:40:35Z @kj closed: fixed (unreleased)
 
 ## Dashboard display `VIEW`
 
@@ -394,6 +403,7 @@ What the panels render and how an unavailable value is drawn
   - log: 2026-10-29T01:40:37Z @kj added
   - log: 2026-10-29T10:04:11Z @kj closed
 - [x] `DEF-VIEW-81-ODOMETER-SMALL` **Small numbers blink under odometer** - MEDIUM; with odometer selected the small numbers blink - the 80 percent process counts roll through partial glyphs at 10 px; treatment: exclude small numbers from every number effect, so footers, table cells and axis labels switch instantly and only the large stat values animate
+  - overridden-by: ACC-VIEW-231-ALL-NUM
   - evidence: verify: 20 footer count changes under odometer produced 0 animation hosts and 0 animations; 12 live-frame samples over 22 small values stayed still
   - repro: choose odometer in CONFIG and watch the 80 percent counts in the Processes tile footer
   - root-cause: 2026-10-29T01:41:31Z @kj the odometer clips each digit into a sliding window sized for the 32 px stat values, so at 10 px the frame between positions shows a partial glyph
